@@ -68,34 +68,6 @@ class TelegramPairing(Base, UUIDMixin, TimestampMixin):
     user: Mapped["User"] = relationship("User")
 
 
-class TelegramBotLinkCode(Base, UUIDMixin, TimestampMixin):
-    """One-time human code generated from Telegram before a user signs in."""
-
-    __tablename__ = "telegram_bot_link_codes"
-
-    token_hash: Mapped[str] = mapped_column(
-        String(64),
-        nullable=False,
-        unique=True,
-        index=True,
-    )
-    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
-    telegram_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    username: Mapped[str | None] = mapped_column(String(255))
-    first_name: Mapped[str | None] = mapped_column(String(255))
-    last_name: Mapped[str | None] = mapped_column(String(255))
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-
-    user: Mapped["User | None"] = relationship("User")
-
-
 class TelegramMediaGroupPart(Base, UUIDMixin, TimestampMixin):
     """One buffered photo of a Telegram album (media group).
 
@@ -119,7 +91,13 @@ class TelegramMediaGroupPart(Base, UUIDMixin, TimestampMixin):
 
 
 class TelegramUpdate(Base):
-    """Idempotency record for Telegram webhook updates."""
+    """Idempotency record for Telegram webhook updates.
+
+    ``payload`` + ``telegram_user_id`` are populated only for the pre-signup
+    replay path: when a brand-new user sends a message before tapping the
+    consent button we stash the raw update with ``status="pending_signup"`` so
+    that, once the account is provisioned, that first message is re-routed
+    instead of silently dropped."""
 
     __tablename__ = "telegram_updates"
 
@@ -129,6 +107,8 @@ class TelegramUpdate(Base):
     error_message: Mapped[str | None] = mapped_column(Text)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict | None] = mapped_column(JSONB)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
 
 
 from app.models.companion import Conversation  # noqa: E402

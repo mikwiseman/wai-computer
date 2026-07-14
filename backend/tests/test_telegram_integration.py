@@ -53,7 +53,6 @@ from app.models.recording import (
 from app.models.reminder import UserReminder
 from app.models.telegram import (
     TelegramAccount,
-    TelegramBotLinkCode,
     TelegramPairing,
     TelegramUpdate,
 )
@@ -955,14 +954,9 @@ async def test_handle_start_command_existing_and_missing_link(db_session: AsyncS
 
     assert "Telegram привязан" in capture.messages[0]["text"]
     assert "Просто пиши или говори" in capture.messages[0]["text"]
-    # A brand-new user is offered Telegram-only signup (consent button), not a code.
+    # A brand-new user is offered Telegram-only signup (consent button).
     assert "Условия" in capture.messages[1]["text"]
     assert capture.messages[1]["reply_markup"]["inline_keyboard"]
-    assert (
-        await db_session.execute(
-            select(TelegramBotLinkCode).where(TelegramBotLinkCode.telegram_user_id == 999)
-        )
-    ).scalar_one_or_none() is None
 
 
 @pytest.mark.asyncio
@@ -1171,9 +1165,6 @@ async def test_telegram_command_guards_missing_chat_and_inactive_user(
     await telegram_routes._handle_search_command(
         db_session, capture, message=missing_chat_message, account=account, query="roadmap"
     )
-    await telegram_routes._handle_settings_command(
-        capture, message=missing_chat_message, linked=True
-    )
     await telegram_routes._handle_text_message(
         db_session,
         capture,
@@ -1194,11 +1185,11 @@ async def test_telegram_command_guards_missing_chat_and_inactive_user(
     await telegram_routes._handle_account_command(
         db_session, capture, message=message, account=account, intent="help"
     )
-    await telegram_routes._handle_account_command(
-        db_session, capture, message=message, account=account, intent="settings"
+    assert "Telegram привязан" in capture.messages[-1]["text"]
+    # Unknown commands fall through to the help fallback.
+    assert not await telegram_routes._handle_account_command(
+        db_session, capture, message=message, account=account, intent="bogus"
     )
-    assert "Telegram привязан" in capture.messages[-2]["text"]
-    assert "Управление привязкой" in capture.messages[-1]["text"]
 
     user.account_status = "paused"
     await db_session.flush()
@@ -1384,45 +1375,6 @@ async def test_handle_start_command_consumes_pairing_and_ignores_invalid_message
 
     assert "Готово" in capture.messages[0]["text"]
     assert await telegram_routes._load_account(db_session, 321) is not None
-
-
-@pytest.mark.asyncio
-async def test_bot_link_code_claims_telegram_account(
-    db_session: AsyncSession,
-    monkeypatch,
-):
-    monkeypatch.setattr(telegram_routes.settings, "telegram_bot_token", "test-token")
-    monkeypatch.setattr(telegram_routes.settings, "telegram_webhook_secret_token", "secret")
-    user = await _user(db_session)
-    raw_code = "ABCD2345"
-    db_session.add(
-        TelegramBotLinkCode(
-            token_hash=telegram_routes._token_hash(raw_code),
-            telegram_user_id=444,
-            telegram_chat_id=444,
-            username="anna",
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
-        )
-    )
-    await db_session.commit()
-
-    status = await telegram_routes.claim_link_code(
-        telegram_routes.TelegramLinkCodeClaimRequest(code="ABCD-2345"),
-        user,
-        db_session,
-    )
-
-    assert status.linked is True
-    assert status.telegram_user_id == 444
-    assert status.username == "anna"
-    account = await telegram_routes._load_account(db_session, 444)
-    assert account is not None
-    code = (
-        await db_session.execute(
-            select(TelegramBotLinkCode).where(TelegramBotLinkCode.telegram_user_id == 444)
-        )
-    ).scalar_one()
-    assert code.consumed_at is not None
 
 
 @pytest.mark.asyncio

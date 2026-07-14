@@ -71,6 +71,24 @@ def test_format_fetch_error_reply_escapes() -> None:
     assert "&amp;" in out
 
 
+def test_format_fetch_error_reply_localizes_twitter_code() -> None:
+    # The English message stored for web is remapped to Russian for the bot.
+    out = format_fetch_error_reply(
+        "X (Twitter) doesn't allow apps to read posts. Paste the post text "
+        "(or a screenshot) and I'll add it to your brain.",
+        "twitter_share_required",
+    )
+    assert "X (Twitter) не даёт приложениям читать посты" in out
+    assert "doesn't allow" not in out
+
+
+def test_format_fetch_error_reply_unknown_code_passes_through() -> None:
+    out = format_fetch_error_reply("Instagram doesn't allow <apps>", "mystery_code")
+    # Unknown codes are not swallowed: the stored message renders (escaped).
+    assert "Instagram" in out
+    assert "&lt;apps&gt;" in out
+
+
 def test_format_reply_youtube_moments_deep_link_into_video() -> None:
     item = _item()
     item.metadata_ = {"video_id": "dQw4w9WgXcQ", "transcript_source": "captions"}

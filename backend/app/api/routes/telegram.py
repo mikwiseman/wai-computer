@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 import secrets
@@ -17,7 +16,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -58,7 +57,6 @@ from app.core.item_processing import process_item, summarize_and_embed_item
 from app.core.item_telegram import format_fetch_error_reply, format_item_reply
 from app.core.item_titles import clean_title, title_from_filename
 from app.core.mcp_tools import (
-    list_action_items_for_mcp,
     list_recordings_for_mcp,
 )
 from app.core.ocr import OcrError, answer_about_images, ocr_image, ocr_images
@@ -111,7 +109,6 @@ from app.models.reminder import UserReminder
 from app.models.summary_audio import SummaryAudioStatus
 from app.models.telegram import (
     TelegramAccount,
-    TelegramBotLinkCode,
     TelegramMediaGroupPart,
     TelegramPairing,
     TelegramUpdate,
@@ -126,15 +123,26 @@ router = APIRouter(prefix="/telegram", tags=["telegram"])
 PAIRING_TTL = timedelta(minutes=15)
 PAIRING_PREFIX = "link_"
 CONSENT_CALLBACK_DATA = "consent:accept"
-DELETE_CALLBACK_DATA = "account:delete"
 TERMS_URL = "https://wai.computer/terms"
 PRIVACY_URL = "https://wai.computer/privacy"
-BOT_LINK_CODE_TTL = timedelta(minutes=15)
-BOT_LINK_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-BOT_LINK_CODE_LENGTH = 8
 CHAT_ACTION_INTERVAL_SECONDS = 4.0
 REMINDER_TEXT_LIMIT = 1200
 TELEGRAM_PENDING_RECORDING_TTL = timedelta(hours=6)
+# Pre-signup replay: how many buffered messages we re-route after the consent
+# tap, and how stale a buffered message may be before we drop it.
+TELEGRAM_PENDING_SIGNUP_REPLAY_LIMIT = 5
+TELEGRAM_PENDING_SIGNUP_REPLAY_TTL = timedelta(hours=24)
+TELEGRAM_PRESIGNUP_LEAD = (
+    "Похоже, у тебя ещё нет аккаунта WaiComputer. Твоё сообщение не потеряется — "
+    "нажми кнопку, и я сразу его обработаю."
+)
+TELEGRAM_CONSENT_WELCOME = (
+    "Аккаунт создан ✅\n\n"
+    "Пришли первое голосовое, файл или ссылку — сделаю расшифровку и краткое "
+    "содержание.\n\n"
+    "Что ещё я умею: /help"
+)
+TELEGRAM_CONSENT_WELCOME_REPLAY_SUFFIX = "\n\nУже обрабатываю твоё сообщение."
 TELEGRAM_RECORDING_IMPORT_ERROR_REPLY = "Не смог обработать запись. Попробуй позже."
 TELEGRAM_WAI_GENERIC_ERROR_REPLY = "Не получилось обработать запрос к Wai. Попробуй еще раз."
 TELEGRAM_WAI_RETRYABLE_ERROR_REPLY = (
@@ -147,8 +155,7 @@ _REMIND_RELATIVE_RE = re.compile(
     re.IGNORECASE,
 )
 # Deliberately minimal: everyday actions go through natural language (the
-# typed slash commands still work — they share handlers with the NL intents),
-# and the rare account commands are discoverable via /settings, not the menu.
+# typed slash commands still work — they share handlers with the NL intents).
 TELEGRAM_BOT_COMMANDS = [
     {"command": "help", "description": "Что умеет WaiComputer в Telegram"},
 ]
@@ -208,10 +215,6 @@ class TelegramPairingResponse(BaseModel):
     expires_at: datetime
 
 
-class TelegramLinkCodeClaimRequest(BaseModel):
-    code: str = Field(min_length=1, max_length=32)
-
-
 def _token_hash(token: str) -> str:
     return sha256(token.encode("utf-8")).hexdigest()
 
@@ -262,15 +265,18 @@ def _telegram_help_text(*, linked: bool) -> str:
         status_line = "Сначала привяжи Telegram к WaiComputer."
     return (
         f"{status_line}\n\n"
+        "Что умеет WaiComputer:\n"
+        "— голосовые, аудио и видео → расшифровка + саммари "
+        "(кнопки: 🌐 страница, 🎧 озвучка)\n"
+        "— фото и документы → сохраню и отвечу на вопросы\n"
+        "— ссылки, включая YouTube → краткое содержание\n\n"
         "Просто пиши или говори:\n"
         "«запомни люблю короткие ответы» — сохраню в память\n"
         "«напомни через 10 минут позвонить» — напомню здесь\n"
-        "«найди дорожная карта» — поищу по записям и материалам\n"
-        "«покажи последние встречи», «дайджест за неделю»\n"
+        "«найди дорожная карта» — поищу по записям\n"
+        "«дайджест за неделю», «покажи последние встречи»\n"
         "или любой вопрос — отвечу по твоим данным.\n\n"
-        "Голосовые, аудио и видео сохраняю как записи. "
-        "Документы (PDF, Word, таблицы, тексты) добавляю в материалы.\n\n"
-        "Аккаунт и данные: /settings"
+        "Веб-версия: /web · Аккаунт и данные: /settings"
     )
 
 
@@ -550,15 +556,6 @@ def _validate_reminder_text(text: str) -> str:
 
 def _format_reminder_due_at(due_at: datetime) -> str:
     return due_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-
-def _normalize_bot_link_code(code: str) -> str:
-    return "".join(ch for ch in code.upper() if ch in string.ascii_uppercase + string.digits)
-
-
-def _format_bot_link_code(code: str) -> str:
-    normalized = _normalize_bot_link_code(code)
-    return f"{normalized[:4]}-{normalized[4:]}"
 
 
 async def _load_account(db: AsyncSession, telegram_user_id: int) -> TelegramAccount | None:
@@ -1177,132 +1174,6 @@ async def _consume_pairing(
     )
 
 
-async def _create_bot_link_code(
-    db: AsyncSession,
-    *,
-    telegram_user_id: int,
-    telegram_chat_id: int,
-    username: str | None,
-    first_name: str | None,
-    last_name: str | None,
-) -> str:
-    expires_at = datetime.now(timezone.utc) + BOT_LINK_CODE_TTL
-    for _ in range(10):
-        code = "".join(secrets.choice(BOT_LINK_CODE_ALPHABET) for _ in range(BOT_LINK_CODE_LENGTH))
-        existing = (
-            await db.execute(
-                select(TelegramBotLinkCode).where(
-                    TelegramBotLinkCode.token_hash == _token_hash(code)
-                )
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            continue
-        db.add(
-            TelegramBotLinkCode(
-                token_hash=_token_hash(code),
-                telegram_user_id=telegram_user_id,
-                telegram_chat_id=telegram_chat_id,
-                username=username,
-                first_name=first_name,
-                last_name=last_name,
-                expires_at=expires_at,
-            )
-        )
-        await db.commit()
-        return code
-    raise TelegramClientError("Telegram link code collision")
-
-
-async def _send_bot_link_code(
-    db: AsyncSession,
-    client: TelegramBotClient,
-    *,
-    message: dict[str, Any],
-    intro: str,
-) -> None:
-    from_user = _telegram_user(message)
-    chat_id = _telegram_chat_id(message)
-    if from_user is None or chat_id is None:
-        return
-    telegram_user_id = from_user.get("id")
-    if not isinstance(telegram_user_id, int):
-        return
-    code = await _create_bot_link_code(
-        db,
-        telegram_user_id=telegram_user_id,
-        telegram_chat_id=chat_id,
-        username=from_user.get("username"),
-        first_name=from_user.get("first_name"),
-        last_name=from_user.get("last_name"),
-    )
-    await client.send_message(
-        chat_id,
-        (
-            f"{intro}\n\n"
-            "Открой WaiComputer -> Настройки -> Telegram и введи код:\n"
-            f"{_format_bot_link_code(code)}\n\n"
-            "Код действует 15 минут."
-        ),
-        reply_to_message_id=message.get("message_id"),
-    )
-
-
-async def _consume_bot_link_code(
-    db: AsyncSession,
-    *,
-    code: str,
-    user_id: Any,
-) -> TelegramAccount:
-    normalized = _normalize_bot_link_code(code)
-    if len(normalized) != BOT_LINK_CODE_LENGTH:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Код привязки неверный или устарел.",
-        )
-    now = datetime.now(timezone.utc)
-    result = await db.execute(
-        select(TelegramBotLinkCode).where(
-            and_(
-                TelegramBotLinkCode.token_hash == _token_hash(normalized),
-                TelegramBotLinkCode.consumed_at.is_(None),
-                TelegramBotLinkCode.expires_at > now,
-            )
-        )
-    )
-    link_code = result.scalar_one_or_none()
-    if link_code is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Код привязки неверный или устарел.",
-        )
-
-    account = await _apply_telegram_link(
-        db,
-        user_id=user_id,
-        telegram_user_id=link_code.telegram_user_id,
-        telegram_chat_id=link_code.telegram_chat_id,
-        username=link_code.username,
-        first_name=link_code.first_name,
-        last_name=link_code.last_name,
-    )
-    link_code.user_id = user_id
-    link_code.consumed_at = now
-    await db.commit()
-    return account
-
-
-@router.post("/link/claim", response_model=TelegramLinkStatus)
-async def claim_link_code(
-    request: TelegramLinkCodeClaimRequest,
-    user: CurrentUser,
-    db: Database,
-) -> TelegramLinkStatus:
-    _require_bot_runtime()
-    account = await _consume_bot_link_code(db, code=request.code, user_id=user.id)
-    return _status_from_account(account)
-
-
 def _telegram_user(message: dict[str, Any]) -> dict[str, Any] | None:
     user = message.get("from")
     return user if isinstance(user, dict) else None
@@ -1414,16 +1285,13 @@ async def _send_consent_prompt(
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
-    intro = lead or (
-        "WaiComputer — твой второй мозг прямо в Telegram."
-    )
+    intro = lead or "WaiComputer — твой второй мозг в Telegram."
     text = (
         f"{intro}\n\n"
-        "Присылай голосовые, видео, фото, документы и ссылки — расшифрую, сделаю "
-        "краткое содержание, отвечу на вопросы и запомню важное.\n\n"
-        "Нажми кнопку, чтобы создать аккаунт. Это значит, что ты принимаешь "
-        f"Условия использования ({TERMS_URL}) и Политику конфиденциальности "
-        f"({PRIVACY_URL})."
+        "Пришли голосовое, файл, ссылку или вопрос — расшифрую, сделаю саммари "
+        "и запомню важное.\n\n"
+        "Нажимая кнопку, ты принимаешь Условия использования "
+        f"({TERMS_URL}) и Политику конфиденциальности ({PRIVACY_URL})."
     )
     await client.send_message(
         chat_id,
@@ -1453,14 +1321,39 @@ async def _handle_consent_callback(
         )
         return
     await client.answer_callback_query(callback_id, text="Готово!")
-    welcome = "Аккаунт WaiComputer создан. " + _telegram_help_text(linked=True)
+
+    telegram_user_id = from_user.get("id")
+    account = (
+        await _load_account(db, telegram_user_id)
+        if isinstance(telegram_user_id, int)
+        else None
+    )
+    pending: list[TelegramUpdate] = []
+    if account is not None and isinstance(telegram_user_id, int):
+        pending = await _collect_pending_signup_replays(
+            db, telegram_user_id=telegram_user_id
+        )
+
+    welcome = TELEGRAM_CONSENT_WELCOME
+    if pending:
+        welcome += TELEGRAM_CONSENT_WELCOME_REPLAY_SUFFIX
+    sent_welcome = False
     if isinstance(message_id, int):
         try:
             await client.edit_message_text(chat_id, message_id, welcome)
-            return
+            sent_welcome = True
         except TelegramClientError:
             logger.warning("consent welcome edit failed; sending fresh message")
-    await client.send_message(chat_id, welcome)
+    if not sent_welcome:
+        await client.send_message(chat_id, welcome)
+
+    # Replay the buffered pre-signup messages last so the welcome lands first,
+    # then each message's own processing status follows it in the chat.
+    if account is not None:
+        for row in pending:
+            await _replay_pending_signup_update(
+                db, client, account=account, row=row
+            )
 
 
 async def _handle_start_command(
@@ -1569,6 +1462,40 @@ async def _handle_help_command(
     await client.send_message(
         chat_id,
         _telegram_help_text(linked=linked),
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_web_command(
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+) -> None:
+    """Reply with the WaiComputer web app link (the /help footer promises it)."""
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    base = settings.frontend_url.rstrip("/")
+    await client.send_message(
+        chat_id,
+        f"Веб-версия WaiComputer: {base}/dashboard",
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_settings_command(
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+) -> None:
+    """Reply with the account/data settings link (the /help footer promises it)."""
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    base = settings.frontend_url.rstrip("/")
+    await client.send_message(
+        chat_id,
+        f"Аккаунт и данные: {base}/dashboard#settings",
         reply_to_message_id=message.get("message_id"),
     )
 
@@ -1714,34 +1641,6 @@ async def _handle_search_command(
         client,
         chat_id,
         _format_search_results(results, query=clean_query),
-        reply_to_message_id=message.get("message_id"),
-    )
-
-
-async def _handle_settings_command(
-    client: TelegramBotClient,
-    *,
-    message: dict[str, Any],
-    linked: bool,
-) -> None:
-    chat_id = _telegram_chat_id(message)
-    if chat_id is None:
-        return
-    status_text = "привязан" if linked else "не привязан"
-    await client.send_message(
-        chat_id,
-        (
-            f"Telegram сейчас {status_text}.\n\n"
-            "Аккаунт и данные:\n"
-            "/web — ссылка для входа в веб-версию\n"
-            "/email you@example.com — привязать email\n"
-            "/mcp — MCP-токен для подключения агентов\n"
-            "/export — скачать копию своих данных\n"
-            "/delete — удалить аккаунт и все данные\n"
-            "/link — привязать уже существующий аккаунт\n\n"
-            "Управление привязкой: Settings → Telegram "
-            "в приложении WaiComputer или веб-дашборде."
-        ),
         reply_to_message_id=message.get("message_id"),
     )
 
@@ -1913,6 +1812,12 @@ async def _handle_account_command(
     if intent == "help":
         await _handle_help_command(client, message=message, linked=True)
         return True
+    if intent == "web":
+        await _handle_web_command(client, message=message)
+        return True
+    if intent == "settings":
+        await _handle_settings_command(client, message=message)
+        return True
     if await _ensure_active_user(db, client, message=message, account=account) is None:
         return True
     if intent == "remember":
@@ -1932,272 +1837,7 @@ async def _handle_account_command(
     if intent == "search":
         await _handle_search_command(db, client, message=message, account=account, query=arg)
         return True
-    if intent == "settings":
-        await _handle_settings_command(client, message=message, linked=True)
-        return True
-    if intent in {"web", "login"}:
-        await _handle_web_login_command(db, client, message=message, account=account)
-        return True
-    if intent in {"mcp", "token"}:
-        await _handle_mcp_command(db, client, message=message, account=account)
-        return True
-    if intent == "email":
-        await _handle_email_command(db, client, message=message, account=account, arg=arg)
-        return True
-    if intent == "export":
-        await _handle_export_command(db, client, message=message, account=account)
-        return True
-    if intent == "delete":
-        await _send_delete_confirm(client, message=message)
-        return True
     return False
-
-
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-
-async def _handle_email_command(
-    db: AsyncSession,
-    client: TelegramBotClient,
-    *,
-    message: dict[str, Any],
-    account: TelegramAccount,
-    arg: str,
-) -> None:
-    """Verify-then-link: email a confirm link that attaches the address on click."""
-    from app.core.email import send_email_verification_email
-    from app.core.security import create_email_verification_token
-
-    chat_id = _telegram_chat_id(message)
-    if chat_id is None:
-        return
-    user = await _ensure_active_user(db, client, message=message, account=account)
-    if user is None:
-        return
-    email = arg.strip().lower()
-    if not _EMAIL_RE.match(email):
-        await client.send_message(
-            chat_id,
-            "Формат: /email you@example.com",
-            reply_to_message_id=message.get("message_id"),
-        )
-        return
-    existing = (
-        await db.execute(select(User).where(User.email == email, User.id != account.user_id))
-    ).scalar_one_or_none()
-    if existing is not None:
-        await client.send_message(
-            chat_id,
-            "Этот email уже привязан к другому аккаунту WaiComputer. "
-            "Войди в тот аккаунт и привяжи Telegram оттуда.",
-            reply_to_message_id=message.get("message_id"),
-        )
-        return
-    token = create_email_verification_token(account.user_id, email)
-    locale = "ru" if (user.region or "") == "ru" else "en"
-    try:
-        await send_email_verification_email(email, token, locale=locale)
-    except Exception:  # noqa: BLE001 - surface the failure; never attach an unverified email.
-        logger.exception("email verification send failed")
-        await client.send_message(
-            chat_id,
-            "Не удалось отправить письмо. Попробуй позже.",
-            reply_to_message_id=message.get("message_id"),
-        )
-        return
-    await client.send_message(
-        chat_id,
-        f"Отправил письмо на {email}. Нажми ссылку в письме, чтобы подтвердить адрес.",
-        reply_to_message_id=message.get("message_id"),
-    )
-
-
-async def _handle_export_command(
-    db: AsyncSession,
-    client: TelegramBotClient,
-    *,
-    message: dict[str, Any],
-    account: TelegramAccount,
-) -> None:
-    """Send the user a JSON export of their data (recordings, action items, memory)."""
-    chat_id = _telegram_chat_id(message)
-    if chat_id is None:
-        return
-    if await _ensure_active_user(db, client, message=message, account=account) is None:
-        return
-    async def _all_pages(fetch) -> list:
-        items: list = []
-        cursor: str | None = None
-        for _ in range(100):  # safety cap (~2000 items)
-            page = await fetch(cursor)
-            items.extend(page.get("results", []))
-            cursor = page.get("next_cursor")
-            if not cursor:
-                break
-        return items
-
-    recordings = await _all_pages(
-        lambda c: list_recordings_for_mcp(db, account.user_id, limit=20, cursor=c)
-    )
-    action_items = await _all_pages(
-        lambda c: list_action_items_for_mcp(db, account.user_id, limit=20, cursor=c)
-    )
-    blocks = await user_memory_module.get_or_seed_blocks(db, account.user_id)
-    export = {
-        "recordings": recordings,
-        "action_items": action_items,
-        "memory": user_memory_module.render_for_prompt(blocks),
-    }
-    payload = json.dumps(export, ensure_ascii=False, indent=2, default=str).encode("utf-8")
-    await client.send_document(
-        chat_id,
-        filename="waicomputer-export.json",
-        data=payload,
-        reply_to_message_id=message.get("message_id"),
-    )
-    await client.send_message(
-        chat_id,
-        (
-            f"Экспорт готов: {len(recordings)} "
-            f"{ru_plural(len(recordings), 'запись', 'записи', 'записей')}, "
-            f"{len(action_items)} "
-            f"{ru_plural(len(action_items), 'задача', 'задачи', 'задач')}."
-        ),
-        reply_to_message_id=message.get("message_id"),
-    )
-
-
-def _delete_inline_keyboard() -> dict[str, Any]:
-    return {
-        "inline_keyboard": [
-            [{"text": "🗑 Да, удалить навсегда", "callback_data": DELETE_CALLBACK_DATA}]
-        ]
-    }
-
-
-async def _send_delete_confirm(
-    client: TelegramBotClient,
-    *,
-    message: dict[str, Any],
-) -> None:
-    """Ask for an explicit tap before destructive account deletion."""
-    chat_id = _telegram_chat_id(message)
-    if chat_id is None:
-        return
-    await client.send_message(
-        chat_id,
-        (
-            "Удалить аккаунт WaiComputer и ВСЕ данные (записи, расшифровки, "
-            "саммари, задачи, память)? Это необратимо.\n\n"
-            "Сделай /export, если хочешь сначала скачать копию."
-        ),
-        reply_to_message_id=message.get("message_id"),
-        reply_markup=_delete_inline_keyboard(),
-    )
-
-
-async def _handle_delete_callback(
-    db: AsyncSession,
-    client: TelegramBotClient,
-    *,
-    account: TelegramAccount,
-    callback_id: str,
-    chat_id: int | None,
-    message_id: int | None,
-) -> None:
-    """Permanently delete the account after the confirm tap (cascades all data)."""
-    user = await db.get(User, account.user_id)
-    if user is None:
-        await client.answer_callback_query(callback_id, text="Аккаунт не найден.")
-        return
-    await db.delete(user)  # ON DELETE CASCADE removes recordings/items/telegram link
-    await db.commit()
-    await client.answer_callback_query(callback_id, text="Удалено.")
-    farewell = "Аккаунт и все данные удалены. Чтобы начать заново, отправь /start."
-    if chat_id is None:
-        return
-    if isinstance(message_id, int):
-        try:
-            await client.edit_message_text(chat_id, message_id, farewell)
-            return
-        except TelegramClientError:
-            logger.warning("delete farewell edit failed; sending fresh message")
-    await client.send_message(chat_id, farewell)
-
-
-async def _handle_web_login_command(
-    db: AsyncSession,
-    client: TelegramBotClient,
-    *,
-    message: dict[str, Any],
-    account: TelegramAccount,
-) -> None:
-    """DM a one-time web sign-in link (reuses the magic-link verify flow)."""
-    from app.api.routes.auth import _new_magic_token
-
-    chat_id = _telegram_chat_id(message)
-    if chat_id is None:
-        return
-    user = await _ensure_active_user(db, client, message=message, account=account)
-    if user is None:
-        return
-    token = _new_magic_token()
-    user.magic_link_token = token
-    user.magic_link_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
-    await db.flush()
-    await db.commit()
-    url = f"{settings.frontend_url}/auth/verify?token={token}"
-    await client.send_message(
-        chat_id,
-        (
-            "Ссылка для входа в веб-версию WaiComputer (одноразовая, действует "
-            f"15 минут):\n\n{url}\n\n"
-            "Открой её на компьютере, чтобы пользоваться WaiComputer в браузере."
-        ),
-        reply_to_message_id=message.get("message_id"),
-    )
-
-
-async def _handle_mcp_command(
-    db: AsyncSession,
-    client: TelegramBotClient,
-    *,
-    message: dict[str, Any],
-    account: TelegramAccount,
-) -> None:
-    """Mint a read-only wc_live_ MCP token in the trusted bot context and DM it once."""
-    from app.core.api_keys import API_KEY_READ_SCOPE, generate_api_key
-    from app.models.api_key import ApiKey
-
-    chat_id = _telegram_chat_id(message)
-    if chat_id is None:
-        return
-    if await _ensure_active_user(db, client, message=message, account=account) is None:
-        return
-    plaintext, token_hash_value, prefix, last4 = generate_api_key()
-    db.add(
-        ApiKey(
-            user_id=account.user_id,
-            name="Telegram",
-            token_hash=token_hash_value,
-            prefix=prefix,
-            last4=last4,
-            scopes=[API_KEY_READ_SCOPE],
-        )
-    )
-    await db.flush()
-    await db.commit()
-    await client.send_message(
-        chat_id,
-        (
-            "Твой read-only MCP-токен (показываю один раз — сохрани его):\n\n"
-            f"<code>{escape(plaintext)}</code>\n\n"
-            "MCP URL: https://wai.computer/mcp\n"
-            "Подключай как Bearer-токен. Управлять ключами — в Settings → API tokens."
-        ),
-        reply_to_message_id=message.get("message_id"),
-        parse_mode="HTML",
-    )
 
 
 async def _ensure_telegram_conversation(
@@ -2393,7 +2033,10 @@ async def _handle_url_message(
     if fetch_error:
         await client.send_message(
             chat_id,
-            format_fetch_error_reply(fetch_error.get("message", "Couldn't fetch that link.")),
+            format_fetch_error_reply(
+                fetch_error.get("message", "Couldn't fetch that link."),
+                fetch_error.get("code"),
+            ),
             reply_to_message_id=message.get("message_id"),
             parse_mode="HTML",
         )
@@ -2788,16 +2431,6 @@ async def _handle_callback_query(
     if account is None:
         await client.answer_callback_query(
             callback_id, text="Сначала привяжи Telegram."
-        )
-        return
-    if data == DELETE_CALLBACK_DATA:
-        await _handle_delete_callback(
-            db,
-            client,
-            account=account,
-            callback_id=callback_id,
-            chat_id=chat_id,
-            message_id=message_id if isinstance(message_id, int) else None,
         )
         return
     if data.startswith(SUMMARY_RETRY_CALLBACK_PREFIX):
@@ -4305,6 +3938,226 @@ async def _import_telegram_media_and_reply(
     await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
 
 
+async def _refresh_account_from_message(
+    db: AsyncSession,
+    account: TelegramAccount,
+    *,
+    message: dict[str, Any],
+) -> None:
+    """Sync the account's chat id + profile fields from the latest message.
+
+    Mirrors the field updates the normal dispatch path applies before routing,
+    so the pre-signup replay path stays byte-for-byte consistent with it."""
+    from_user = _telegram_user(message) or {}
+    chat_id = _telegram_chat_id(message)
+    if chat_id is not None:
+        account.telegram_chat_id = chat_id
+    account.username = from_user.get("username")
+    account.first_name = from_user.get("first_name")
+    account.last_name = from_user.get("last_name")
+    account.last_seen_at = datetime.now(timezone.utc)
+    await db.flush()
+
+
+async def _route_account_message(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    """Dispatch one message from a provisioned account to its handler.
+
+    The single source of truth for how a linked user's message is routed —
+    shared by the live webhook path and the post-signup replay so a replayed
+    first message behaves identically to one sent after signup."""
+    chat_id = _telegram_chat_id(message)
+    command = _message_command(message)
+    media = _extract_media(message)
+    if media is not None:
+        await _route_media_message(
+            db, client, message=message, account=account, media=media
+        )
+    elif (photo := _extract_photo(message)) is not None:
+        media_group_id = message.get("media_group_id")
+        if isinstance(media_group_id, str) and media_group_id:
+            await _buffer_album_photo(db, client, message=message, account=account)
+        else:
+            await _handle_photo_message(
+                db, client, message=message, account=account, photo=photo
+            )
+    elif (document := _extract_document(message)) is not None:
+        await _handle_document_message(
+            db, client, message=message, account=account, document=document
+        )
+    elif isinstance(message.get("document"), dict):
+        await _send_unsupported_document_message(
+            client,
+            chat_id=chat_id,
+            reply_to_message_id=message.get("message_id"),
+        )
+    elif command:
+        intent = command[0].removeprefix("/")
+        arg = command[1]
+        if intent == "find":
+            intent = "search"
+        handled = await _handle_account_command(
+            db, client, message=message, account=account, intent=intent, arg=arg
+        )
+        if not handled:
+            await client.send_message(
+                chat_id,
+                _telegram_help_text(linked=True),
+                reply_to_message_id=message.get("message_id"),
+            )
+    else:
+        text = _message_text(message)
+        if not text:
+            unsupported = _unsupported_message_kind(message)
+            if unsupported is not None:
+                await client.send_message(
+                    chat_id,
+                    f"Пока не умею обрабатывать {unsupported}. "
+                    "Пришли голосовое, видео, фото, документ или текст.",
+                    reply_to_message_id=message.get("message_id"),
+                )
+            else:
+                await client.send_message(
+                    chat_id,
+                    "Пришли голосовое, видео, фото, документ или вопрос текстом.",
+                    reply_to_message_id=message.get("message_id"),
+                )
+        else:
+            await _route_text_like(
+                db,
+                client,
+                message=message,
+                account=account,
+                text=text,
+                input_modality="text",
+            )
+
+
+async def _stash_pending_signup_update(
+    db: AsyncSession,
+    update_id: int,
+    *,
+    update: dict[str, Any],
+    telegram_user_id: int,
+) -> None:
+    """Persist a brand-new user's pre-signup message for post-consent replay.
+
+    The idempotency row already exists (the webhook inserted it before
+    dispatching); we attach the raw update and flip it to ``pending_signup`` so
+    the consent callback can find and re-route it."""
+    stored = await db.get(TelegramUpdate, update_id)
+    if stored is None:
+        return
+    stored.payload = update
+    stored.telegram_user_id = telegram_user_id
+    stored.status = "pending_signup"
+    await db.flush()
+
+
+def _as_aware(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+async def _collect_pending_signup_replays(
+    db: AsyncSession,
+    *,
+    telegram_user_id: int,
+) -> list[TelegramUpdate]:
+    """Return the buffered pre-signup updates worth replaying, newest-capped.
+
+    Marks the losers ``skipped``: everything beyond the most recent
+    ``TELEGRAM_PENDING_SIGNUP_REPLAY_LIMIT`` messages, anything older than
+    ``TELEGRAM_PENDING_SIGNUP_REPLAY_TTL``, and rows with no usable payload."""
+    now = datetime.now(timezone.utc)
+    rows = (
+        await db.execute(
+            select(TelegramUpdate)
+            .where(
+                TelegramUpdate.telegram_user_id == telegram_user_id,
+                TelegramUpdate.status == "pending_signup",
+            )
+            .order_by(TelegramUpdate.update_id)
+        )
+    ).scalars().all()
+    if not rows:
+        return []
+
+    over_cap = (
+        rows[:-TELEGRAM_PENDING_SIGNUP_REPLAY_LIMIT]
+        if len(rows) > TELEGRAM_PENDING_SIGNUP_REPLAY_LIMIT
+        else []
+    )
+    recent = rows[-TELEGRAM_PENDING_SIGNUP_REPLAY_LIMIT:]
+    for row in over_cap:
+        row.status = "skipped"
+        row.processed_at = now
+
+    eligible: list[TelegramUpdate] = []
+    for row in recent:
+        received = _as_aware(row.received_at)
+        payload = row.payload if isinstance(row.payload, dict) else None
+        message = payload.get("message") if isinstance(payload, dict) else None
+        if received is not None and now - received > TELEGRAM_PENDING_SIGNUP_REPLAY_TTL:
+            row.status = "skipped"
+            row.processed_at = now
+        elif not isinstance(message, dict):
+            row.status = "skipped"
+            row.processed_at = now
+        else:
+            eligible.append(row)
+    await db.flush()
+    return eligible
+
+
+async def _replay_pending_signup_update(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    account: TelegramAccount,
+    row: TelegramUpdate,
+) -> None:
+    """Re-route one buffered pre-signup message, marking the row's outcome.
+
+    Routing helpers commit before enqueuing Celery work (the known
+    commit-before-enqueue contract), so we commit the status mark too — one bad
+    message must never roll back an already-enqueued import."""
+    message = row.payload["message"]
+    update_id = row.update_id
+    try:
+        await _refresh_account_from_message(db, account, message=message)
+        await _route_account_message(db, client, message=message, account=account)
+    except Exception as exc:  # noqa: BLE001 — one failure must not block the rest
+        logger.warning(
+            "telegram pending-signup replay failed update_id=%s code=%s",
+            update_id,
+            type(exc).__name__,
+        )
+        with suppress(Exception):
+            await db.rollback()
+        fresh = await db.get(TelegramUpdate, update_id)
+        if fresh is not None:
+            fresh.status = "failed"
+            fresh.error_code = type(exc).__name__[:100]
+            fresh.error_message = str(exc)[:2000] or "pending-signup replay failed"
+            fresh.processed_at = datetime.now(timezone.utc)
+            with suppress(Exception):
+                await db.commit()
+        return
+    row.status = "completed"
+    row.processed_at = datetime.now(timezone.utc)
+    with suppress(Exception):
+        await db.commit()
+
+
 async def _handle_update(update: dict[str, Any]) -> None:
     update_id = update.get("update_id")
     if not isinstance(update_id, int):
@@ -4356,19 +4209,6 @@ async def _handle_update(update: dict[str, Any]) -> None:
                 return
 
             account = await _load_account(db, telegram_user_id)
-            if command and command[0] == "/link":
-                # Explicit: link this Telegram to an EXISTING WaiComputer account.
-                if account is not None:
-                    await _handle_help_command(client, message=message, linked=True)
-                else:
-                    await _send_bot_link_code(
-                        db,
-                        client,
-                        message=message,
-                        intro="Чтобы привязать уже существующий аккаунт WaiComputer:",
-                    )
-                await _mark_update(db, update_id, "completed")
-                return
             if command and command[0] == "/help":
                 if account is None:
                     await _send_consent_prompt(client, message=message)
@@ -4379,104 +4219,20 @@ async def _handle_update(update: dict[str, Any]) -> None:
 
             if account is None:
                 # First message from a brand-new user (e.g. a voice note before
-                # signup): offer account creation; they resend after the consent tap.
+                # signup): offer account creation AND stash the raw update so the
+                # message is replayed — not dropped — right after the consent tap.
+                await _stash_pending_signup_update(
+                    db, update_id, update=update, telegram_user_id=telegram_user_id
+                )
                 await _send_consent_prompt(
                     client,
                     message=message,
-                    lead="Похоже, у тебя ещё нет аккаунта WaiComputer.",
+                    lead=TELEGRAM_PRESIGNUP_LEAD,
                 )
-                await _mark_update(db, update_id, "completed")
                 return
-            account.telegram_chat_id = chat_id
-            account.username = from_user.get("username")
-            account.first_name = from_user.get("first_name")
-            account.last_name = from_user.get("last_name")
-            account.last_seen_at = datetime.now(timezone.utc)
-            await db.flush()
-
-            media = _extract_media(message)
-            if media is not None:
-                media_message = True
-                await _route_media_message(
-                    db,
-                    client,
-                    message=message,
-                    account=account,
-                    media=media,
-                )
-            elif (photo := _extract_photo(message)) is not None:
-                media_group_id = message.get("media_group_id")
-                if isinstance(media_group_id, str) and media_group_id:
-                    await _buffer_album_photo(
-                        db, client, message=message, account=account
-                    )
-                else:
-                    await _handle_photo_message(
-                        db,
-                        client,
-                        message=message,
-                        account=account,
-                        photo=photo,
-                    )
-            elif (document := _extract_document(message)) is not None:
-                await _handle_document_message(
-                    db,
-                    client,
-                    message=message,
-                    account=account,
-                    document=document,
-                )
-            elif isinstance(message.get("document"), dict):
-                await _send_unsupported_document_message(
-                    client,
-                    chat_id=chat_id,
-                    reply_to_message_id=message.get("message_id"),
-                )
-            elif command:
-                intent = command[0].removeprefix("/")
-                arg = command[1]
-                if intent == "find":
-                    intent = "search"
-                handled = await _handle_account_command(
-                    db,
-                    client,
-                    message=message,
-                    account=account,
-                    intent=intent,
-                    arg=arg,
-                )
-                if not handled:
-                    await client.send_message(
-                        chat_id,
-                        _telegram_help_text(linked=True),
-                        reply_to_message_id=message.get("message_id"),
-                    )
-            else:
-                text = _message_text(message)
-                if not text:
-                    unsupported = _unsupported_message_kind(message)
-                    if unsupported is not None:
-                        await client.send_message(
-                            chat_id,
-                            f"Пока не умею обрабатывать {unsupported}. "
-                            "Пришли голосовое, видео, фото, документ или текст.",
-                            reply_to_message_id=message.get("message_id"),
-                        )
-                    else:
-                        await client.send_message(
-                            chat_id,
-                            "Пришли голосовое, видео, фото, документ или вопрос текстом.",
-                            reply_to_message_id=message.get("message_id"),
-                        )
-                else:
-                    await _route_text_like(
-                        db,
-                        client,
-                        message=message,
-                        account=account,
-                        text=text,
-                        input_modality="text",
-                    )
+            await _refresh_account_from_message(db, account, message=message)
+            media_message = _extract_media(message) is not None
+            await _route_account_message(db, client, message=message, account=account)
             await _mark_update(db, update_id, "completed")
         except (TelegramClientError, RecordingImportError) as exc:
             logger.warning(

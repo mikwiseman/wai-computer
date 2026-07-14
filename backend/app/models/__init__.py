@@ -80,7 +80,6 @@ from app.models.reminder import UserReminder
 from app.models.summary_audio import SummaryAudioArtifact, SummaryAudioStatus
 from app.models.telegram import (
     TelegramAccount,
-    TelegramBotLinkCode,
     TelegramPairing,
     TelegramUpdate,
 )
@@ -146,7 +145,6 @@ __all__ = [
     "RefreshToken",
     "UserReminder",
     "TelegramAccount",
-    "TelegramBotLinkCode",
     "TelegramPairing",
     "TelegramUpdate",
     "Commitment",

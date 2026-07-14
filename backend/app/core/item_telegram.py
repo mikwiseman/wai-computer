@@ -13,6 +13,15 @@ from app.models.item import Item, ItemSummary
 
 _MAX_MOMENTS = 8
 
+# Russian copy for fetch-error codes whose stored message is English (the web
+# app keeps the English message; only the otherwise-Russian bot remaps).
+_FETCH_ERROR_RU_BY_CODE = {
+    "twitter_share_required": (
+        "X (Twitter) не даёт приложениям читать посты. Пришли текст поста "
+        "(или скриншот) — добавлю в твой мозг."
+    ),
+}
+
 
 def _youtube_moment_link(item: Item) -> str | None:
     """Base URL for deep-linking key moments into a YouTube video."""
@@ -82,6 +91,11 @@ def format_item_reply(item: Item, summary: ItemSummary | None) -> str:
     return body
 
 
-def format_fetch_error_reply(message: str) -> str:
-    """Reply when a URL couldn't be fetched (e.g. Instagram/TikTok)."""
-    return escape(message)
+def format_fetch_error_reply(message: str, code: str | None = None) -> str:
+    """Reply when a URL couldn't be fetched (e.g. Instagram/TikTok).
+
+    Known error codes render curated Russian copy so the bot never surfaces an
+    English message; unknown codes fall through to the stored message verbatim
+    (escaped) — no silent swallowing."""
+    localized = _FETCH_ERROR_RU_BY_CODE.get(code) if code else None
+    return escape(localized or message)

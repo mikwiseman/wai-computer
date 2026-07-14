@@ -596,7 +596,7 @@ async def test_callback_query_consent_dispatch_provisions_account(
 
     assert capture.callback_answers == [{"id": "cb-consent", "text": "Готово!"}]
     assert capture.edited_messages
-    assert "Аккаунт WaiComputer создан" in capture.edited_messages[0]["text"]
+    assert "Аккаунт создан" in capture.edited_messages[0]["text"]
     account = (
         await db_session.execute(
             select(TelegramAccount).where(TelegramAccount.telegram_user_id == 911001)
@@ -605,86 +605,9 @@ async def test_callback_query_consent_dispatch_provisions_account(
     assert account.telegram_chat_id == 911001
 
 
-@pytest.mark.asyncio
-async def test_callback_query_delete_dispatch_removes_user(db_session: AsyncSession):
-    user, _account = await _linked_account(db_session, "tg-cb-delete@example.com", 911002)
-    user_id = user.id
-    capture = _Capture()
-
-    await telegram_routes._handle_callback_query(
-        db_session,
-        capture,
-        callback_query={
-            "id": "cb-del",
-            "from": {"id": 911002},
-            "data": telegram_routes.DELETE_CALLBACK_DATA,
-            "message": {"message_id": 9, "chat": {"id": 911002}},
-        },
-    )
-
-    assert capture.callback_answers == [{"id": "cb-del", "text": "Удалено."}]
-    assert capture.edited_messages
-    assert "удалены" in capture.edited_messages[0]["text"]
-    assert await db_session.get(User, user_id) is None
-
-
 # ---------------------------------------------------------------------------
 # _handle_email_command edges (2249, 2252, 2255-2260, 2276-2283)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_email_command_validation_and_send_failure(
-    db_session: AsyncSession, monkeypatch
-):
-    user, account = await _linked_account(db_session, "tg-email@example.com", 911003)
-
-    # No chat id: nothing happens.
-    capture = _Capture()
-    await telegram_routes._handle_email_command(
-        db_session, capture, message={"message_id": 1}, account=account, arg="a@b.com"
-    )
-    assert capture.messages == []
-
-    # Malformed address gets the usage hint.
-    capture = _Capture()
-    await telegram_routes._handle_email_command(
-        db_session,
-        capture,
-        message={"message_id": 2, "chat": {"id": 911003}},
-        account=account,
-        arg="not-an-email",
-    )
-    assert "Формат: /email" in capture.messages[-1]["text"]
-
-    # SMTP failure is surfaced; the address is never attached.
-    async def fail_send(*args: object, **kwargs: object):
-        raise RuntimeError("smtp down")
-
-    monkeypatch.setattr("app.core.email.send_email_verification_email", fail_send)
-    capture = _Capture()
-    await telegram_routes._handle_email_command(
-        db_session,
-        capture,
-        message={"message_id": 3, "chat": {"id": 911003}},
-        account=account,
-        arg="new@example.com",
-    )
-    assert "Не удалось отправить письмо" in capture.messages[-1]["text"]
-
-    # Inactive accounts are blocked before validation.
-    user.account_status = "suspended"
-    await db_session.flush()
-    capture = _Capture()
-    await telegram_routes._handle_email_command(
-        db_session,
-        capture,
-        message={"message_id": 4, "chat": {"id": 911003}},
-        account=account,
-        arg="new@example.com",
-    )
-    assert len(capture.messages) == 1
-    assert "не активен" in capture.messages[0]["text"]
 
 
 # ---------------------------------------------------------------------------
