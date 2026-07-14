@@ -246,11 +246,13 @@ def test_help_text_covers_headline_features():
 
 
 @pytest.mark.asyncio
-async def test_web_and_settings_commands_reply_with_links(
+async def test_web_command_mints_one_time_signin_link(
     db_session: AsyncSession, monkeypatch
 ):
+    """Telegram-born accounts are emailless/passwordless: /web must DM a magic
+    sign-in link, not a plain dashboard URL that dead-ends at the login wall."""
     monkeypatch.setattr(telegram_routes.settings, "frontend_url", "https://wai.computer")
-    _user_obj, account = await _provisioned_account(db_session, 560001)
+    user_obj, account = await _provisioned_account(db_session, 560001)
     client = _FakeClient()
     handled_web = await telegram_routes._handle_account_command(
         db_session,
@@ -260,18 +262,37 @@ async def test_web_and_settings_commands_reply_with_links(
         intent="web",
         arg="",
     )
+    assert handled_web
+    await db_session.refresh(user_obj)
+    assert user_obj.magic_link_token
+    assert user_obj.magic_link_expires is not None
+    web_text = client.messages[0][1]
+    assert (
+        f"https://wai.computer/auth/verify?token={user_obj.magic_link_token}"
+        in web_text
+    )
+    assert "15 минут" in web_text
+
+
+@pytest.mark.asyncio
+async def test_settings_command_replies_with_link_and_web_hint(
+    db_session: AsyncSession, monkeypatch
+):
+    monkeypatch.setattr(telegram_routes.settings, "frontend_url", "https://wai.computer")
+    _user_obj, account = await _provisioned_account(db_session, 560002)
+    client = _FakeClient()
     handled_settings = await telegram_routes._handle_account_command(
         db_session,
         client,
-        message={"message_id": 2, "from": {"id": 560001}, "chat": {"id": 560001}},
+        message={"message_id": 2, "from": {"id": 560002}, "chat": {"id": 560002}},
         account=account,
         intent="settings",
         arg="",
     )
-    assert handled_web and handled_settings
-    texts = [t for _chat_id, t in client.messages]
-    assert any("https://wai.computer/dashboard" in t for t in texts)
-    assert any("#settings" in t for t in texts)
+    assert handled_settings
+    settings_text = client.messages[0][1]
+    assert "https://wai.computer/dashboard#settings" in settings_text
+    assert "/web" in settings_text
 
 
 # ---------------------------------------------------------------------------

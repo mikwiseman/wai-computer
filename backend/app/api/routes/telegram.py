@@ -1467,18 +1467,38 @@ async def _handle_help_command(
 
 
 async def _handle_web_command(
+    db: AsyncSession,
     client: TelegramBotClient,
     *,
     message: dict[str, Any],
+    account: TelegramAccount,
 ) -> None:
-    """Reply with the WaiComputer web app link (the /help footer promises it)."""
+    """DM a one-time web sign-in link (the /help footer promises web access).
+
+    Telegram-born accounts are emailless and passwordless, so a plain dashboard
+    URL would dead-end at the login wall — the magic-link mint is the only way
+    those users can reach the web app."""
+    from app.api.routes.auth import _new_magic_token
+
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
+    user = await _ensure_active_user(db, client, message=message, account=account)
+    if user is None:
+        return
+    token = _new_magic_token()
+    user.magic_link_token = token
+    user.magic_link_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    await db.flush()
+    await db.commit()
     base = settings.frontend_url.rstrip("/")
     await client.send_message(
         chat_id,
-        f"Веб-версия WaiComputer: {base}/dashboard",
+        (
+            "Ссылка для входа в веб-версию WaiComputer (одноразовая, действует "
+            f"15 минут):\n\n{base}/auth/verify?token={token}\n\n"
+            "Открой её на компьютере — там же Настройки, экспорт и удаление аккаунта."
+        ),
         reply_to_message_id=message.get("message_id"),
     )
 
@@ -1495,7 +1515,11 @@ async def _handle_settings_command(
     base = settings.frontend_url.rstrip("/")
     await client.send_message(
         chat_id,
-        f"Аккаунт и данные: {base}/dashboard#settings",
+        (
+            f"Аккаунт и данные: {base}/dashboard#settings\n"
+            "Если ещё не входил в веб — сначала отправь /web, пришлю "
+            "одноразовую ссылку для входа."
+        ),
         reply_to_message_id=message.get("message_id"),
     )
 
@@ -1813,7 +1837,7 @@ async def _handle_account_command(
         await _handle_help_command(client, message=message, linked=True)
         return True
     if intent == "web":
-        await _handle_web_command(client, message=message)
+        await _handle_web_command(db, client, message=message, account=account)
         return True
     if intent == "settings":
         await _handle_settings_command(client, message=message)
