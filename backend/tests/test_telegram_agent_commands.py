@@ -34,6 +34,7 @@ class _Capture:
         self.deleted_messages: list[dict[str, Any]] = []
         self.callback_answers: list[dict[str, Any]] = []
         self.edited_messages: list[dict[str, Any]] = []
+        self.edited_markups: list[dict[str, Any]] = []
         self.file = TelegramFile("file-id", "photos/file.jpg", 12)
         self.data = b"telegram photo"
 
@@ -63,6 +64,21 @@ class _Capture:
         self, callback_query_id: str, *, text: str | None = None
     ) -> None:
         self.callback_answers.append({"id": callback_query_id, "text": text})
+
+    async def edit_message_reply_markup(
+        self,
+        chat_id: int,
+        message_id: int,
+        reply_markup: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        self.edited_markups.append(
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "reply_markup": reply_markup,
+            }
+        )
+        return {"message_id": message_id}
 
     async def edit_message_text(
         self,

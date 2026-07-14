@@ -21,28 +21,29 @@ from tests.test_telegram_agent_commands import (  # reuse the shared harness
 
 
 class _AudioCapture(_Capture):
-    """Fake client that also records sendAudio calls."""
+    """Fake client that also records voice deliveries."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.audios: list[dict[str, Any]] = []
+        self.voices: list[dict[str, Any]] = []
 
-    async def send_audio(
+    async def send_voice(
         self,
         chat_id: int,
         *,
         filename: str,
         data: bytes,
-        title: str | None = None,
         caption: str | None = None,
+        duration: int | None = None,
         reply_to_message_id: int | None = None,
     ) -> dict[str, Any]:
-        self.audios.append(
+        self.voices.append(
             {
                 "chat_id": chat_id,
                 "filename": filename,
                 "data": data,
-                "title": title,
+                "caption": caption,
+                "duration": duration,
                 "reply_to_message_id": reply_to_message_id,
             }
         )
@@ -145,12 +146,15 @@ async def test_tts_callback_reuses_succeeded_artifact_and_sends_audio(
     await _tts_callback(db_session, capture, account, f"tts:rec:{rec.id}")
 
     assert capture.callback_answers[-1]["text"] == "Отправляю аудио"
-    assert len(capture.audios) == 1
-    sent = capture.audios[0]
+    assert len(capture.voices) == 1
+    sent = capture.voices[0]
     assert sent["data"] == b"ID3-mp3-bytes"
-    assert sent["title"] == "Планёрка"
+    # Native voice bubble: the source title rides in the caption.
+    assert sent["caption"] == "🎧 Планёрка"
     assert sent["filename"].endswith(".mp3")
     assert sent["reply_to_message_id"] == 55
+    # The delivered track retires the 🎧 button on the summary message.
+    assert capture.edited_markups[-1]["message_id"] == 55
 
 
 @pytest.mark.asyncio
@@ -183,16 +187,20 @@ async def test_tts_callback_enqueues_generation_when_queued(db_session, monkeypa
     capture = _AudioCapture()
     await _tts_callback(db_session, capture, account, f"tts:rec:{rec.id}")
 
-    assert enqueued == [
-        {
-            "artifact_id": str(artifact.id),
-            "chat_id": 9601,
-            "reply_to_message_id": 55,
-        }
-    ]
+    assert len(enqueued) == 1
+    assert enqueued[0]["artifact_id"] == str(artifact.id)
+    assert enqueued[0]["chat_id"] == 9601
+    assert enqueued[0]["reply_to_message_id"] == 55
+    assert enqueued[0]["button_message_id"] == 55
+    # The worker gets both keyboards: restore-on-failure and retire-on-success.
+    assert enqueued[0]["final_markup"] == {"inline_keyboard": []}
     assert artifact.task_id == "task-123"
     assert "Готовлю аудио" in capture.callback_answers[-1]["text"]
-    assert capture.audios == []
+    assert capture.voices == []
+    # The tapped button flips to its ⏳ pending state in place.
+    pending = capture.edited_markups[-1]["reply_markup"]["inline_keyboard"]
+    assert pending[0][0]["callback_data"] == telegram_routes.TTS_PENDING_CALLBACK_DATA
+    assert "⏳" in pending[0][0]["text"]
 
 
 @pytest.mark.asyncio
@@ -212,7 +220,7 @@ async def test_tts_callback_running_artifact_says_in_progress(db_session, monkey
     await _tts_callback(db_session, capture, account, f"tts:rec:{rec.id}")
 
     assert "уже готовится" in capture.callback_answers[-1]["text"]
-    assert capture.audios == []
+    assert capture.voices == []
 
 
 @pytest.mark.asyncio
@@ -234,7 +242,7 @@ async def test_tts_callback_surfaces_artifact_errors(db_session, monkeypatch):
 
     assert capture.callback_answers[-1]["text"] == "Не получилось"
     assert "Озвучить не получится" in capture.messages[-1]["text"]
-    assert capture.audios == []
+    assert capture.voices == []
 
 
 @pytest.mark.asyncio
@@ -250,7 +258,7 @@ async def test_tts_callback_ignores_malformed_data(db_session, monkeypatch):
     await _tts_callback(db_session, capture, account, "tts:rec:not-a-uuid")
     await _tts_callback(db_session, capture, account, "tts:nope:" + str(uuid4()))
 
-    assert capture.audios == []
+    assert capture.voices == []
     assert len(capture.callback_answers) == 2
 
 
@@ -314,4 +322,4 @@ async def test_tts_callback_succeeded_but_file_missing_is_honest(
     await _tts_callback(db_session, capture, account, f"tts:rec:{rec.id}")
 
     assert any("отправить не вышло" in m["text"] for m in capture.messages)
-    assert capture.audios == []
+    assert capture.voices == []

@@ -68,6 +68,8 @@ def test_task_success_runs_clean() -> None:
 class _Client:
     def __init__(self) -> None:
         self.messages: list[dict[str, Any]] = []
+        self.actions: list[str] = []
+        self.edited_markups: list[dict[str, Any]] = []
         self.send_failures = 0
 
     async def send_message(self, chat_id: int, text: str, **kwargs: Any) -> dict:
@@ -76,6 +78,20 @@ class _Client:
             raise TelegramClientError("telegram down")
         self.messages.append({"chat_id": chat_id, "text": text})
         return {"message_id": 1}
+
+    async def send_chat_action(self, chat_id: int, action: str = "typing") -> None:
+        self.actions.append(action)
+
+    async def edit_message_reply_markup(
+        self,
+        chat_id: int,
+        message_id: int,
+        reply_markup: dict[str, Any] | None,
+    ) -> dict:
+        self.edited_markups.append(
+            {"message_id": message_id, "reply_markup": reply_markup}
+        )
+        return {"message_id": message_id}
 
 
 async def _seed_artifact(

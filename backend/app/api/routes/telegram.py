@@ -146,21 +146,11 @@ _REMIND_RELATIVE_RE = re.compile(
     r"\s+(.+)$",
     re.IGNORECASE,
 )
+# Deliberately minimal: everyday actions go through natural language (the
+# typed slash commands still work — they share handlers with the NL intents),
+# and the rare account commands are discoverable via /settings, not the menu.
 TELEGRAM_BOT_COMMANDS = [
-    {"command": "start", "description": "Привязать Telegram и показать статус"},
     {"command": "help", "description": "Что умеет WaiComputer в Telegram"},
-    {"command": "link", "description": "Получить новый код привязки"},
-    {"command": "remember", "description": "Сохранить факт в память Wai"},
-    {"command": "remind", "description": "Поставить напоминание в Telegram"},
-    {"command": "meetings", "description": "Последние встречи"},
-    {"command": "digest", "description": "Дайджест за сегодня или N дней"},
-    {"command": "search", "description": "Поиск по записям и расшифровкам"},
-    {"command": "web", "description": "Ссылка для входа в веб-версию"},
-    {"command": "mcp", "description": "Получить MCP-токен для агентов"},
-    {"command": "email", "description": "Привязать email для входа и чеков"},
-    {"command": "export", "description": "Скачать копию своих данных"},
-    {"command": "delete", "description": "Удалить аккаунт и все данные"},
-    {"command": "settings", "description": "Статус привязки и настройки"},
 ]
 CYRILLIC_SLUG_MAP = str.maketrans(
     {
@@ -272,24 +262,15 @@ def _telegram_help_text(*, linked: bool) -> str:
         status_line = "Сначала привяжи Telegram к WaiComputer."
     return (
         f"{status_line}\n\n"
-        "Что можно делать:\n"
-        "/remember [human|topics|preferences] <факт> — сохранить факт в память Wai\n"
-        "/remind in 10m <текст> — напомнить в Telegram; также можно ISO-время с timezone\n"
-        "/meetings — последние встречи\n"
-        "/digest [дней] — дайджест всего, что я сохранил за период\n"
-        "/search <запрос> — поиск по записям, саммари и расшифровкам\n"
-        "/web — ссылка для входа в веб-версию\n"
-        "/mcp — MCP-токен для подключения агентов\n"
-        "/email you@example.com — привязать email\n"
-        "/export — скачать копию своих данных\n"
-        "/delete — удалить аккаунт и все данные\n"
-        "/link — привязать уже существующий аккаунт\n"
-        "/settings — где управлять привязкой\n\n"
-        "Можно без команд: «запомни люблю короткие ответы», "
-        "«покажи последние встречи», «найди дорожная карта». "
-        "Голосовые, аудио и видео сохраняю как записи. PDF, Word, PowerPoint, "
-        "Excel, OpenDocument, HTML/MHTML, TXT/Markdown/RTF, CSV/JSON/YAML/XML, "
-        "EPUB и email-файлы добавляю в материалы."
+        "Просто пиши или говори:\n"
+        "«запомни люблю короткие ответы» — сохраню в память\n"
+        "«напомни через 10 минут позвонить» — напомню здесь\n"
+        "«найди дорожная карта» — поищу по записям и материалам\n"
+        "«покажи последние встречи», «дайджест за неделю»\n"
+        "или любой вопрос — отвечу по твоим данным.\n\n"
+        "Голосовые, аудио и видео сохраняю как записи. "
+        "Документы (PDF, Word, таблицы, тексты) добавляю в материалы.\n\n"
+        "Аккаунт и данные: /settings"
     )
 
 
@@ -671,6 +652,9 @@ def _transcript_document_filename(recording: Any, *, media_kind: str | None) -> 
 
 SUMMARY_RETRY_CALLBACK_PREFIX = "sumretry:"
 TTS_CALLBACK_PREFIX = "tts:"
+# A tapped-but-still-generating button. Kept under the tts: prefix so the
+# router funnels it into the same handler.
+TTS_PENDING_CALLBACK_DATA = f"{TTS_CALLBACK_PREFIX}pending"
 
 
 def _tts_button(kind: str, source_id: Any) -> dict[str, Any]:
@@ -678,6 +662,39 @@ def _tts_button(kind: str, source_id: Any) -> dict[str, Any]:
         "text": "🎧 Озвучить",
         "callback_data": f"{TTS_CALLBACK_PREFIX}{kind}:{source_id}",
     }
+
+
+def _is_tts_button(button: Any) -> bool:
+    return isinstance(button, dict) and str(button.get("callback_data", "")).startswith(
+        TTS_CALLBACK_PREFIX
+    )
+
+
+def _keyboard_rows(markup: dict[str, Any] | None) -> list[list[dict[str, Any]]]:
+    rows = markup.get("inline_keyboard") if isinstance(markup, dict) else None
+    return rows if isinstance(rows, list) else []
+
+
+def _markup_with_tts_pending(markup: dict[str, Any] | None) -> dict[str, Any]:
+    """The tapped 🎧 button flips to a spinner-style pending state in place."""
+    pending = {"text": "⏳ Готовлю озвучку…", "callback_data": TTS_PENDING_CALLBACK_DATA}
+    rows = [
+        [pending if _is_tts_button(button) else button for button in row]
+        for row in _keyboard_rows(markup)
+    ]
+    if not rows:
+        rows = [[pending]]
+    return {"inline_keyboard": rows}
+
+
+def _markup_without_tts(markup: dict[str, Any] | None) -> dict[str, Any]:
+    """Once the voice message is delivered the button's job is done — the
+    track itself replaces it. Other buttons (share page) stay."""
+    rows = [
+        [button for button in row if not _is_tts_button(button)]
+        for row in _keyboard_rows(markup)
+    ]
+    return {"inline_keyboard": [row for row in rows if row]}
 
 
 def _recording_reply_keyboard(
@@ -1714,8 +1731,16 @@ async def _handle_settings_command(
     await client.send_message(
         chat_id,
         (
-            f"Telegram сейчас {status_text}. Управление привязкой: "
-            "открой Settings в приложении WaiComputer или веб-дашборде и найди блок Telegram."
+            f"Telegram сейчас {status_text}.\n\n"
+            "Аккаунт и данные:\n"
+            "/web — ссылка для входа в веб-версию\n"
+            "/email you@example.com — привязать email\n"
+            "/mcp — MCP-токен для подключения агентов\n"
+            "/export — скачать копию своих данных\n"
+            "/delete — удалить аккаунт и все данные\n"
+            "/link — привязать уже существующий аккаунт\n\n"
+            "Управление привязкой: Settings → Telegram "
+            "в приложении WaiComputer или веб-дашборде."
         ),
         reply_to_message_id=message.get("message_id"),
     )
@@ -2574,7 +2599,8 @@ async def deliver_summary_audio_to_telegram(
     chat_id: int,
     reply_to_message_id: int | None,
 ) -> None:
-    """Send a SUCCEEDED summary-audio artifact into the chat as a 🎧 track."""
+    """Send a SUCCEEDED summary-audio artifact into the chat as a native
+    voice bubble (waveform + inline playback), not a file attachment."""
     path = resolve_summary_audio_file_path(artifact)
     data = path.read_bytes()
     title = await _summary_audio_source_title(
@@ -2582,11 +2608,13 @@ async def deliver_summary_audio_to_telegram(
     )
     base = _safe_transcript_filename(title, media_kind="summary").removesuffix(".txt")
     extension = path.suffix.lstrip(".") or "mp3"
-    await client.send_audio(
+    duration = getattr(artifact, "duration_seconds", None)
+    await client.send_voice(
         chat_id,
         filename=f"{base}.{extension}",
         data=data,
-        title=title or "Саммари",
+        caption=f"🎧 {title}" if title else "🎧 Саммари",
+        duration=duration if isinstance(duration, int) else None,
         reply_to_message_id=reply_to_message_id,
     )
 
@@ -2600,11 +2628,18 @@ async def _handle_tts_callback(
     chat_id: int | None,
     reply_to_message_id: int | None,
     data: str,
+    message_markup: dict[str, Any] | None = None,
 ) -> None:
     """🎧 Озвучить: start-or-reuse the durable summary-audio artifact and deliver
     it to this chat — the wai-rocks "audio podcast", on demand instead of on
     every capture. Reuses the same artifact pipeline (ownership, caps, hash
-    dedupe) as the apps."""
+    dedupe) as the apps. The tapped button flips to ⏳ while the track renders
+    and disappears once the voice message lands."""
+    if data == TTS_PENDING_CALLBACK_DATA:
+        await client.answer_callback_query(
+            callback_id, text="Аудио уже готовится — момент"
+        )
+        return
     kind, _, raw_id = data.removeprefix(TTS_CALLBACK_PREFIX).partition(":")
     source_kind = {
         "rec": SUMMARY_AUDIO_SOURCE_RECORDING,
@@ -2652,6 +2687,15 @@ async def _handle_tts_callback(
                 f"Аудио есть, но отправить не вышло: {exc.message}",
                 reply_to_message_id=reply_to_message_id,
             )
+            return
+        # The track replaced the button — retire it, keep the other buttons.
+        if reply_to_message_id is not None:
+            try:
+                await client.edit_message_reply_markup(
+                    chat_id, reply_to_message_id, _markup_without_tts(message_markup)
+                )
+            except TelegramClientError:
+                pass  # cosmetic; the message may be too old to edit
         return
 
     if artifact.status == SummaryAudioStatus.QUEUED.value and not artifact.task_id:
@@ -2667,6 +2711,9 @@ async def _handle_tts_callback(
                 artifact_id=str(artifact.id),
                 chat_id=chat_id,
                 reply_to_message_id=reply_to_message_id,
+                button_message_id=reply_to_message_id,
+                restore_markup=message_markup,
+                final_markup=_markup_without_tts(message_markup),
             )
             artifact.task_id = str(async_result.id)
             await db.flush()
@@ -2686,6 +2733,17 @@ async def _handle_tts_callback(
         await client.answer_callback_query(
             callback_id, text="Готовлю аудио — пришлю сюда"
         )
+        # Flip the tapped button to its pending state so the chat shows work
+        # is underway even before the "recording voice…" header action.
+        if reply_to_message_id is not None:
+            try:
+                await client.edit_message_reply_markup(
+                    chat_id,
+                    reply_to_message_id,
+                    _markup_with_tts_pending(message_markup),
+                )
+            except TelegramClientError:
+                pass  # cosmetic
         return
 
     # RUNNING, or QUEUED with a task already claimed by another tap/app request.
@@ -2753,6 +2811,9 @@ async def _handle_callback_query(
         )
         return
     if data.startswith(TTS_CALLBACK_PREFIX):
+        cb_markup = (
+            cb_message.get("reply_markup") if isinstance(cb_message, dict) else None
+        )
         await _handle_tts_callback(
             db,
             client,
@@ -2761,6 +2822,7 @@ async def _handle_callback_query(
             chat_id=chat_id,
             reply_to_message_id=message_id if isinstance(message_id, int) else None,
             data=data,
+            message_markup=cb_markup if isinstance(cb_markup, dict) else None,
         )
         return
     parsed = _parse_action_callback(data)

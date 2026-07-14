@@ -337,6 +337,54 @@ class TelegramBotClient:
             files={"audio": (filename, data, "audio/mpeg")},
         )
 
+    async def send_voice(
+        self,
+        chat_id: int,
+        *,
+        filename: str,
+        data: bytes,
+        caption: str | None = None,
+        duration: int | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Send a track as a native voice bubble (waveform, inline playback,
+        speed control) instead of a file attachment. Telegram renders .OGG
+        (Opus), .MP3 and .M4A payloads as voice messages."""
+        payload = {"chat_id": str(chat_id)}
+        if caption:
+            payload["caption"] = caption
+        if duration is not None and duration > 0:
+            payload["duration"] = str(duration)
+        if reply_to_message_id is not None:
+            # Same tolerant reply shape as send_document.
+            payload["reply_parameters"] = json.dumps(
+                {
+                    "message_id": reply_to_message_id,
+                    "allow_sending_without_reply": True,
+                }
+            )
+        return await self._post_multipart(
+            "sendVoice",
+            data=payload,
+            files={"voice": (filename, data, "audio/mpeg")},
+        )
+
+    async def edit_message_reply_markup(
+        self,
+        chat_id: int,
+        message_id: int,
+        reply_markup: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Swap a message's inline keyboard in place — used to flip the
+        🎧 Озвучить button through its pending/done states. ``None`` (or an
+        empty keyboard) removes the buttons."""
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reply_markup": reply_markup if reply_markup is not None else {"inline_keyboard": []},
+        }
+        return await self._post("editMessageReplyMarkup", payload)
+
     async def send_chat_action(self, chat_id: int, action: str = "typing") -> None:
         await self._post("sendChatAction", {"chat_id": chat_id, "action": action})
 

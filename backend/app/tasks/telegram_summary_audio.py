@@ -9,6 +9,7 @@ failure path answers the sender — a tapped button must never end in silence.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from uuid import UUID
 
@@ -41,12 +42,46 @@ async def _notify(client: TelegramBotClient, chat_id: int, text: str) -> None:
         logger.warning("telegram summary audio notification failed")
 
 
+async def _set_button_markup(
+    client: TelegramBotClient,
+    *,
+    chat_id: int,
+    message_id: int | None,
+    markup: dict | None,
+) -> None:
+    """Best-effort inline-keyboard swap on the summary message — the button
+    states are cosmetic and must never fail the delivery."""
+    if message_id is None or markup is None:
+        return
+    try:
+        await client.edit_message_reply_markup(chat_id, message_id, markup)
+    except TelegramClientError:
+        logger.info("telegram summary audio: button markup edit skipped")
+
+
+async def _record_voice_heartbeat(client: TelegramBotClient, chat_id: int) -> None:
+    """Keep the chat header showing "recording voice message…" while the track
+    renders. Telegram clears a chat action after ~5s, so re-send every 4s."""
+    try:
+        while True:
+            try:
+                await client.send_chat_action(chat_id, "record_voice")
+            except TelegramClientError:
+                return  # cosmetic; never let the indicator kill the task
+            await asyncio.sleep(4)
+    except asyncio.CancelledError:
+        pass
+
+
 async def _run(
     *,
     artifact_id: str,
     chat_id: int,
     reply_to_message_id: int | None,
     task_id: str | None,
+    button_message_id: int | None = None,
+    restore_markup: dict | None = None,
+    final_markup: dict | None = None,
 ) -> None:
     # Route helpers own the delivery formatting; imported lazily so the worker
     # does not pay the FastAPI route module import unless a delivery runs.
@@ -61,6 +96,7 @@ async def _run(
         )
 
     if payload is not None:
+        heartbeat = asyncio.create_task(_record_voice_heartbeat(client, chat_id))
         try:
             result = await generate_summary_audio_for_payload(payload)
         except (XaiTTSError, SummaryAudioError) as exc:
@@ -74,6 +110,13 @@ async def _run(
                     error_message=message,
                 )
             await _notify(client, chat_id, _TTS_FAILURE_REPLY)
+            # Give the button back so the user can retry with one tap.
+            await _set_button_markup(
+                client,
+                chat_id=chat_id,
+                message_id=button_message_id,
+                markup=restore_markup,
+            )
             raise
         except Exception as exc:  # noqa: BLE001
             capture_sentry_exception(exc)
@@ -85,7 +128,17 @@ async def _run(
                     error_message="We couldn't create summary audio right now.",
                 )
             await _notify(client, chat_id, _TTS_FAILURE_REPLY)
+            await _set_button_markup(
+                client,
+                chat_id=chat_id,
+                message_id=button_message_id,
+                markup=restore_markup,
+            )
             raise
+        finally:
+            heartbeat.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat
 
         async with get_db_context() as db:
             await persist_summary_audio_generation_result(
@@ -110,8 +163,20 @@ async def _run(
                 "telegram summary audio: artifact not succeeded status=%s",
                 artifact.status,
             )
+            await _set_button_markup(
+                client,
+                chat_id=chat_id,
+                message_id=button_message_id,
+                markup=restore_markup,
+            )
             return
         try:
+            # The header flips from "recording…" to "sending voice message…"
+            # right before the upload lands.
+            try:
+                await client.send_chat_action(chat_id, "upload_voice")
+            except TelegramClientError:
+                pass  # cosmetic
             await deliver_summary_audio_to_telegram(
                 db,
                 client,
@@ -126,7 +191,20 @@ async def _run(
             await _notify(
                 client, chat_id, "Аудио готово, но отправить не вышло. Попробуй ещё раз."
             )
+            await _set_button_markup(
+                client,
+                chat_id=chat_id,
+                message_id=button_message_id,
+                markup=restore_markup,
+            )
             raise
+        # Delivered: the voice bubble replaces the button.
+        await _set_button_markup(
+            client,
+            chat_id=chat_id,
+            message_id=button_message_id,
+            markup=final_markup,
+        )
 
 
 @celery_app.task(
@@ -145,6 +223,9 @@ def deliver_summary_audio_telegram_task(
     artifact_id: str,
     chat_id: int,
     reply_to_message_id: int | None = None,
+    button_message_id: int | None = None,
+    restore_markup: dict | None = None,
+    final_markup: dict | None = None,
 ) -> None:
     try:
         logger.info("telegram summary audio task started artifact_id=%s", artifact_id)
@@ -154,6 +235,9 @@ def deliver_summary_audio_telegram_task(
                 chat_id=chat_id,
                 reply_to_message_id=reply_to_message_id,
                 task_id=getattr(self.request, "id", None),
+                button_message_id=button_message_id,
+                restore_markup=restore_markup,
+                final_markup=final_markup,
             )
         )
         logger.info("telegram summary audio task finished artifact_id=%s", artifact_id)
