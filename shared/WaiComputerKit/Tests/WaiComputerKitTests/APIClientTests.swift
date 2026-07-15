@@ -370,6 +370,60 @@ final class APIClientTests: XCTestCase {
 
     // MARK: - Auth Endpoint Tests
 
+    func testTelegramAuthStartAndStatusUseSplitTicketContract() async throws {
+        let client = makeClient()
+        let seenPaths = RequestPathRecorder()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            seenPaths.append(request.url!.path)
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            if request.url?.path == "/api/auth/telegram/start" {
+                let body = bodyJSON(from: request)
+                XCTAssertEqual(body?["client"] as? String, "macos")
+                XCTAssertEqual(body?["locale"] as? String, "ru")
+                return (response, Data("""
+                {
+                  "status": "pending",
+                  "bot_username": "waicomputer_bot",
+                  "deep_link": "tg://resolve?domain=waicomputer_bot&start=auth_start",
+                  "web_link": "https://t.me/waicomputer_bot?start=auth_start",
+                  "ticket": "poll-secret",
+                  "expires_at": "2026-07-15T12:10:00Z"
+                }
+                """.utf8))
+            }
+
+            let body = bodyJSON(from: request)
+            XCTAssertEqual(body?["ticket"] as? String, "poll-secret")
+            return (response, Data("""
+            {
+              "status": "approved",
+              "access_token": "access",
+              "refresh_token": "refresh",
+              "token_type": "bearer"
+            }
+            """.utf8))
+        }
+
+        let start = try await client.startTelegramAuth(locale: "ru")
+        XCTAssertEqual(start.ticket, "poll-secret")
+        XCTAssertTrue(start.webLink.absoluteString.contains("auth_start"))
+
+        let status = try await client.getTelegramAuthStatus(ticket: start.ticket)
+        XCTAssertEqual(status.status, "approved")
+        XCTAssertEqual(status.accessToken, "access")
+        XCTAssertEqual(status.refreshToken, "refresh")
+        XCTAssertEqual(
+            seenPaths.snapshot,
+            ["/api/auth/telegram/start", "/api/auth/telegram/status"]
+        )
+    }
+
     func testRegisterSendsCorrectPayload() async throws {
         let client = makeClient()
 

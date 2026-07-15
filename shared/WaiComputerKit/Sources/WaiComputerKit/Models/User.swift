@@ -3,7 +3,7 @@ import Foundation
 /// User model
 public struct User: Codable, Identifiable, Sendable {
     public let id: String
-    public let email: String
+    public let email: String?
     public let createdAt: Date
     public let hasPassword: Bool
     public let region: String
@@ -13,7 +13,7 @@ public struct User: Codable, Identifiable, Sendable {
 
     public init(
         id: String,
-        email: String,
+        email: String?,
         createdAt: Date,
         hasPassword: Bool = true,
         region: String = "global",
@@ -39,7 +39,7 @@ public struct User: Codable, Identifiable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
-        email = try container.decode(String.self, forKey: .email)
+        email = try container.decodeIfPresent(String.self, forKey: .email)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         hasPassword = try container.decodeIfPresent(Bool.self, forKey: .hasPassword) ?? true
         region = try container.decodeIfPresent(String.self, forKey: .region) ?? "global"
@@ -64,6 +64,56 @@ public struct AuthResponse: Codable, Sendable {
     public let tokenType: String
 
     private enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case refreshToken = "refresh_token"
+        case tokenType = "token_type"
+    }
+}
+
+public struct TelegramAuthStartRequest: Codable, Sendable {
+    public let client: String
+    public let locale: String
+
+    public init(client: String, locale: String) {
+        self.client = client
+        self.locale = locale
+    }
+}
+
+public struct TelegramAuthStartResponse: Codable, Sendable {
+    public let status: String
+    public let botUsername: String
+    public let deepLink: URL
+    public let webLink: URL
+    public let ticket: String
+    public let expiresAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case status
+        case botUsername = "bot_username"
+        case deepLink = "deep_link"
+        case webLink = "web_link"
+        case ticket
+        case expiresAt = "expires_at"
+    }
+}
+
+public struct TelegramAuthStatusRequest: Codable, Sendable {
+    public let ticket: String
+
+    public init(ticket: String) {
+        self.ticket = ticket
+    }
+}
+
+public struct TelegramAuthStatusResponse: Codable, Sendable {
+    public let status: String
+    public let accessToken: String?
+    public let refreshToken: String?
+    public let tokenType: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case status
         case accessToken = "access_token"
         case refreshToken = "refresh_token"
         case tokenType = "token_type"

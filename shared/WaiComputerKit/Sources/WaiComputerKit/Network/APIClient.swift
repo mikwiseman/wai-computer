@@ -883,6 +883,16 @@ public actor APIClient {
         return try await self.request(.POST, path: "/api/auth/magic-link", body: request)
     }
 
+    public func startTelegramAuth(locale: String) async throws -> TelegramAuthStartResponse {
+        let request = TelegramAuthStartRequest(client: "macos", locale: locale)
+        return try await self.request(.POST, path: "/api/auth/telegram/start", body: request)
+    }
+
+    public func getTelegramAuthStatus(ticket: String) async throws -> TelegramAuthStatusResponse {
+        let request = TelegramAuthStatusRequest(ticket: ticket)
+        return try await self.request(.POST, path: "/api/auth/telegram/status", body: request)
+    }
+
     public func requestPasswordReset(email: String, locale: String? = nil) async throws -> MessageResponse {
         let request = PasswordResetRequest(email: email, locale: locale)
         return try await self.request(.POST, path: "/api/auth/forgot-password", body: request)

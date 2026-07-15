@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import AVFoundation
 import WaiComputerKit
@@ -860,11 +861,7 @@ class MacAppState: ObservableObject {
             }
         }
 
-        if hasCompletedPreAuthOnboarding {
-            beginStoredSessionRestoreIfNeeded()
-        } else {
-            isCheckingAuth = false
-        }
+        beginStoredSessionRestoreIfNeeded()
 
         // Meeting detection runs for the whole app lifetime; prompts are
         // suppressed while a recording session owns the mic.
@@ -1067,6 +1064,57 @@ class MacAppState: ObservableObject {
                 acceptedLegalTerms: acceptedLegalTerms
             )
             magicLinkSent = true
+        } catch let apiError as APIError {
+            handleAPIError(apiError)
+        } catch {
+            self.error = error.userFacingMessage(context: .authentication)
+        }
+
+        isLoading = false
+    }
+
+    func signInWithTelegram() async {
+        isLoading = true
+        error = nil
+
+        do {
+            let start = try await apiClient.startTelegramAuth(locale: authLocale)
+            guard NSWorkspace.shared.open(start.webLink) else {
+                self.error = authLocale == "ru"
+                    ? "Не удалось открыть Telegram. Проверь, что приложение или браузер доступны."
+                    : "Could not open Telegram. Check that the app or browser is available."
+                isLoading = false
+                return
+            }
+
+            while Date() < start.expiresAt {
+                try Task.checkCancellation()
+                try await Task.sleep(for: .milliseconds(1500))
+                let status = try await apiClient.getTelegramAuthStatus(ticket: start.ticket)
+                guard status.status == "approved" else { continue }
+                guard let accessToken = status.accessToken,
+                      let refreshToken = status.refreshToken
+                else {
+                    self.error = authLocale == "ru"
+                        ? "Telegram подтвердил вход, но сервер не вернул полную сессию."
+                        : "Telegram approved sign-in, but the server returned an incomplete session."
+                    isLoading = false
+                    return
+                }
+
+                await apiClient.setAccessToken(accessToken)
+                await apiClient.setRefreshToken(refreshToken)
+                persistSession(accessToken: accessToken, refreshToken: refreshToken)
+                await loadCurrentUser()
+                isLoading = false
+                return
+            }
+
+            self.error = authLocale == "ru"
+                ? "Время входа через Telegram истекло. Начни ещё раз."
+                : "Telegram sign-in expired. Start again."
+        } catch is CancellationError {
+            // The view disappeared; no user-facing error is needed.
         } catch let apiError as APIError {
             handleAPIError(apiError)
         } catch {

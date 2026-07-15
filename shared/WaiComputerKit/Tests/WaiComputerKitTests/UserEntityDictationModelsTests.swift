@@ -37,6 +37,15 @@ final class UserEntityDictationModelsTests: XCTestCase {
         XCTAssertTrue(user.hasPassword, "missing has_password should default to true")
     }
 
+    func testTelegramUserDecodesWithoutEmail() throws {
+        let json = """
+        {"id":"u-telegram","email":null,"created_at":"2026-07-15T10:00:00Z","has_password":false}
+        """.data(using: .utf8)!
+        let user = try decoder.decode(User.self, from: json)
+        XCTAssertNil(user.email)
+        XCTAssertFalse(user.hasPassword)
+    }
+
     func testUserRoundTrip() throws {
         let user = User(
             id: "u1",

@@ -27,11 +27,12 @@ final class AuthFlowUITests: XCTestCase {
         let emailField = app.textFields["Email"]
         XCTAssertTrue(emailField.waitForExistence(timeout: 8), "Email field should exist")
 
-        // Password secure field (found by placeholder text)
-        let passwordField = app.secureTextFields["Password"]
-        XCTAssertTrue(passwordField.waitForExistence(timeout: 3), "Password field should exist")
+        XCTAssertTrue(
+            app.buttons["auth-telegram-button"].waitForExistence(timeout: 3),
+            "Telegram should be available from the first auth screen"
+        )
+        XCTAssertFalse(app.secureTextFields["Password"].exists, "Password is a secondary path")
 
-        // Submit button (found by accessibility identifier)
         let submitButton = app.buttons.matching(identifier: "auth-submit-button").firstMatch
         XCTAssertTrue(submitButton.waitForExistence(timeout: 3), "Submit button should exist")
     }
@@ -51,7 +52,7 @@ final class AuthFlowUITests: XCTestCase {
     }
 
     @MainActor
-    func testUnauthenticatedLaunchShowsPreAuthOnboardingBeforeAuth() throws {
+    func testUnauthenticatedLaunchShowsAuthBeforeOnboarding() throws {
         let app = XCUIApplication()
         app.configureWaiComputerUITestLaunch(
             scenario: "auth_flow",
@@ -60,8 +61,8 @@ final class AuthFlowUITests: XCTestCase {
         app.launch()
         app.activate()
 
-        XCTAssertTrue(app.staticTexts["Welcome to WaiComputer"].waitForExistence(timeout: 8), "Unauthenticated first launch should start with local onboarding")
-        XCTAssertFalse(app.textFields["Email"].exists, "Auth should appear after pre-auth onboarding")
+        XCTAssertTrue(app.textFields["Email"].waitForExistence(timeout: 8), "Users should create or restore their account before device setup")
+        XCTAssertFalse(app.staticTexts["Welcome to WaiComputer"].exists, "Local device setup follows account creation")
         XCTAssertFalse(app.staticTexts["Try dictation now"].exists, "The dictation sandbox requires an authenticated, configured DictationManager")
     }
 }

@@ -3,6 +3,11 @@ import * as api from "./api";
 import { apiFetch, apiFetchResponse, apiUpload } from "./http";
 
 vi.mock("./http", () => ({
+  ApiError: class ApiError extends Error {
+    constructor(_status: number, message: string) {
+      super(message);
+    }
+  },
   apiFetch: vi.fn(),
   apiFetchResponse: vi.fn(),
   apiUpload: vi.fn(),
@@ -104,6 +109,46 @@ describe("api client wrappers", () => {
       method: "POST",
       body: JSON.stringify({ token: "token" }),
     });
+  });
+
+  it("starts and exchanges Telegram auth with the split polling ticket", async () => {
+    mockedApiFetch
+      .mockResolvedValueOnce({ status: "pending", ticket: "poll-secret" } as never)
+      .mockResolvedValueOnce({ status: "pending" } as never)
+      .mockResolvedValueOnce({
+        status: "approved",
+        access_token: "telegram-access",
+        refresh_token: "telegram-refresh",
+        token_type: "bearer",
+      } as never);
+
+    await api.startTelegramAuth({ client: "web", locale: "ru" });
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/auth/telegram/start", {
+      method: "POST",
+      body: JSON.stringify({ client: "web", locale: "ru" }),
+    });
+
+    await expect(api.getTelegramAuthStatus("poll-secret")).resolves.toEqual({
+      status: "pending",
+    });
+    await api.getTelegramAuthStatus("poll-secret");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/auth/telegram/status", {
+      method: "POST",
+      body: JSON.stringify({ ticket: "poll-secret" }),
+    });
+    expect(document.cookie).toContain("wai_access_token=telegram-access");
+    expect(document.cookie).toContain("wai_refresh_token=telegram-refresh");
+  });
+
+  it("rejects an approved Telegram response without a complete session", async () => {
+    mockedApiFetch.mockResolvedValueOnce({
+      status: "approved",
+      access_token: "telegram-access",
+    } as never);
+
+    await expect(api.getTelegramAuthStatus("poll-secret")).rejects.toThrow(
+      "Telegram sign-in returned an incomplete session",
+    );
   });
 
   it("passes magic-link locale hints when provided", async () => {

@@ -266,7 +266,7 @@ struct SettingsView: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(user.email)
+                Text(user.email ?? "Telegram")
                     .font(Typography.headingMedium)
                     .foregroundStyle(Palette.textPrimary)
                     .lineLimit(1)
@@ -365,7 +365,7 @@ struct SettingsView: View {
         ) {
             if let user = appState.currentUser {
                 regularValueRow(
-                    title: user.email,
+                    title: user.email ?? "Telegram",
                     subtitle: t("Signed in", "Вход выполнен"),
                     systemImage: "person.crop.circle.fill",
                     identifier: "settings-regular-account-user"

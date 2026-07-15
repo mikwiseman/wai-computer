@@ -1,119 +1,89 @@
 "use client";
 
-import { FormEvent, useEffect, useState, type ReactNode } from "react";
+import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { login, register, requestMagicLink, requestPasswordReset } from "@/lib/api";
+import { MonitorDown, Send } from "lucide-react";
+import {
+  getTelegramAuthStatus,
+  login,
+  requestMagicLink,
+  requestPasswordReset,
+  startTelegramAuth,
+} from "@/lib/api";
 import type { AuthLocale } from "@/lib/auth-locale";
 import { ApiError } from "@/lib/http";
+import { MAC_DMG_URL } from "@/lib/links";
+import type { TelegramAuthStart } from "@/lib/types";
 import { PasswordField } from "@/components/PasswordField";
 
 type Mode = "login" | "register";
 type Locale = AuthLocale;
-type PendingAction = "magic" | "password" | "forgot";
+type PendingAction = "magic" | "password" | "forgot" | "telegram";
 
-const COPY: Record<
-  Locale,
-  {
-    title: Record<Mode, string>;
-    email: string;
-    primarySubmit: string;
-    sendMagicLoading: string;
-    passwordMode: string;
-    magicMode: string;
-    password: string;
-    passwordSubmit: Record<Mode, string>;
-    passwordLoading: string;
-    forgotPassword: string;
-    forgotTitle: string;
-    forgotSubmit: string;
-    forgotLoading: string;
-    forgotGeneric: string;
-    unexpectedError: string;
-    invalidCredentials: string;
-    registerError: string;
-    legalConsent: string;
-    terms: string;
-    privacy: string;
-    switchLink: Record<Mode, string>;
-    tagline: string;
-    sentTitle: string;
-    sentBody: (email: string) => string;
-    sentResend: string;
-  }
-> = {
+const TELEGRAM_POLL_INTERVAL_MS = 1500;
+
+const COPY = {
   en: {
-    title: {
-      login: "Sign in",
-      register: "Create account",
-    },
+    title: "Start anywhere. Continue everywhere.",
+    subtitle: "One account. Web, Mac, Telegram. Sign in or sign up automatically.",
     email: "Email",
-    primarySubmit: "Email me a sign-in link",
-    sendMagicLoading: "Sending…",
-    passwordMode: "Use password instead",
-    magicMode: "Email me a sign-in link instead",
+    continue: "Continue",
+    continuing: "Sending…",
+    or: "or",
+    telegram: "Continue with Telegram",
+    telegramOpening: "Opening Telegram…",
+    telegramWaiting: "Press Start in Telegram. This page will sign you in automatically.",
+    passwordMode: "Use password",
+    magicMode: "Use email link",
     password: "Password",
-    passwordSubmit: {
-      login: "Sign in with password",
-      register: "Create account with password",
-    },
-    passwordLoading: "Please wait…",
+    passwordSubmit: "Sign in",
+    passwordLoading: "Signing in…",
     forgotPassword: "Forgot password?",
-    forgotTitle: "Password reset",
-    forgotSubmit: "Send password reset link",
+    forgotSubmit: "Send reset link",
     forgotLoading: "Sending…",
     forgotGeneric: "If this email is registered, we sent a password reset link.",
     unexpectedError: "Unexpected error",
     invalidCredentials: "Invalid email or password",
-    registerError: "Unable to create account. Try signing in or request a magic link.",
+    legalRequired: "Accept the Terms of Service and Privacy Policy to continue.",
     legalConsent: "I agree to the {terms} and {privacy}.",
     terms: "Terms of Service",
     privacy: "Privacy Policy",
-    switchLink: {
-      login: "Need an account?",
-      register: "Have an account?",
-    },
-    tagline: "Your second brain",
+    mac: "Get the Mac app",
     sentTitle: "Check your email",
-    sentBody: (email) => `We sent a sign-in link to ${email}`,
-    sentResend: "Send again",
+    sentBody: (email: string) => `We sent a secure sign-in link to ${email}.`,
+    sentResend: "Use another email",
   },
   ru: {
-    title: {
-      login: "Войти",
-      register: "Создать аккаунт",
-    },
+    title: "Начни где удобно. Продолжай везде.",
+    subtitle: "Один аккаунт. Web, Mac, Telegram. Вход или регистрация — автоматически.",
     email: "Email",
-    primarySubmit: "Отправить ссылку для входа",
-    sendMagicLoading: "Отправляем…",
-    passwordMode: "Использовать пароль",
-    magicMode: "Войти по ссылке на email",
+    continue: "Продолжить",
+    continuing: "Отправляем…",
+    or: "или",
+    telegram: "Продолжить через Telegram",
+    telegramOpening: "Открываем Telegram…",
+    telegramWaiting: "Нажми Start в Telegram. Эта страница войдёт в аккаунт автоматически.",
+    passwordMode: "Войти по паролю",
+    magicMode: "Войти по ссылке",
     password: "Пароль",
-    passwordSubmit: {
-      login: "Войти по паролю",
-      register: "Создать аккаунт с паролем",
-    },
-    passwordLoading: "Подождите…",
+    passwordSubmit: "Войти",
+    passwordLoading: "Входим…",
     forgotPassword: "Забыли пароль?",
-    forgotTitle: "Сброс пароля",
     forgotSubmit: "Отправить ссылку для сброса",
     forgotLoading: "Отправляем…",
     forgotGeneric: "Если этот email зарегистрирован, мы отправили ссылку для сброса пароля.",
     unexpectedError: "Неожиданная ошибка",
     invalidCredentials: "Неверный email или пароль",
-    registerError: "Не удалось создать аккаунт. Попробуйте войти или запросить ссылку на email.",
+    legalRequired: "Прими Условия сервиса и Политику конфиденциальности, чтобы продолжить.",
     legalConsent: "Я принимаю {terms} и {privacy}.",
     terms: "Условия сервиса",
-    privacy: "Политика конфиденциальности",
-    switchLink: {
-      login: "Нужен аккаунт?",
-      register: "Уже есть аккаунт?",
-    },
-    tagline: "Твой второй мозг",
-    sentTitle: "Проверьте почту",
-    sentBody: (email) => `Мы отправили ссылку для входа на ${email}`,
-    sentResend: "Отправить ещё раз",
+    privacy: "Политику конфиденциальности",
+    mac: "Скачать приложение для Mac",
+    sentTitle: "Проверь почту",
+    sentBody: (email: string) => `Мы отправили безопасную ссылку для входа на ${email}.`,
+    sentResend: "Указать другой email",
   },
-};
+} satisfies Record<Locale, Record<string, unknown>>;
 
 interface AuthFormProps {
   mode: Mode;
@@ -123,10 +93,7 @@ interface AuthFormProps {
 
 function detectLocale(): Locale {
   if (typeof navigator === "undefined") return "en";
-  const candidates = [
-    ...Array.from(navigator.languages ?? []),
-    navigator.language,
-  ].filter(Boolean);
+  const candidates = [...Array.from(navigator.languages ?? []), navigator.language].filter(Boolean);
   return candidates[0]?.toLowerCase().startsWith("ru") ? "ru" : "en";
 }
 
@@ -145,90 +112,93 @@ function renderLegalConsent(
   let match: RegExpExecArray | null;
   let key = 0;
   while ((match = tokenPattern.exec(template)) !== null) {
-    if (match.index > lastIndex) {
-      segments.push(template.slice(lastIndex, match.index));
-    }
+    if (match.index > lastIndex) segments.push(template.slice(lastIndex, match.index));
     segments.push(
-      <span key={`token-${key++}`}>
-        {match[1] === "terms" ? termsNode : privacyNode}
-      </span>,
+      <span key={`token-${key++}`}>{match[1] === "terms" ? termsNode : privacyNode}</span>,
     );
     lastIndex = match.index + match[0].length;
   }
-  if (lastIndex < template.length) {
-    segments.push(template.slice(lastIndex));
-  }
+  if (lastIndex < template.length) segments.push(template.slice(lastIndex));
   return segments;
 }
 
 function describeError(error: unknown, locale: Locale): string {
   const copy = COPY[locale];
-  let message: string;
-  if (error instanceof ApiError) {
-    message = error.message;
-  } else if (error instanceof Error) {
-    message = error.message;
-  } else {
-    return copy.unexpectedError;
-  }
-
-  if (locale === "ru") {
-    if (message === "Invalid email or password" || message === "Invalid credentials") {
+  if (error instanceof ApiError || error instanceof Error) {
+    if (
+      locale === "ru"
+      && (error.message === "Invalid email or password" || error.message === "Invalid credentials")
+    ) {
       return copy.invalidCredentials;
     }
-    if (message === COPY.en.registerError) {
-      return copy.registerError;
-    }
+    return error.message;
   }
-  return message;
+  return copy.unexpectedError;
 }
 
 export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
+  void mode;
   const [locale, setLocale] = useState<Locale>(initialLocale ?? "en");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
+  const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(false);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [sentEmail, setSentEmail] = useState("");
   const [passwordMode, setPasswordMode] = useState(false);
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
-  const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(false);
+  const [telegramSession, setTelegramSession] = useState<TelegramAuthStart | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const onSuccessRef = useRef(onSuccess);
   const copy = COPY[locale];
   const loading = pendingAction !== null;
+
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
 
   useEffect(() => {
     setLocale(initialLocale ?? detectLocale());
   }, [initialLocale]);
 
-  async function onPasswordSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (mode === "register" && !acceptedLegalTerms) return;
-    setMessage(null);
-    setPendingAction("password");
+  useEffect(() => {
+    if (!telegramSession) return;
+    const ticket = telegramSession.ticket;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    try {
-      const trimmedEmail = email.trim();
-      if (mode === "login") {
-        await login(trimmedEmail, password, { locale, region: authRegion(locale) });
-      } else {
-        await register(trimmedEmail, password, {
-          locale,
-          region: authRegion(locale),
-          acceptedLegalTerms,
-        });
+    async function poll() {
+      try {
+        const status = await getTelegramAuthStatus(ticket);
+        if (cancelled) return;
+        if (status.status === "approved") {
+          setTelegramSession(null);
+          setPendingAction(null);
+          onSuccessRef.current();
+          return;
+        }
+        timer = setTimeout(() => void poll(), TELEGRAM_POLL_INTERVAL_MS);
+      } catch (error: unknown) {
+        if (cancelled) return;
+        setTelegramSession(null);
+        setPendingAction(null);
+        setMessage(describeError(error, locale));
       }
-      onSuccess();
-    } catch (error: unknown) {
-      setMessage(describeError(error, locale));
-    } finally {
-      setPendingAction(null);
     }
-  }
+
+    timer = setTimeout(() => void poll(), TELEGRAM_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [locale, telegramSession]);
 
   async function onSendMagicLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (mode === "register" && !acceptedLegalTerms) return;
+    if (!acceptedLegalTerms) {
+      setMessage(copy.legalRequired);
+      return;
+    }
     setMessage(null);
     setPendingAction("magic");
     const trimmedEmail = email.trim();
@@ -236,7 +206,7 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
       await requestMagicLink(trimmedEmail, {
         locale,
         region: authRegion(locale),
-        ...(mode === "register" ? { acceptedLegalTerms } : {}),
+        acceptedLegalTerms,
       });
       setSentEmail(trimmedEmail);
       setMagicLinkSent(true);
@@ -247,8 +217,21 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
     }
   }
 
-  async function onForgotPasswordSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onPasswordSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setMessage(null);
+    setPendingAction("password");
+    try {
+      await login(email.trim(), password, { locale, region: authRegion(locale) });
+      onSuccessRef.current();
+    } catch (error: unknown) {
+      setMessage(describeError(error, locale));
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function onForgotPasswordSubmit() {
     setMessage(null);
     setPendingAction("forgot");
     try {
@@ -261,30 +244,59 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
     }
   }
 
+  async function onTelegramStart() {
+    setMessage(null);
+    setPendingAction("telegram");
+    try {
+      const session = await startTelegramAuth({ client: "web", locale });
+      setTelegramSession(session);
+      window.open(session.web_link, "_blank", "noopener,noreferrer");
+    } catch (error: unknown) {
+      setPendingAction(null);
+      setMessage(describeError(error, locale));
+    }
+  }
+
+  const legalConsent = (
+    <label className="auth-legal-consent">
+      <input
+        data-testid="legal-consent-checkbox"
+        type="checkbox"
+        checked={acceptedLegalTerms}
+        onChange={(event) => setAcceptedLegalTerms(event.target.checked)}
+        disabled={loading}
+      />
+      <span>
+        {renderLegalConsent(
+          copy.legalConsent,
+          <Link href={locale === "ru" ? "/ru/terms" : "/terms"}>{copy.terms}</Link>,
+          <Link href={locale === "ru" ? "/ru/privacy" : "/privacy"}>{copy.privacy}</Link>,
+        )}
+      </span>
+    </label>
+  );
+
   return (
-    <section className="auth-card">
-      <header className="auth-card__hero" aria-label="WaiComputer">
+    <section className="auth-gateway">
+      <header className="auth-gateway__brand" aria-label="WaiComputer">
         <picture>
           <source srcSet="/app-icon-dark-320.png" media="(prefers-color-scheme: dark)" />
-          <img
-            className="auth-card__icon"
-            src="/app-icon-320.png"
-            width={64}
-            height={64}
-            alt=""
-            aria-hidden="true"
-          />
+          <img src="/app-icon-320.png" width={64} height={64} alt="" aria-hidden="true" />
         </picture>
-        <span className="auth-card__wordmark">WaiComputer</span>
-        <span className="auth-card__tagline">{copy.tagline}</span>
+        <span className="auth-gateway__wordmark">WaiComputer</span>
       </header>
+
+      <div className="auth-gateway__intro">
+        <h1>{copy.title}</h1>
+        <p>{copy.subtitle}</p>
+      </div>
 
       {magicLinkSent ? (
         <div className="auth-sent" data-testid="magic-link-sent">
-          <h1>{copy.sentTitle}</h1>
+          <h2>{copy.sentTitle}</h2>
           <p className="auth-sent__body">{copy.sentBody(sentEmail)}</p>
           <button
-            className="ghost-button"
+            className="auth-text-button"
             data-testid="magic-link-resend"
             type="button"
             onClick={() => {
@@ -295,160 +307,119 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
             {copy.sentResend}
           </button>
         </div>
+      ) : passwordMode ? (
+        <form onSubmit={onPasswordSubmit} className="auth-gateway__form">
+          <label className="auth-gateway__field-label" htmlFor="email"><span>{copy.email}</span></label>
+          <input
+            id="email"
+            data-testid="auth-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            placeholder={copy.email}
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+          <PasswordField
+            id="password"
+            name="password"
+            data-testid="auth-password"
+            label={copy.password}
+            value={password}
+            onChange={setPassword}
+            locale={locale}
+            required
+            autoComplete="current-password"
+          />
+          <button data-testid="auth-submit" type="submit" disabled={loading || !email || !password}>
+            {pendingAction === "password" ? copy.passwordLoading : copy.passwordSubmit}
+          </button>
+          <div className="auth-gateway__quiet-actions">
+            <button type="button" className="auth-text-button" onClick={() => setPasswordMode(false)}>
+              {copy.magicMode}
+            </button>
+            <button
+              data-testid="forgot-password-button"
+              type="button"
+              className="auth-text-button"
+              onClick={() => setForgotPasswordMode(true)}
+            >
+              {copy.forgotPassword}
+            </button>
+          </div>
+          {forgotPasswordMode ? (
+            <button
+              data-testid="forgot-password-submit"
+              type="button"
+              className="auth-secondary-button"
+              disabled={loading || !email.trim()}
+              onClick={() => void onForgotPasswordSubmit()}
+            >
+              {pendingAction === "forgot" ? copy.forgotLoading : copy.forgotSubmit}
+            </button>
+          ) : null}
+        </form>
       ) : (
-      <>
-      <header className="auth-card__header">
-        <h1>{copy.title[mode]}</h1>
-      </header>
-
-      {/* Exactly one form is mounted at a time so Enter always submits the
-        * visible flow and the card keeps a single primary action. Email and
-        * legal consent live in shared state, so switching modes loses nothing. */}
-      {(() => {
-        const emailField = (
-          <label htmlFor="email">
-            <span>{copy.email}</span>
+        <>
+          <form onSubmit={onSendMagicLink} className="auth-gateway__form">
+            <label className="auth-gateway__field-label" htmlFor="email"><span>{copy.email}</span></label>
             <input
               id="email"
               data-testid="auth-email"
               name="email"
               type="email"
               autoComplete="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </label>
-        );
-        const legalConsent =
-          mode === "register" ? (
-            <label className="auth-legal-consent">
-              <input
-                data-testid="legal-consent-checkbox"
-                type="checkbox"
-                checked={acceptedLegalTerms}
-                onChange={(event) => setAcceptedLegalTerms(event.target.checked)}
-                disabled={loading}
-              />
-              <span>
-                {renderLegalConsent(
-                  copy.legalConsent,
-                  <Link href={locale === "ru" ? "/ru/terms" : "/terms"}>{copy.terms}</Link>,
-                  <Link href={locale === "ru" ? "/ru/privacy" : "/privacy"}>{copy.privacy}</Link>,
-                )}
-              </span>
-            </label>
-          ) : null;
-
-        return passwordMode ? (
-          <form onSubmit={onPasswordSubmit} className="auth-form">
-            {emailField}
+              placeholder={copy.email}
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
             {legalConsent}
-            <PasswordField
-              id="password"
-              name="password"
-              data-testid="auth-password"
-              label={copy.password}
-              value={password}
-              onChange={setPassword}
-              locale={locale}
-              showStrength={mode === "register"}
-              required
-              autoComplete={mode === "register" ? "new-password" : "current-password"}
-            />
-
             <button
-              className="primary-button"
-              data-testid="auth-submit"
+              data-testid="magic-link-button"
               type="submit"
-              disabled={loading || (mode === "register" && !acceptedLegalTerms)}
-            >
-              {pendingAction === "password" ? copy.passwordLoading : copy.passwordSubmit[mode]}
-            </button>
-
-            {mode === "login" ? (
-              <button
-                className="ghost-button"
-                data-testid="forgot-password-button"
-                type="button"
-                onClick={() => setForgotPasswordMode(true)}
-                disabled={loading}
-              >
-                {copy.forgotPassword}
-              </button>
-            ) : null}
-
-            <button
-              className="ghost-button"
-              data-testid="magic-mode-button"
-              type="button"
-              onClick={() => setPasswordMode(false)}
               disabled={loading}
             >
-              {copy.magicMode}
+              {pendingAction === "magic" ? copy.continuing : copy.continue}
             </button>
           </form>
-        ) : (
-          <>
-            <form onSubmit={onSendMagicLink} className="auth-form">
-              {emailField}
-              {legalConsent}
-              <button
-                className="primary-button"
-                data-testid="magic-link-button"
-                type="submit"
-                disabled={
-                  loading
-                  || email.trim().length === 0
-                  || (mode === "register" && !acceptedLegalTerms)
-                }
-              >
-                {pendingAction === "magic" ? copy.sendMagicLoading : copy.primarySubmit}
-              </button>
-            </form>
-            <button
-              className="ghost-button"
-              data-testid="password-mode-button"
-              type="button"
-              onClick={() => setPasswordMode(true)}
-              disabled={loading}
-            >
-              {copy.passwordMode}
-            </button>
-          </>
-        );
-      })()}
-
-      {forgotPasswordMode && mode === "login" ? (
-        <form
-          className="auth-form"
-          data-testid="forgot-password-panel"
-          onSubmit={onForgotPasswordSubmit}
-        >
-          <strong>{copy.forgotTitle}</strong>
+          <div className="auth-gateway__separator"><span>{copy.or}</span></div>
           <button
-            className="ghost-button"
-            data-testid="forgot-password-submit"
-            type="submit"
-            disabled={loading || email.trim().length === 0}
+            className="auth-secondary-button"
+            data-testid="telegram-auth-button"
+            type="button"
+            disabled={loading}
+            onClick={() => void onTelegramStart()}
           >
-            {pendingAction === "forgot" ? copy.forgotLoading : copy.forgotSubmit}
+            <Send className="auth-gateway__telegram-icon" aria-hidden="true" size={18} />
+            {pendingAction === "telegram" ? copy.telegramOpening : copy.telegram}
           </button>
-        </form>
-      ) : null}
-
-      <div className="auth-card__secondary">
-        <Link href={mode === "login" ? "/register" : "/login"}>
-          {copy.switchLink[mode]}
-        </Link>
-      </div>
-      </>
+          {telegramSession ? (
+            <p className="auth-gateway__status" data-testid="telegram-auth-status" role="status">
+              {copy.telegramWaiting}
+            </p>
+          ) : null}
+          <button
+            className="auth-text-button auth-gateway__password-link"
+            data-testid="password-mode-button"
+            type="button"
+            onClick={() => setPasswordMode(true)}
+          >
+            {copy.passwordMode}
+          </button>
+        </>
       )}
 
+      <nav className="auth-gateway__download" aria-label="WaiComputer apps">
+        <a href={MAC_DMG_URL} download>
+          <MonitorDown aria-hidden="true" size={17} />
+          {copy.mac}
+        </a>
+      </nav>
+
       {message ? (
-        <p className="auth-card__message" data-testid="auth-message" role="status">
-          {message}
-        </p>
+        <p className="auth-card__message" data-testid="auth-message" role="status">{message}</p>
       ) : null}
     </section>
   );

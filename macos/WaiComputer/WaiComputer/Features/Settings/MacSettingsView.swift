@@ -485,7 +485,7 @@ struct MacSettingsView: View {
         Section {
             if let user = appState.currentUser {
                 LabeledContent {
-                    Text(user.email)
+                    Text(user.email ?? "Telegram")
                 } label: {
                     Text("settings.account.email", bundle: .main)
                 }

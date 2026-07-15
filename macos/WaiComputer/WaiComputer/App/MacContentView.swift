@@ -10,13 +10,13 @@ struct MacContentView: View {
 
     var body: some View {
         Group {
-            if !appState.hasCompletedPreAuthOnboarding {
-                OnboardingView(phase: .preAuth)
-            } else if appState.isCheckingAuth {
+            if appState.isCheckingAuth {
                 ProgressView(t("Loading…", "Загрузка…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if !appState.isAuthenticated {
                 MacAuthView()
+            } else if !appState.hasCompletedPreAuthOnboarding {
+                OnboardingView(phase: .preAuth)
             } else if !appState.hasCompletedPostAuthOnboarding {
                 OnboardingView(phase: .postAuth)
             } else {
@@ -2089,7 +2089,7 @@ struct MacAuthView: View {
         case magicLink = "Magic Link"
     }
 
-    @State private var authMode: AuthMode = .login
+    @State private var authMode: AuthMode = .magicLink
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
@@ -2105,27 +2105,32 @@ struct MacAuthView: View {
             Spacer()
 
             // Icon + wordmark
-            VStack(spacing: Spacing.lg) {
+            VStack(spacing: Spacing.md) {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
                     .frame(width: 64, height: 64)
 
                 Text("WaiComputer")
                     .font(Typography.displayLarge)
-
-                Text(t("YOUR SECOND BRAIN", "ТВОЙ ВТОРОЙ МОЗГ"))
-                    .waiSectionHeader()
             }
 
-            // Tab bar
-            WaiTabBar(
-                tabs: [
-                    (t("Login", "Вход"), AuthMode.login),
-                    (t("Register", "Регистрация"), AuthMode.register),
-                    (t("Magic Link", "Ссылка на email"), AuthMode.magicLink),
-                ],
-                selection: $authMode
-            )
+            VStack(spacing: Spacing.sm) {
+                Text(t(
+                    "Start anywhere. Continue everywhere.",
+                    "Начни где удобно. Продолжай везде."
+                ))
+                .font(Typography.displayLarge)
+                .multilineTextAlignment(.center)
+
+                Text(t(
+                    "One account. Web, Mac, Telegram. Sign in or sign up automatically.",
+                    "Один аккаунт. Web, Mac, Telegram. Вход или регистрация — автоматически."
+                ))
+                .font(Typography.body)
+                .foregroundStyle(Palette.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 440)
+            }
 
             // Form
             if authMode == .magicLink && appState.magicLinkSent {
@@ -2153,19 +2158,61 @@ struct MacAuthView: View {
                     .accessibilityIdentifier("auth-error-text")
             }
 
-            // Submit button
-            Button(action: submit) {
-                if appState.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Text(buttonTitle)
+            if !(authMode == .magicLink && appState.magicLinkSent) {
+                Button(action: submit) {
+                    Group {
+                        if appState.isLoading {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text(buttonTitle)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: !isFormValid || appState.isLoading))
+                .disabled(!isFormValid || appState.isLoading)
+                .keyboardShortcut(.defaultAction)
+                .frame(maxWidth: 380)
+                .accessibilityIdentifier("auth-submit-button")
             }
-            .buttonStyle(WaiPrimaryButtonStyle(isDisabled: !isFormValid || appState.isLoading))
-            .disabled(!isFormValid || appState.isLoading)
-            .keyboardShortcut(.defaultAction)
-            .accessibilityIdentifier("auth-submit-button")
+
+            if authMode == .magicLink && !appState.magicLinkSent {
+                HStack(spacing: Spacing.md) {
+                    Rectangle().fill(Palette.border).frame(height: 1)
+                    Text(t("or", "или"))
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                    Rectangle().fill(Palette.border).frame(height: 1)
+                }
+                .frame(maxWidth: 380)
+
+                Button {
+                    Task { await appState.signInWithTelegram() }
+                } label: {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "paperplane.fill")
+                        Text(t("Continue with Telegram", "Продолжить через Telegram"))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(appState.isLoading)
+                .frame(maxWidth: 380)
+                .accessibilityIdentifier("auth-telegram-button")
+
+                Button(t("Use password", "Войти по паролю")) {
+                    authMode = .login
+                }
+                .buttonStyle(WaiGhostButtonStyle())
+                .accessibilityIdentifier("auth-password-mode-button")
+            } else if authMode == .login {
+                Button(t("Use email link", "Войти по ссылке")) {
+                    authMode = .magicLink
+                }
+                .buttonStyle(WaiGhostButtonStyle())
+            }
 
             Spacer()
         }
@@ -2311,7 +2358,7 @@ struct MacAuthView: View {
         switch authMode {
         case .login: return t("Login", "Войти")
         case .register: return t("Create Account", "Создать аккаунт")
-        case .magicLink: return t("Send Magic Link", "Отправить ссылку")
+        case .magicLink: return t("Continue", "Продолжить")
         }
     }
 

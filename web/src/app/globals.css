@@ -618,6 +618,211 @@ h4 {
   padding: 0.75rem;
 }
 
+/* Unified account gateway. This deliberately has no enclosing card: the
+ * identity, value proposition and two actions form one calm, obvious path. */
+.auth-gateway {
+  display: grid;
+  width: min(100%, 520px);
+  gap: var(--space-lg);
+  padding: var(--space-xl) 0;
+}
+
+.auth-gateway__brand {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-sm);
+  text-align: center;
+}
+
+.auth-gateway__brand img {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.auth-gateway__wordmark {
+  color: var(--ink);
+  font: var(--font-display-small);
+  letter-spacing: -0.012em;
+}
+
+.auth-gateway__intro {
+  display: grid;
+  gap: var(--space-sm);
+  text-align: center;
+}
+
+.auth-gateway__intro h1 {
+  color: var(--ink);
+  font: var(--font-display-large);
+  letter-spacing: -0.02em;
+  font-size: clamp(2.4rem, 4vw, 3rem);
+}
+
+.auth-gateway__intro p {
+  max-width: 46ch;
+  margin: 0 auto;
+  color: var(--ink-soft);
+  font: var(--font-body-large);
+}
+
+.auth-gateway__form {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.auth-gateway__field-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.auth-gateway__form input:not([type="checkbox"]) {
+  min-height: 52px;
+  border-color: color-mix(in srgb, var(--accent) 68%, var(--border));
+  border-radius: var(--radius-lg);
+  padding-inline: var(--space-lg);
+  font: var(--font-body-large);
+}
+
+.auth-gateway__form > button[type="submit"],
+.auth-secondary-button {
+  width: 100%;
+  min-height: 52px;
+  border-radius: var(--radius-lg);
+  font: var(--font-heading-medium);
+}
+
+.auth-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  border: 1px solid var(--border);
+  background: var(--panel-raised);
+  color: var(--ink);
+}
+
+.auth-secondary-button:hover {
+  border-color: var(--ink-faint);
+  background: var(--surface-subtle);
+}
+
+.auth-gateway__separator {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-md);
+  color: var(--ink-faint);
+  font: var(--font-body-small);
+}
+
+.auth-gateway__separator::before,
+.auth-gateway__separator::after {
+  content: "";
+  height: 1px;
+  background: var(--surface-hairline);
+}
+
+.auth-gateway__status {
+  color: var(--ink-soft);
+  font: var(--font-body-small);
+  text-align: center;
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+  padding: var(--space-md);
+}
+
+.auth-text-button {
+  min-height: auto;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font: var(--font-heading-small);
+  padding: var(--space-xs);
+}
+
+.auth-text-button:hover {
+  background: transparent;
+  color: var(--accent);
+}
+
+.auth-gateway__password-link {
+  justify-self: center;
+  margin-top: calc(var(--space-sm) * -1);
+}
+
+.auth-gateway__quiet-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-xl);
+}
+
+.auth-gateway__download {
+  display: flex;
+  justify-content: center;
+  margin-top: calc(var(--space-sm) * -1);
+}
+
+.auth-gateway__download a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--ink-soft);
+  font: var(--font-heading-small);
+  padding: var(--space-xs);
+  transition: color 0.16s ease;
+}
+
+.auth-gateway__download a:hover {
+  color: var(--accent-strong);
+}
+
+.auth-gateway__telegram-icon {
+  color: #2aabee;
+  fill: #2aabee;
+  stroke-width: 1.8;
+}
+
+.auth-gateway .auth-legal-consent {
+  justify-self: center;
+  max-width: 430px;
+  margin-block: var(--space-xs);
+}
+
+.auth-gateway .auth-card__message {
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .auth-page {
+    place-items: start center;
+    padding-inline: var(--space-lg);
+  }
+
+  .auth-gateway {
+    gap: var(--space-md);
+    padding-block: var(--space-lg);
+  }
+
+  .auth-gateway__brand img {
+    width: 56px;
+    height: 56px;
+  }
+
+  .auth-gateway__intro h1 {
+    font-size: 1.75rem;
+  }
+}
+
 .auth-sent {
   display: grid;
   gap: 0.85rem;
