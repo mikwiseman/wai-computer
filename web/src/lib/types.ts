@@ -377,9 +377,25 @@ export interface MessageResponse {
   message: string;
 }
 
+export interface TelegramAuthStart {
+  status: "pending";
+  bot_username: string;
+  deep_link: string;
+  web_link: string;
+  ticket: string;
+  expires_at: string;
+}
+
+export interface TelegramAuthStatus {
+  status: "pending" | "approved";
+  access_token?: string;
+  refresh_token?: string;
+  token_type?: string;
+}
+
 export interface User {
   id: string;
-  email: string;
+  email: string | null;
   created_at: string;
   has_password: boolean;
   // True once the account has enrolled a voice — server-side source of truth for
