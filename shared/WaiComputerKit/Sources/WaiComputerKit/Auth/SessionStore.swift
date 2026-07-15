@@ -82,6 +82,15 @@ public final class SessionStore: @unchecked Sendable {
     }
 
     public var sessionFileURL: URL {
+        // Dev/QA escape hatch: a second instance (debug build, UI tests)
+        // pointed at its own directory can't race the production app's
+        // session.json — the race used to sign BOTH instances out.
+        // FileManager ignores a spoofed $HOME, hence an explicit variable.
+        if let override = ProcessInfo.processInfo.environment["WAICOMPUTER_SESSION_DIR"],
+           !override.isEmpty {
+            let dir = URL(fileURLWithPath: override, isDirectory: true)
+            return dir.appendingPathComponent("session.json")
+        }
         let supportDir: URL
         if let candidate = try? fileManager.url(
             for: .applicationSupportDirectory,

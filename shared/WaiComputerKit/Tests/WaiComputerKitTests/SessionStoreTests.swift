@@ -56,4 +56,18 @@ final class SessionStoreTests: XCTestCase {
         let mode = attrs[.posixPermissions] as? NSNumber
         XCTAssertEqual(mode?.uint16Value, 0o600)
     }
+
+    func testSessionDirEnvOverrideWinsOverApplicationSupport() throws {
+        // WAICOMPUTER_SESSION_DIR isolates a second instance (debug/QA build)
+        // from the production app's session.json — the shared-file race used
+        // to sign both instances out.
+        setenv("WAICOMPUTER_SESSION_DIR", tempBase.path, 1)
+        defer { unsetenv("WAICOMPUTER_SESSION_DIR") }
+        let isolated = SessionStore(fileManager: fileManager, directoryName: "WaiComputerTestOverride")
+        XCTAssertEqual(
+            isolated.sessionFileURL,
+            tempBase.appendingPathComponent("session.json")
+        )
+    }
+
 }
