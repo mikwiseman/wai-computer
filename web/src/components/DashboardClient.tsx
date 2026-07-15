@@ -14,7 +14,6 @@ import {
   assignRecordingToFolder,
   bulkRecordingOperation,
   changePassword,
-  claimTelegramLinkCode,
   createDictionaryWord,
   createFolder,
   createRecording,
@@ -108,6 +107,7 @@ const DictatePanel = dynamic(
   { loading: () => panelFallback },
 );
 import { ApiError } from "@/lib/http";
+import { localizeErrorMessage } from "@/lib/error-l10n";
 import { macDmgUrl } from "@/lib/links";
 import { formatDurationClock, formatListTimestamp } from "@/lib/format";
 import type {
@@ -351,12 +351,7 @@ interface DashboardCopy {
     linkButton: string;
     linkOpening: string;
     awaitingStart: string;
-    codeLabel: string;
-    codeHelp: string;
-    codePlaceholder: string;
-    linkByCodeButton: string;
     opened: string;
-    enterCode: string;
     linked: string;
   };
   // Misc dashboard messages
@@ -549,13 +544,8 @@ const COPY: Record<Locale, DashboardCopy> = {
       linkOpening: "Opening…",
       awaitingStart:
         "Waiting for Start in Telegram. You don't need to come back and copy a code.",
-      codeLabel: "Code from Telegram",
-      codeHelp: "Only if you started linking from Telegram.",
-      codePlaceholder: "Enter the code from the bot",
-      linkByCodeButton: "Link by code",
       opened:
         "Telegram opened. Tap Start in the bot — WaiComputer will finish linking automatically.",
-      enterCode: "Enter the Telegram code.",
       linked: "Telegram linked.",
     },
     msg: {
@@ -756,13 +746,8 @@ const COPY: Record<Locale, DashboardCopy> = {
       linkButton: "Привязать Telegram",
       linkOpening: "Открываем…",
       awaitingStart: "Ждем Start в Telegram. Возвращаться и копировать код не нужно.",
-      codeLabel: "Код из Telegram",
-      codeHelp: "Только если вы начали привязку из Telegram.",
-      codePlaceholder: "Введите код из бота",
-      linkByCodeButton: "Привязать по коду",
       opened:
         "Telegram открыт. Нажмите Start в боте — WaiComputer завершит привязку автоматически.",
-      enterCode: "Введите код из Telegram.",
       linked: "Telegram привязан.",
     },
     msg: {
@@ -784,10 +769,12 @@ function detectLocale(): Locale {
   return candidates[0]?.toLowerCase().startsWith("ru") ? "ru" : "en";
 }
 
-function formatError(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "Unexpected error";
+function formatError(error: unknown, locale: Locale = "en"): string {
+  const message =
+    error instanceof ApiError || error instanceof Error
+      ? error.message
+      : "Unexpected error";
+  return localizeErrorMessage(message, locale);
 }
 
 function formatItemCount(count: number, locale: Locale): string {
@@ -965,7 +952,6 @@ export function DashboardClient() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState<TelegramLinkStatus | null>(null);
   const [telegramPairing, setTelegramPairing] = useState<TelegramPairing | null>(null);
-  const [telegramLinkCode, setTelegramLinkCode] = useState("");
   const [telegramLoading, setTelegramLoading] = useState(false);
 
   useEffect(() => {
@@ -1066,7 +1052,7 @@ export function DashboardClient() {
       }
       exitSelectMode();
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1096,7 +1082,7 @@ export function DashboardClient() {
         setDictationEntries([]);
         setDictationEntriesUnavailable(true);
       } else {
-        showError(formatError(error));
+        showError(formatError(error, locale));
       }
     } finally {
       setDictationEntriesLoading(false);
@@ -1115,7 +1101,7 @@ export function DashboardClient() {
         setDictionaryWords([]);
         setDictionaryUnavailable(true);
       } else {
-        showError(formatError(error));
+        showError(formatError(error, locale));
       }
     } finally {
       setDictionaryLoading(false);
@@ -1138,7 +1124,7 @@ export function DashboardClient() {
       setSettingsLoadedOnce(true);
       setSettingsLoading(false);
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
       setSettingsLoadedOnce(true);
       setSettingsLoading(false);
     }
@@ -1162,7 +1148,7 @@ export function DashboardClient() {
       ]);
       setUser(currentUser);
     } catch (error: unknown) {
-      const text = formatError(error);
+      const text = formatError(error, locale);
       if (error instanceof ApiError && error.status === 401) {
         router.replace("/login");
         return;
@@ -1186,12 +1172,11 @@ export function DashboardClient() {
         if (status.linked || !options.silent) {
           setTelegramPairing(null);
           if (status.linked) {
-            setTelegramLinkCode("");
             showStatus(copy.telegram.linked);
           }
         }
       } catch (error: unknown) {
-        if (!options.silent) showError(formatError(error));
+        if (!options.silent) showError(formatError(error, locale));
       } finally {
         if (!options.silent) setTelegramLoading(false);
       }
@@ -1264,7 +1249,7 @@ export function DashboardClient() {
           await loadRecordingsState();
         }
       } catch (error: unknown) {
-        if (!cancelled) showError(formatError(error));
+        if (!cancelled) showError(formatError(error, locale));
       }
     }
     const interval = window.setInterval(refreshSelectedRecording, 2500);
@@ -1299,7 +1284,7 @@ export function DashboardClient() {
       setView("inbox");
       showStatus(copy.msg.recordingCreated);
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1311,7 +1296,7 @@ export function DashboardClient() {
       setSelectedMode(mode);
       setView(mode === "trash" ? "trash" : "inbox");
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1359,7 +1344,7 @@ export function DashboardClient() {
           : copy.msg.recordingTrashed,
       );
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1373,7 +1358,7 @@ export function DashboardClient() {
       await Promise.all([loadRecordingsState(), loadTrashRecordingsState()]);
       showStatus(copy.msg.recordingRestored);
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1404,7 +1389,7 @@ export function DashboardClient() {
       }
       setSearchResponse(await fulltextSearch({ q: query, limit: 25, offset: 0 }));
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1418,7 +1403,7 @@ export function DashboardClient() {
       setUser((current) => current ? { ...current, has_password: true } : current);
       showStatus(response.message);
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1430,7 +1415,7 @@ export function DashboardClient() {
       setAccountSettings(updated);
       showStatus(copy.settings.settingsUpdated);
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     } finally {
       setSettingsSaving(false);
     }
@@ -1445,28 +1430,7 @@ export function DashboardClient() {
       window.location.href = response.deep_link;
       showStatus(copy.telegram.opened);
     } catch (error: unknown) {
-      showError(formatError(error));
-    } finally {
-      setTelegramLoading(false);
-    }
-  }
-
-  async function handleClaimTelegramLinkCode(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const code = telegramLinkCode.trim();
-    if (!code) {
-      showStatus(copy.telegram.enterCode);
-      return;
-    }
-    setTelegramLoading(true);
-    clearMessage();
-    try {
-      setTelegramStatus(await claimTelegramLinkCode(code));
-      setTelegramPairing(null);
-      setTelegramLinkCode("");
-      showStatus(copy.telegram.linked);
-    } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     } finally {
       setTelegramLoading(false);
     }
@@ -1478,10 +1442,9 @@ export function DashboardClient() {
     try {
       await unlinkTelegram();
       setTelegramPairing(null);
-      setTelegramLinkCode("");
       setTelegramStatus(await getTelegramLinkStatus());
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     } finally {
       setTelegramLoading(false);
     }
@@ -1493,7 +1456,7 @@ export function DashboardClient() {
       await logout();
       router.replace("/login");
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1515,7 +1478,7 @@ export function DashboardClient() {
       setIsFolderCreatorOpen(false);
       showStatus(copy.folders.created);
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1539,7 +1502,7 @@ export function DashboardClient() {
       setFolderRenameValue("");
       showStatus(copy.folders.renamed);
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1559,7 +1522,7 @@ export function DashboardClient() {
       setFolderDeleteTarget(null);
       showStatus(copy.folders.deleted);
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1595,7 +1558,7 @@ export function DashboardClient() {
       await assignRecordingToFolder(recordingId, folderId);
       await loadRecordingsState();
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
       // Reload to reconcile the optimistic state with the canonical truth.
       await loadRecordingsState();
     }
@@ -1620,7 +1583,7 @@ export function DashboardClient() {
       setInboxReloadToken((token) => token + 1);
       await loadFoldersState();
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1637,7 +1600,7 @@ export function DashboardClient() {
       setInboxReloadToken((token) => token + 1);
       await loadFoldersState();
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1653,7 +1616,7 @@ export function DashboardClient() {
       showStatus(copy.history.deleted);
     } catch (error: unknown) {
       setDictationEntries(previous);
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1668,7 +1631,7 @@ export function DashboardClient() {
       showStatus(copy.history.deleted);
     } catch (error: unknown) {
       setDictationEntries(previous);
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1700,7 +1663,7 @@ export function DashboardClient() {
       if (error instanceof ApiError && error.status === 404) {
         setDictionaryUnavailable(true);
       }
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -1713,7 +1676,7 @@ export function DashboardClient() {
       );
       showStatus(copy.dictionary.deleted);
     } catch (error: unknown) {
-      showError(formatError(error));
+      showError(formatError(error, locale));
     }
   }
 
@@ -3060,29 +3023,6 @@ export function DashboardClient() {
                 {telegramPairing ? (
                   <p className="settings-note">{copy.telegram.awaitingStart}</p>
                 ) : null}
-                <details className="settings-disclosure">
-                  <summary>{copy.telegram.codeHelp}</summary>
-                  <form className="telegram-code-form" onSubmit={handleClaimTelegramLinkCode}>
-                    <label>
-                      <span>{copy.telegram.codeLabel}</span>
-                      <input
-                        type="text"
-                        value={telegramLinkCode}
-                        onChange={(event) => setTelegramLinkCode(event.target.value)}
-                        placeholder={copy.telegram.codePlaceholder}
-                        autoComplete="one-time-code"
-                        disabled={telegramLoading}
-                      />
-                    </label>
-                    <button
-                      type="submit"
-                      className="ghost-button compact-button"
-                      disabled={telegramLoading}
-                    >
-                      {copy.telegram.linkByCodeButton}
-                    </button>
-                  </form>
-                </details>
               </div>
             )}
           </div>
@@ -3415,7 +3355,7 @@ function UniversalInboxPanel({
         onError(message);
       } catch (error: unknown) {
         if (requestId === inboxRequestId.current) {
-          const message = formatError(error);
+          const message = formatError(error, locale);
           setLoadError(message);
           onError(message);
         }
@@ -3463,7 +3403,7 @@ function UniversalInboxPanel({
         return visibleRows;
       } catch (error: unknown) {
         if (requestId === inboxRequestId.current) {
-          const message = formatError(error);
+          const message = formatError(error, locale);
           setLoadError(message);
           onError(message);
         }
@@ -3539,7 +3479,7 @@ function UniversalInboxPanel({
         setSelectedRecording(detail);
         onRecordingUpdate(detail);
       } catch (error: unknown) {
-        if (!cancelled) onError(formatError(error));
+        if (!cancelled) onError(formatError(error, locale));
       }
     })();
     return () => {
@@ -3582,7 +3522,7 @@ function UniversalInboxPanel({
       onRecordingUpdate(detail);
       setShowCreate(false);
     } catch (error: unknown) {
-      onError(formatError(error));
+      onError(formatError(error, locale));
     }
   }
 
@@ -3605,7 +3545,7 @@ function UniversalInboxPanel({
       onRecordingUpdate(detail);
       setShowCreate(false);
     } catch (error: unknown) {
-      onError(formatError(error));
+      onError(formatError(error, locale));
     }
   }
 
@@ -3673,7 +3613,7 @@ function UniversalInboxPanel({
       await onRefreshRecordings();
       onItemsChanged();
     } catch (error: unknown) {
-      onError(formatError(error));
+      onError(formatError(error, locale));
     } finally {
       setBulkBusy(false);
     }
@@ -3728,7 +3668,7 @@ function UniversalInboxPanel({
             : `Deleted ${count} items.`,
       );
     } catch (error: unknown) {
-      onError(formatError(error));
+      onError(formatError(error, locale));
     } finally {
       setBulkBusy(false);
     }
