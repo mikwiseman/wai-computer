@@ -347,59 +347,11 @@ def test_help_text_covers_headline_features():
     assert "Что умеет WaiComputer" in help_text
     assert "YouTube" in help_text
     assert "дайджест" in help_text
-    assert "/web" in help_text and "/settings" in help_text
+    # No slash commands advertised — the bot is natural-language-first.
+    assert "/web" not in help_text and "/settings" not in help_text
     # Status line logic preserved.
     assert "Telegram привязан" in help_text
     assert "Сначала привяжи Telegram" in telegram_routes._telegram_help_text(linked=False)
-
-
-@pytest.mark.asyncio
-async def test_web_command_mints_one_time_signin_link(
-    db_session: AsyncSession, monkeypatch
-):
-    """Telegram-born accounts can still use the established one-time web link."""
-    monkeypatch.setattr(telegram_routes.settings, "frontend_url", "https://wai.computer")
-    user_obj, account = await _provisioned_account(db_session, 560001)
-    client = _FakeClient()
-    handled_web = await telegram_routes._handle_account_command(
-        db_session,
-        client,
-        message={"message_id": 1, "from": {"id": 560001}, "chat": {"id": 560001}},
-        account=account,
-        intent="web",
-        arg="",
-    )
-    assert handled_web
-    await db_session.refresh(user_obj)
-    assert user_obj.magic_link_token
-    assert user_obj.magic_link_expires is not None
-    web_text = client.messages[0][1]
-    assert (
-        f"https://wai.computer/auth/verify?token={user_obj.magic_link_token}"
-        in web_text
-    )
-    assert "15 минут" in web_text
-
-
-@pytest.mark.asyncio
-async def test_settings_command_replies_with_link_and_web_hint(
-    db_session: AsyncSession, monkeypatch
-):
-    monkeypatch.setattr(telegram_routes.settings, "frontend_url", "https://wai.computer")
-    _user_obj, account = await _provisioned_account(db_session, 560002)
-    client = _FakeClient()
-    handled_settings = await telegram_routes._handle_account_command(
-        db_session,
-        client,
-        message={"message_id": 2, "from": {"id": 560002}, "chat": {"id": 560002}},
-        account=account,
-        intent="settings",
-        arg="",
-    )
-    assert handled_settings
-    settings_text = client.messages[0][1]
-    assert "https://wai.computer/dashboard#settings" in settings_text
-    assert "/web" in settings_text
 
 
 # ---------------------------------------------------------------------------

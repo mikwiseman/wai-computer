@@ -278,8 +278,7 @@ def _telegram_help_text(*, linked: bool) -> str:
         "«напомни через 10 минут позвонить» — напомню здесь\n"
         "«найди дорожная карта» — поищу по записям\n"
         "«дайджест за неделю», «покажи последние встречи»\n"
-        "или любой вопрос — отвечу по твоим данным.\n\n"
-        "Веб-версия: /web · Аккаунт и данные: /settings"
+        "или любой вопрос — отвечу по твоим данным."
     )
 
 
@@ -310,7 +309,6 @@ def _extract_search_query(text: str) -> str:
     lower = stripped.lower()
     prefixes = (
         "/search",
-        "/find",
         "найди",
         "поищи",
         "найти",
@@ -1622,64 +1620,6 @@ async def _handle_help_command(
     )
 
 
-async def _handle_web_command(
-    db: AsyncSession,
-    client: TelegramBotClient,
-    *,
-    message: dict[str, Any],
-    account: TelegramAccount,
-) -> None:
-    """DM a one-time web sign-in link (the /help footer promises web access).
-
-    Telegram-born accounts are emailless and passwordless, so a plain dashboard
-    URL would dead-end at the login wall — the magic-link mint is the only way
-    those users can reach the web app."""
-    from app.api.routes.auth import _new_magic_token
-
-    chat_id = _telegram_chat_id(message)
-    if chat_id is None:
-        return
-    user = await _ensure_active_user(db, client, message=message, account=account)
-    if user is None:
-        return
-    token = _new_magic_token()
-    user.magic_link_token = token
-    user.magic_link_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
-    await db.flush()
-    await db.commit()
-    base = settings.frontend_url.rstrip("/")
-    await client.send_message(
-        chat_id,
-        (
-            "Ссылка для входа в веб-версию WaiComputer (одноразовая, действует "
-            f"15 минут):\n\n{base}/auth/verify?token={token}\n\n"
-            "Открой её на компьютере — там же Настройки, экспорт и удаление аккаунта."
-        ),
-        reply_to_message_id=message.get("message_id"),
-    )
-
-
-async def _handle_settings_command(
-    client: TelegramBotClient,
-    *,
-    message: dict[str, Any],
-) -> None:
-    """Reply with the account/data settings link (the /help footer promises it)."""
-    chat_id = _telegram_chat_id(message)
-    if chat_id is None:
-        return
-    base = settings.frontend_url.rstrip("/")
-    await client.send_message(
-        chat_id,
-        (
-            f"Аккаунт и данные: {base}/dashboard#settings\n"
-            "Если ещё не входил в веб — сначала отправь /web, пришлю "
-            "одноразовую ссылку для входа."
-        ),
-        reply_to_message_id=message.get("message_id"),
-    )
-
-
 async def _handle_meetings_command(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -1991,12 +1931,6 @@ async def _handle_account_command(
 ) -> bool:
     if intent == "help":
         await _handle_help_command(client, message=message, linked=True)
-        return True
-    if intent == "web":
-        await _handle_web_command(db, client, message=message, account=account)
-        return True
-    if intent == "settings":
-        await _handle_settings_command(client, message=message)
         return True
     if await _ensure_active_user(db, client, message=message, account=account) is None:
         return True
@@ -4185,8 +4119,6 @@ async def _route_account_message(
     elif command:
         intent = command[0].removeprefix("/")
         arg = command[1]
-        if intent == "find":
-            intent = "search"
         handled = await _handle_account_command(
             db, client, message=message, account=account, intent=intent, arg=arg
         )
