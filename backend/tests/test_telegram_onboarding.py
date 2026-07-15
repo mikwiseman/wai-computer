@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes import telegram as telegram_routes
 from app.api.routes.telegram import _guess_region, provision_user_from_telegram
-from app.models.telegram import TelegramAccount, TelegramUpdate
+from app.models.telegram import TelegramAccount, TelegramAuthTicket, TelegramUpdate
 
 
 def test_guess_region():
@@ -107,6 +107,7 @@ class _FakeClient:
         self.answered: list[tuple[str, str | None]] = []
         self.edits: list[tuple[int, int, str]] = []
         self.messages: list[tuple[int, str]] = []
+        self.message_markups: list[dict | None] = []
         self.documents: list[tuple[str, bytes]] = []
 
     async def answer_callback_query(self, callback_id, text=None):
@@ -115,8 +116,9 @@ class _FakeClient:
     async def edit_message_text(self, chat_id, message_id, text, **_kwargs):
         self.edits.append((chat_id, message_id, text))
 
-    async def send_message(self, chat_id, text, **_kwargs):
+    async def send_message(self, chat_id, text, **kwargs):
         self.messages.append((chat_id, text))
+        self.message_markups.append(kwargs.get("reply_markup"))
 
     async def send_document(self, chat_id, *, filename, data, **_kwargs):
         self.documents.append((filename, data))
@@ -164,6 +166,90 @@ async def test_consent_callback_rejects_bot(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_telegram_auth_start_approves_existing_linked_account(
+    db_session: AsyncSession,
+):
+    raw_start = "existing-auth-ticket"
+    user, _account = await _provisioned_account(db_session, 557101)
+    ticket = TelegramAuthTicket(
+        start_token_hash=telegram_routes._token_hash(raw_start),
+        poll_token_hash=telegram_routes._token_hash("poll-existing"),
+        client="web",
+        locale="ru",
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    db_session.add(ticket)
+    await db_session.commit()
+
+    client = _FakeClient()
+    await telegram_routes._handle_start_command(
+        db_session,
+        client,
+        message={
+            "message_id": 8,
+            "from": {"id": 557101, "first_name": "Mik", "language_code": "ru"},
+            "chat": {"id": 557101, "type": "private"},
+        },
+        arg=f"{telegram_routes.AUTH_PREFIX}{raw_start}",
+    )
+
+    await db_session.refresh(ticket)
+    assert ticket.user_id == user.id
+    assert ticket.approved_at is not None
+    assert "Вернись" in client.messages[-1][1]
+
+
+@pytest.mark.asyncio
+async def test_telegram_auth_new_user_requires_consent_then_approves(
+    db_session: AsyncSession,
+):
+    raw_start = "new-auth-ticket"
+    ticket = TelegramAuthTicket(
+        start_token_hash=telegram_routes._token_hash(raw_start),
+        poll_token_hash=telegram_routes._token_hash("poll-new"),
+        client="macos",
+        locale="en",
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+    db_session.add(ticket)
+    await db_session.commit()
+
+    client = _FakeClient()
+    message = {
+        "message_id": 9,
+        "from": {"id": 557102, "first_name": "Ann", "language_code": "en"},
+        "chat": {"id": 557102, "type": "private"},
+    }
+    await telegram_routes._handle_start_command(
+        db_session,
+        client,
+        message=message,
+        arg=f"{telegram_routes.AUTH_PREFIX}{raw_start}",
+    )
+
+    await db_session.refresh(ticket)
+    assert ticket.approved_at is None
+    consent_data = client.message_markups[-1]["inline_keyboard"][0][0]["callback_data"]
+    assert consent_data == f"{telegram_routes.AUTH_CONSENT_PREFIX}{raw_start}"
+
+    await telegram_routes._handle_callback_query(
+        db_session,
+        client,
+        callback_query={
+            "id": "cb-auth",
+            "from": message["from"],
+            "data": consent_data,
+            "message": {"message_id": 9, "chat": message["chat"]},
+        },
+    )
+
+    await db_session.refresh(ticket)
+    assert ticket.user_id is not None
+    assert ticket.approved_at is not None
+    assert "Return" in client.edits[-1][2]
+
+
+@pytest.mark.asyncio
 async def test_multiple_emailless_users_coexist(db_session: AsyncSession):
     """The partial unique index must allow many NULL-email accounts."""
     u1 = await provision_user_from_telegram(
@@ -202,13 +288,35 @@ async def _provisioned_account(db_session: AsyncSession, telegram_user_id: int):
 async def test_consent_prompt_copy_is_action_first():
     client = _FakeClient()
     await telegram_routes._send_consent_prompt(
-        client, message={"message_id": 1, "chat": {"id": 5}}
+        client,
+        message={
+            "message_id": 1,
+            "chat": {"id": 5},
+            "from": {"id": 5, "language_code": "ru"},
+        },
     )
     text = client.messages[0][1]
     assert "второй мозг в Telegram" in text
     assert "саммари" in text
     assert telegram_routes.TERMS_URL in text
     assert telegram_routes.PRIVACY_URL in text
+
+
+@pytest.mark.asyncio
+async def test_consent_prompt_uses_telegram_language():
+    client = _FakeClient()
+    await telegram_routes._send_consent_prompt(
+        client,
+        message={
+            "message_id": 1,
+            "chat": {"id": 5},
+            "from": {"id": 5, "language_code": "en"},
+        },
+    )
+    assert "your second brain in Telegram" in client.messages[0][1]
+    assert client.message_markups[0]["inline_keyboard"][0][0]["text"] == (
+        "✅ Accept and create account"
+    )
 
 
 @pytest.mark.asyncio
@@ -249,8 +357,7 @@ def test_help_text_covers_headline_features():
 async def test_web_command_mints_one_time_signin_link(
     db_session: AsyncSession, monkeypatch
 ):
-    """Telegram-born accounts are emailless/passwordless: /web must DM a magic
-    sign-in link, not a plain dashboard URL that dead-ends at the login wall."""
+    """Telegram-born accounts can still use the established one-time web link."""
     monkeypatch.setattr(telegram_routes.settings, "frontend_url", "https://wai.computer")
     user_obj, account = await _provisioned_account(db_session, 560001)
     client = _FakeClient()
@@ -486,5 +593,3 @@ async def test_consent_callback_without_pending_sends_plain_welcome(
     welcome = client.edits[0][2]
     assert "Аккаунт создан" in welcome
     assert "Уже обрабатываю" not in welcome
-
-

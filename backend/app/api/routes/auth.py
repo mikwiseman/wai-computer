@@ -1,7 +1,10 @@
 """Authentication routes."""
 
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
@@ -21,6 +24,7 @@ from app.core.rate_limit import (
     check_login_rate_limit,
     check_magic_link_rate_limit,
     check_register_rate_limit,
+    check_telegram_auth_status_rate_limit,
 )
 from app.core.security import (
     create_access_token,
@@ -32,6 +36,7 @@ from app.core.security import (
 )
 from app.models.person import Voiceprint
 from app.models.refresh_token import RefreshToken as RefreshTokenModel
+from app.models.telegram import TelegramAuthTicket
 from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -40,6 +45,8 @@ logger = logging.getLogger(__name__)
 VALID_REGIONS = {"global", "ru"}
 MAGIC_LINK_TOKEN_PREFIX = "magic_"
 PASSWORD_RESET_TOKEN_PREFIX = "reset_"
+TELEGRAM_AUTH_START_PREFIX = "auth_"
+TELEGRAM_AUTH_TTL = timedelta(minutes=10)
 LEGAL_TERMS_VERSION = "2026-05-22"
 LEGAL_PRIVACY_VERSION = "2026-05-22"
 AUTH_MESSAGES = {
@@ -111,6 +118,10 @@ def _new_magic_token() -> str:
 
 def _new_password_reset_token() -> str:
     return f"{PASSWORD_RESET_TOKEN_PREFIX}{generate_magic_link_token()}"
+
+
+def _telegram_auth_token_hash(token: str) -> str:
+    return sha256(token.encode("utf-8")).hexdigest()
 
 
 def _is_password_reset_token(token: str) -> bool:
@@ -266,6 +277,31 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class TelegramAuthStartRequest(BaseModel):
+    client: Literal["web", "macos"] = "web"
+    locale: str | None = None
+
+
+class TelegramAuthStartResponse(BaseModel):
+    status: Literal["pending"] = "pending"
+    bot_username: str
+    deep_link: str
+    web_link: str
+    ticket: str
+    expires_at: datetime
+
+
+class TelegramAuthStatusRequest(BaseModel):
+    ticket: str
+
+
+class TelegramAuthStatusResponse(BaseModel):
+    status: Literal["pending", "approved"]
+    access_token: str | None = None
+    refresh_token: str | None = None
+    token_type: str | None = None
+
+
 def _set_access_cookie(response: Response, token: str) -> None:
     """Set the short-lived HTTP-only access cookie for browser sessions."""
     response.set_cookie(
@@ -378,6 +414,108 @@ async def _create_auth_tokens(
     await db.flush()
 
     return access_token, refresh_token_value
+
+
+def _telegram_auth_runtime() -> str:
+    """Return the configured bot username or fail explicitly."""
+    username = settings.telegram_bot_username.strip().lstrip("@")
+    if (
+        not username
+        or not settings.telegram_bot_token
+        or not settings.telegram_webhook_secret_token
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Telegram sign-in is not configured",
+        )
+    return username
+
+
+@router.post(
+    "/telegram/start",
+    response_model=TelegramAuthStartResponse,
+    dependencies=[Depends(check_login_rate_limit)],
+)
+async def start_telegram_auth(
+    request: TelegramAuthStartRequest,
+    db: Database,
+) -> TelegramAuthStartResponse:
+    """Start a split-secret Telegram login handshake."""
+    bot_username = _telegram_auth_runtime()
+    start_secret = secrets.token_urlsafe(24)
+    poll_secret = secrets.token_urlsafe(32)
+    start_payload = f"{TELEGRAM_AUTH_START_PREFIX}{start_secret}"
+    expires_at = datetime.now(timezone.utc) + TELEGRAM_AUTH_TTL
+    ticket = TelegramAuthTicket(
+        start_token_hash=_telegram_auth_token_hash(start_secret),
+        poll_token_hash=_telegram_auth_token_hash(poll_secret),
+        client=request.client,
+        locale=_normalize_locale(request.locale),
+        expires_at=expires_at,
+    )
+    db.add(ticket)
+    await db.flush()
+    logger.info("telegram_auth started client=%s", request.client)
+    return TelegramAuthStartResponse(
+        bot_username=bot_username,
+        deep_link=f"tg://resolve?domain={bot_username}&start={start_payload}",
+        web_link=f"https://t.me/{bot_username}?start={start_payload}",
+        ticket=poll_secret,
+        expires_at=expires_at,
+    )
+
+
+@router.post(
+    "/telegram/status",
+    response_model=TelegramAuthStatusResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(check_telegram_auth_status_rate_limit)],
+)
+async def exchange_telegram_auth(
+    request: TelegramAuthStatusRequest,
+    response: Response,
+    db: Database,
+) -> TelegramAuthStatusResponse:
+    """Poll a Telegram handshake and exchange an approval exactly once."""
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(TelegramAuthTicket)
+        .where(TelegramAuthTicket.poll_token_hash == _telegram_auth_token_hash(request.ticket))
+        .with_for_update()
+    )
+    ticket = result.scalar_one_or_none()
+    if ticket is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Unknown Telegram sign-in",
+        )
+    if ticket.expires_at <= now:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Telegram sign-in expired")
+    if ticket.approved_at is None:
+        return TelegramAuthStatusResponse(status="pending")
+    if ticket.exchanged_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Telegram sign-in already used",
+        )
+    if ticket.user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Telegram sign-in has no account",
+        )
+
+    access_token, refresh_token = await _create_auth_tokens(ticket.user_id, db)
+    ticket.exchanged_at = now
+    await db.flush()
+    bind_user_context(str(ticket.user_id))
+    _set_auth_cookies(response, access_token, refresh_token)
+    logger.info("telegram_auth exchanged client=%s", ticket.client)
+    return TelegramAuthStatusResponse(
+        status="approved",
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+    )
 
 
 @router.post(

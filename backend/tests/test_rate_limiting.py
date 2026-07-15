@@ -7,7 +7,11 @@ import pytest
 from fastapi import HTTPException
 from httpx import AsyncClient
 
-from app.core.rate_limit import RateLimiter, get_rate_limiter
+from app.core.rate_limit import (
+    RateLimiter,
+    check_telegram_auth_status_rate_limit,
+    get_rate_limiter,
+)
 from tests.conftest import LEGAL_ACCEPTANCE
 
 # --- Unit tests for RateLimiter class ---
@@ -40,6 +44,20 @@ class TestRateLimiterUnit:
 
         # key_b should still work
         limiter.check("key_b", max_requests=3, window_seconds=60)
+
+    def test_telegram_auth_polling_allows_normal_client_cadence(self):
+        class Client:
+            host = "192.0.2.1"
+
+        class Request:
+            client = Client()
+
+        for _ in range(60):
+            check_telegram_auth_status_rate_limit(Request())  # type: ignore[arg-type]
+
+        with pytest.raises(HTTPException) as exc_info:
+            check_telegram_auth_status_rate_limit(Request())  # type: ignore[arg-type]
+        assert exc_info.value.status_code == 429
 
     def test_reset_clears_all_state(self):
         limiter = RateLimiter()

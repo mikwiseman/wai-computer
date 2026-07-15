@@ -9,10 +9,119 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
+from app.models.telegram import TelegramAuthTicket
 from app.models.user import User
 from tests.conftest import LEGAL_ACCEPTANCE
 
 settings = get_settings()
+
+
+@pytest.mark.asyncio
+async def test_telegram_auth_start_creates_split_secret_deep_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Browser polling secret must never be exposed in the Telegram deep link."""
+    from app.api.routes import auth as auth_routes
+
+    monkeypatch.setattr(auth_routes.settings, "telegram_bot_username", "waicomputer_bot")
+    monkeypatch.setattr(auth_routes.settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(auth_routes.settings, "telegram_webhook_secret_token", "test-secret")
+
+    response = await client.post(
+        "/api/auth/telegram/start",
+        json={"client": "web", "locale": "ru"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["web_link"].startswith(
+        "https://t.me/waicomputer_bot?start=auth_"
+    )
+    assert body["deep_link"].startswith(
+        "tg://resolve?domain=waicomputer_bot&start=auth_"
+    )
+    assert body["ticket"] not in body["web_link"]
+    assert body["ticket"] not in body["deep_link"]
+
+    ticket = (await db_session.execute(select(TelegramAuthTicket))).scalar_one()
+    assert ticket.client == "web"
+    assert ticket.locale == "ru"
+    assert ticket.user_id is None
+    assert ticket.approved_at is None
+
+
+@pytest.mark.asyncio
+async def test_telegram_auth_status_is_pending_until_bot_approval(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.api.routes import auth as auth_routes
+
+    monkeypatch.setattr(auth_routes.settings, "telegram_bot_username", "waicomputer_bot")
+    monkeypatch.setattr(auth_routes.settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(auth_routes.settings, "telegram_webhook_secret_token", "test-secret")
+
+    started = await client.post(
+        "/api/auth/telegram/start",
+        json={"client": "macos", "locale": "en"},
+    )
+    assert started.status_code == 200
+
+    status_response = await client.post(
+        "/api/auth/telegram/status",
+        json={"ticket": started.json()["ticket"]},
+    )
+
+    assert status_response.status_code == 200
+    assert status_response.json() == {"status": "pending"}
+
+
+@pytest.mark.asyncio
+async def test_telegram_auth_status_exchanges_approved_ticket_once(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.api.routes import auth as auth_routes
+
+    monkeypatch.setattr(auth_routes.settings, "telegram_bot_username", "waicomputer_bot")
+    monkeypatch.setattr(auth_routes.settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(auth_routes.settings, "telegram_webhook_secret_token", "test-secret")
+
+    started = await client.post(
+        "/api/auth/telegram/start",
+        json={"client": "web", "locale": "en"},
+    )
+    poll_ticket = started.json()["ticket"]
+    ticket = (await db_session.execute(select(TelegramAuthTicket))).scalar_one()
+    user = User(email=None, password_hash=None, signup_origin="telegram")
+    db_session.add(user)
+    await db_session.flush()
+    ticket.user_id = user.id
+    ticket.approved_at = datetime.now(timezone.utc)
+    await db_session.commit()
+
+    approved = await client.post(
+        "/api/auth/telegram/status",
+        json={"ticket": poll_ticket},
+    )
+
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    assert approved.json()["access_token"]
+    assert approved.json()["refresh_token"]
+    set_cookie = approved.headers.get("set-cookie", "")
+    assert settings.auth_cookie_name in set_cookie
+    assert settings.auth_refresh_cookie_name in set_cookie
+
+    reused = await client.post(
+        "/api/auth/telegram/status",
+        json={"ticket": poll_ticket},
+    )
+    assert reused.status_code == 409
 
 
 def test_auth_cookie_secure_defaults_follow_frontend_url_scheme():

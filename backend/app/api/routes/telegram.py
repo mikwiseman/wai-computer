@@ -109,6 +109,7 @@ from app.models.reminder import UserReminder
 from app.models.summary_audio import SummaryAudioStatus
 from app.models.telegram import (
     TelegramAccount,
+    TelegramAuthTicket,
     TelegramMediaGroupPart,
     TelegramPairing,
     TelegramUpdate,
@@ -122,6 +123,8 @@ router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 PAIRING_TTL = timedelta(minutes=15)
 PAIRING_PREFIX = "link_"
+AUTH_PREFIX = "auth_"
+AUTH_CONSENT_PREFIX = "consent:auth:"
 CONSENT_CALLBACK_DATA = "consent:accept"
 TERMS_URL = "https://wai.computer/terms"
 PRIVACY_URL = "https://wai.computer/privacy"
@@ -1267,10 +1270,22 @@ def _extract_photo(message: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _consent_inline_keyboard() -> dict[str, Any]:
+def _telegram_locale(from_user: dict[str, Any] | None) -> str:
+    language_code = str((from_user or {}).get("language_code") or "").lower()
+    if not language_code:
+        return "ru"
+    return "ru" if language_code.startswith("ru") else "en"
+
+
+def _consent_inline_keyboard(
+    *,
+    locale: str = "ru",
+    callback_data: str = CONSENT_CALLBACK_DATA,
+) -> dict[str, Any]:
+    label = "✅ Принимаю и создаю аккаунт" if locale == "ru" else "✅ Accept and create account"
     return {
         "inline_keyboard": [
-            [{"text": "✅ Принимаю и создаю аккаунт", "callback_data": CONSENT_CALLBACK_DATA}]
+            [{"text": label, "callback_data": callback_data}]
         ]
     }
 
@@ -1280,25 +1295,105 @@ async def _send_consent_prompt(
     *,
     message: dict[str, Any],
     lead: str | None = None,
+    callback_data: str = CONSENT_CALLBACK_DATA,
 ) -> None:
     """Offer Telegram-only signup: a welcome + an inline Terms/Privacy consent tap."""
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
-    intro = lead or "WaiComputer — твой второй мозг в Telegram."
-    text = (
-        f"{intro}\n\n"
-        "Пришли голосовое, файл, ссылку или вопрос — расшифрую, сделаю саммари "
-        "и запомню важное.\n\n"
-        "Нажимая кнопку, ты принимаешь Условия использования "
-        f"({TERMS_URL}) и Политику конфиденциальности ({PRIVACY_URL})."
-    )
+    locale = _telegram_locale(_telegram_user(message))
+    if locale == "ru":
+        intro = lead or "WaiComputer — твой второй мозг в Telegram."
+        text = (
+            f"{intro}\n\n"
+            "Пришли голосовое, файл, ссылку или вопрос — расшифрую, сделаю саммари "
+            "и запомню важное.\n\n"
+            "Нажимая кнопку, ты принимаешь Условия использования "
+            f"({TERMS_URL}) и Политику конфиденциальности ({PRIVACY_URL})."
+        )
+    else:
+        intro = lead or "WaiComputer — your second brain in Telegram."
+        text = (
+            f"{intro}\n\n"
+            "Send a voice note, file, link, or question. I’ll transcribe it, summarize it, "
+            "and remember what matters.\n\n"
+            "By tapping the button, you accept the Terms of Service "
+            f"({TERMS_URL}) and Privacy Policy ({PRIVACY_URL})."
+        )
     await client.send_message(
         chat_id,
         text,
         reply_to_message_id=message.get("message_id"),
-        reply_markup=_consent_inline_keyboard(),
+        reply_markup=_consent_inline_keyboard(
+            locale=locale,
+            callback_data=callback_data,
+        ),
     )
+
+
+async def _telegram_auth_ticket(
+    db: AsyncSession,
+    *,
+    raw_token: str,
+) -> TelegramAuthTicket | None:
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(TelegramAuthTicket)
+        .where(
+            and_(
+                TelegramAuthTicket.start_token_hash == _token_hash(raw_token),
+                TelegramAuthTicket.expires_at > now,
+                TelegramAuthTicket.approved_at.is_(None),
+            )
+        )
+        .with_for_update()
+    )
+    return result.scalar_one_or_none()
+
+
+async def _begin_telegram_auth(
+    db: AsyncSession,
+    *,
+    raw_token: str,
+    from_user: dict[str, Any],
+) -> str | None:
+    """Approve a linked account or reserve the ticket pending legal consent."""
+    telegram_user_id = from_user.get("id")
+    if not isinstance(telegram_user_id, int):
+        return "invalid"
+    locale = _telegram_locale(from_user)
+    ticket = await _telegram_auth_ticket(db, raw_token=raw_token)
+    if ticket is None:
+        return "expired"
+    if ticket.telegram_user_id not in (None, telegram_user_id):
+        return "invalid"
+    ticket.telegram_user_id = telegram_user_id
+    account = await _load_account(db, telegram_user_id)
+    if account is None:
+        await db.commit()
+        return None
+    ticket.user_id = account.user_id
+    ticket.approved_at = datetime.now(timezone.utc)
+    await db.commit()
+    if locale == "ru":
+        return "Вход подтверждён ✅ Вернись в WaiComputer — аккаунт уже открыт."
+    return "Sign-in confirmed ✅ Return to WaiComputer — your account is ready."
+
+
+async def _approve_telegram_auth_after_consent(
+    db: AsyncSession,
+    *,
+    raw_token: str,
+    telegram_user_id: int,
+    user_id: Any,
+) -> bool:
+    ticket = await _telegram_auth_ticket(db, raw_token=raw_token)
+    if ticket is None or ticket.telegram_user_id != telegram_user_id:
+        return False
+    ticket.user_id = user_id
+    ticket.approved_at = datetime.now(timezone.utc)
+    await db.commit()
+    return True
 
 
 async def _handle_consent_callback(
@@ -1309,6 +1404,7 @@ async def _handle_consent_callback(
     from_user: dict[str, Any] | None,
     chat_id: int | None,
     message_id: int | None,
+    auth_token: str | None = None,
 ) -> None:
     """Provision a Telegram-only account after the user taps the consent button."""
     if not isinstance(from_user, dict) or chat_id is None:
@@ -1320,7 +1416,11 @@ async def _handle_consent_callback(
             callback_id, text="Не удалось создать аккаунт."
         )
         return
-    await client.answer_callback_query(callback_id, text="Готово!")
+    locale = _telegram_locale(from_user)
+    await client.answer_callback_query(
+        callback_id,
+        text="Готово!" if locale == "ru" else "Done!",
+    )
 
     telegram_user_id = from_user.get("id")
     account = (
@@ -1334,7 +1434,35 @@ async def _handle_consent_callback(
             db, telegram_user_id=telegram_user_id
         )
 
-    welcome = TELEGRAM_CONSENT_WELCOME
+    auth_approved = False
+    if auth_token and isinstance(telegram_user_id, int):
+        auth_approved = await _approve_telegram_auth_after_consent(
+            db,
+            raw_token=auth_token,
+            telegram_user_id=telegram_user_id,
+            user_id=user.id,
+        )
+
+    if locale == "ru":
+        welcome = TELEGRAM_CONSENT_WELCOME
+        if auth_token:
+            welcome += (
+                "\n\nВход подтверждён. Вернись в WaiComputer."
+                if auth_approved
+                else "\n\nАккаунт создан, но вход уже истёк. Начни вход заново в WaiComputer."
+            )
+    else:
+        welcome = (
+            "Account created ✅\n\n"
+            "Send your first voice note, file, or link — I’ll transcribe and summarize it.\n\n"
+            "More things to try: /help"
+        )
+        if auth_token:
+            welcome += (
+                "\n\nSign-in confirmed. Return to WaiComputer."
+                if auth_approved
+                else "\n\nYour account is ready, but sign-in expired. Start again in WaiComputer."
+            )
     if pending:
         welcome += TELEGRAM_CONSENT_WELCOME_REPLAY_SUFFIX
     sent_welcome = False
@@ -1371,7 +1499,35 @@ async def _handle_start_command(
     if not isinstance(telegram_user_id, int):
         return
 
-    if arg.startswith(PAIRING_PREFIX):
+    if arg.startswith(AUTH_PREFIX):
+        raw_token = arg.removeprefix(AUTH_PREFIX)
+        auth_result = await _begin_telegram_auth(
+            db,
+            raw_token=raw_token,
+            from_user=from_user,
+        )
+        if auth_result is None:
+            await _send_consent_prompt(
+                client,
+                message=message,
+                callback_data=f"{AUTH_CONSENT_PREFIX}{raw_token}",
+            )
+            return
+        if auth_result == "expired":
+            text = (
+                "Ссылка для входа истекла. Начни вход заново в WaiComputer."
+                if _telegram_locale(from_user) == "ru"
+                else "This sign-in link expired. Start again in WaiComputer."
+            )
+        elif auth_result == "invalid":
+            text = (
+                "Не удалось подтвердить вход. Начни заново в WaiComputer."
+                if _telegram_locale(from_user) == "ru"
+                else "Could not confirm sign-in. Start again in WaiComputer."
+            )
+        else:
+            text = auth_result
+    elif arg.startswith(PAIRING_PREFIX):
         text = await _consume_pairing(
             db,
             token=arg.removeprefix(PAIRING_PREFIX),
@@ -2441,7 +2597,12 @@ async def _handle_callback_query(
         await client.answer_callback_query(callback_id)
         return
     # Consent tap: the user has NO account yet — provision before the account guard.
-    if data == CONSENT_CALLBACK_DATA:
+    if data == CONSENT_CALLBACK_DATA or data.startswith(AUTH_CONSENT_PREFIX):
+        auth_token = (
+            data.removeprefix(AUTH_CONSENT_PREFIX)
+            if data.startswith(AUTH_CONSENT_PREFIX)
+            else None
+        )
         await _handle_consent_callback(
             db,
             client,
@@ -2449,6 +2610,7 @@ async def _handle_callback_query(
             from_user=from_user if isinstance(from_user, dict) else None,
             chat_id=chat_id,
             message_id=message_id if isinstance(message_id, int) else None,
+            auth_token=auth_token,
         )
         return
     account = await _load_account(db, telegram_user_id)

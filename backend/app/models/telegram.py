@@ -68,6 +68,44 @@ class TelegramPairing(Base, UUIDMixin, TimestampMixin):
     user: Mapped["User"] = relationship("User")
 
 
+class TelegramAuthTicket(Base, UUIDMixin, TimestampMixin):
+    """Short-lived Telegram login handshake with split start/poll secrets.
+
+    The Telegram deep link carries only ``start_token_hash``'s source secret.
+    The initiating web or native client keeps the independent polling secret,
+    so opening or forwarding the bot link alone can never redeem the session.
+    """
+
+    __tablename__ = "telegram_auth_tickets"
+
+    start_token_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    poll_token_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    client: Mapped[str] = mapped_column(String(16), nullable=False)
+    locale: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    exchanged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+    user: Mapped["User | None"] = relationship("User")
+
+
 class TelegramMediaGroupPart(Base, UUIDMixin, TimestampMixin):
     """One buffered photo of a Telegram album (media group).
 

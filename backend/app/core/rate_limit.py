@@ -116,6 +116,17 @@ def check_login_rate_limit(request: Request) -> None:
     limiter.check(key=f"login:{client_ip}", max_requests=5, window_seconds=60)
 
 
+def check_telegram_auth_status_rate_limit(request: Request) -> None:
+    """Dependency: allow the expected 1.5-second Telegram auth polling cadence."""
+    limiter = get_rate_limiter()
+    client_ip = request.client.host if request.client else "unknown"
+    limiter.check(
+        key=f"telegram_auth_status:{client_ip}",
+        max_requests=60,
+        window_seconds=60,
+    )
+
+
 def check_register_rate_limit(request: Request) -> None:
     """Dependency: 3 attempts per 60 seconds per IP for registration."""
     limiter = get_rate_limiter()
