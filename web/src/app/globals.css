@@ -1974,24 +1974,6 @@ a.primary-button[aria-disabled="true"]:hover {
   margin: 0;
 }
 
-.telegram-code-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 0.6rem;
-}
-
-.telegram-code-form label {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.telegram-code-form small {
-  color: var(--ink-soft);
-  font-size: var(--font-label-size);
-  line-height: 1.35;
-}
-
 .settings-checkbox-field {
   display: flex;
   align-items: center;
@@ -3171,22 +3153,6 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--ink-soft);
   font-size: var(--font-body-small-size);
   line-height: 1.45;
-}
-
-.settings-disclosure {
-  display: grid;
-  gap: 0.55rem;
-}
-
-.settings-disclosure summary {
-  cursor: pointer;
-  color: var(--ink-soft);
-  font-size: var(--font-label-size);
-  font-weight: 650;
-}
-
-.settings-disclosure[open] summary {
-  color: var(--ink);
 }
 
 .mcp-endpoint-row {

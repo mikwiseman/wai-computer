@@ -204,12 +204,10 @@ struct MacSettingsView: View {
     @State private var settingsError: String?
     @State private var telegramStatus: TelegramLinkStatus?
     @State private var telegramPairing: TelegramPairing?
-    @State private var telegramLinkCode = ""
     @State private var telegramLoading = false
     @State private var telegramError: String?
     @State private var telegramQRCodeCache = MacTelegramQRCodeCache()
     @State private var telegramLinkPollTask: Task<Void, Never>?
-    @State private var telegramShowCodeEntry = false
     @State private var showTelegramDisconnectConfirm = false
     @State private var serverDataInfo: SystemInfo?
     @State private var serverDataMap: DataOwnershipMap?
@@ -1332,38 +1330,6 @@ struct MacSettingsView: View {
                     }
                 }
 
-                // The manual code entry is only for the reverse flow (user started
-                // in the bot). Hidden behind a disclosure so it doesn't look like a
-                // required step (138).
-                DisclosureGroup(isExpanded: $telegramShowCodeEntry) {
-                    HStack {
-                        TextField(t("Pairing code", "Код привязки"), text: $telegramLinkCode)
-                            .textFieldStyle(.roundedBorder)
-                            .labelsHidden()
-                            .help(t("Paste the code from the bot.", "Вставь код из бота."))
-                            .accessibilityLabel(t("Pairing code", "Код привязки"))
-                            .disabled(telegramLoading)
-                            .accessibilityIdentifier("settings-telegram-code-field")
-                            .onSubmit {
-                                guard !telegramLoading,
-                                      !telegramLinkCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                else { return }
-                                Task { await claimTelegramLinkCode() }
-                            }
-                        Button {
-                            Task { await claimTelegramLinkCode() }
-                        } label: {
-                            Text(t("Link by code", "Привязать по коду"))
-                        }
-                        .disabled(telegramLoading || telegramLinkCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .accessibilityIdentifier("settings-telegram-claim-code-button")
-                    }
-                    .padding(.top, Spacing.xs)
-                } label: {
-                    Text(t("Started in Telegram?", "Начал в Telegram?"))
-                        .font(Typography.caption.weight(.semibold))
-                }
-                .accessibilityIdentifier("settings-telegram-code-disclosure")
             }
 
             if let telegramError {
@@ -2194,7 +2160,6 @@ struct MacSettingsView: View {
             telegramStatus = try await appState.getAPIClient().getTelegramLinkStatus()
             if telegramStatus?.linked == true {
                 telegramPairing = nil
-                telegramLinkCode = ""
                 stopTelegramLinkPolling()
             }
             telegramError = nil
@@ -2233,33 +2198,12 @@ struct MacSettingsView: View {
         telegramLoading = false
     }
 
-    private func claimTelegramLinkCode() async {
-        guard !telegramLoading else { return }
-        let code = telegramLinkCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !code.isEmpty else { return }
-        telegramLoading = true
-        do {
-            telegramStatus = try await appState.getAPIClient().claimTelegramLinkCode(code)
-            telegramPairing = nil
-            telegramLinkCode = ""
-            stopTelegramLinkPolling()
-            telegramError = nil
-        } catch {
-            telegramError = t(
-                "Couldn't link Telegram with this code: \(error.localizedDescription)",
-                "Не удалось привязать Telegram по коду: \(error.localizedDescription)"
-            )
-        }
-        telegramLoading = false
-    }
-
     private func unlinkTelegram() async {
         guard !telegramLoading else { return }
         telegramLoading = true
         do {
             try await appState.getAPIClient().unlinkTelegram()
             telegramPairing = nil
-            telegramLinkCode = ""
             stopTelegramLinkPolling()
             telegramStatus = try await appState.getAPIClient().getTelegramLinkStatus()
             telegramError = nil

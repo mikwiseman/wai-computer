@@ -344,21 +344,6 @@ final class APIClientTests: XCTestCase {
                 }
                 """.utf8))
             }
-            if request.url!.path == "/api/telegram/link/claim" {
-                let body = self.bodyJSON(from: request)!
-                XCTAssertEqual(body["code"] as? String, "ABCD-2345")
-                return (response, Data("""
-                {
-                  "linked": true,
-                  "bot_username": "waicomputer_bot",
-                  "telegram_user_id": 456,
-                  "username": "anna",
-                  "first_name": "Anna",
-                  "last_name": null,
-                  "linked_at": "2026-05-22T08:30:00Z"
-                }
-                """.utf8))
-            }
             return (response, Data())
         }
 
@@ -372,17 +357,12 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(pairing.botUsername, "waicomputer_bot")
         XCTAssertTrue(pairing.webLink.contains("waicomputer_bot"))
 
-        let claimed = try await client.claimTelegramLinkCode("ABCD-2345")
-        XCTAssertEqual(claimed.telegramUserID, 456)
-        XCTAssertEqual(claimed.username, "anna")
-
         try await client.unlinkTelegram()
         XCTAssertEqual(
             seenPaths.snapshot,
             [
                 "/api/telegram/link",
                 "/api/telegram/link/start",
-                "/api/telegram/link/claim",
                 "/api/telegram/link",
             ]
         )

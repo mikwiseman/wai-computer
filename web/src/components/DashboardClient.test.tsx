@@ -26,7 +26,6 @@ const mockGetPreferences = vi.fn();
 const mockUpdatePreferences = vi.fn();
 const mockGetTelegramLinkStatus = vi.fn();
 const mockStartTelegramLink = vi.fn();
-const mockClaimTelegramLinkCode = vi.fn();
 const mockUnlinkTelegram = vi.fn();
 const mockLogout = vi.fn();
 const mockListMcpConnections = vi.fn();
@@ -115,7 +114,6 @@ vi.mock("@/lib/api", () => ({
   updatePreferences: (...args: unknown[]) => mockUpdatePreferences(...args),
   getTelegramLinkStatus: (...args: unknown[]) => mockGetTelegramLinkStatus(...args),
   startTelegramLink: (...args: unknown[]) => mockStartTelegramLink(...args),
-  claimTelegramLinkCode: (...args: unknown[]) => mockClaimTelegramLinkCode(...args),
   unlinkTelegram: (...args: unknown[]) => mockUnlinkTelegram(...args),
   logout: (...args: unknown[]) => mockLogout(...args),
   listMcpConnections: (...args: unknown[]) => mockListMcpConnections(...args),
@@ -347,13 +345,6 @@ function arrangeHappyPathMocks() {
     web_link: "https://t.me/waicomputer_bot?start=link_token",
     expires_at: "2026-05-22T09:00:00Z",
   });
-  mockClaimTelegramLinkCode.mockResolvedValue({
-    ...baseTelegramStatus,
-    linked: true,
-    telegram_user_id: 123,
-    username: "mik",
-    linked_at: "2026-05-22T09:00:00Z",
-  });
   mockUnlinkTelegram.mockResolvedValue(undefined);
   mockLogout.mockResolvedValue({ message: "Logged out" });
   mockListMcpConnections.mockResolvedValue([]);
@@ -497,7 +488,6 @@ describe("DashboardClient", () => {
       mockGetTranscriptionOptions,
       mockGetTelegramLinkStatus,
       mockStartTelegramLink,
-      mockClaimTelegramLinkCode,
       mockUnlinkTelegram,
       mockLogout,
       mockListMcpConnections,
@@ -1029,46 +1019,6 @@ describe("DashboardClient", () => {
     expect(screen.getByTestId("current-password")).toBeInTheDocument();
   });
 
-  it("claims Telegram bot link code from settings (RU locale)", async () => {
-    arrangeHappyPathMocks();
-    const originalLanguage = navigator.language;
-    const originalLanguages = navigator.languages;
-    Object.defineProperty(navigator, "language", {
-      value: "ru-RU",
-      configurable: true,
-    });
-    Object.defineProperty(navigator, "languages", {
-      value: ["ru-RU"],
-      configurable: true,
-    });
-    const user = userEvent.setup();
-
-    try {
-      render(<DashboardClient />);
-      await waitForDashboardReady();
-      await openSettingsView(user);
-
-      await waitFor(() => {
-        expect(screen.getByText("Код из Telegram")).toBeInTheDocument();
-      });
-      await user.type(screen.getByPlaceholderText("Введите код из бота"), "ABCD-2345");
-      await user.click(screen.getByRole("button", { name: "Привязать по коду" }));
-
-      await waitFor(() => {
-        expect(mockClaimTelegramLinkCode).toHaveBeenCalledWith("ABCD-2345");
-        expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Telegram привязан.");
-      });
-    } finally {
-      Object.defineProperty(navigator, "language", {
-        value: originalLanguage,
-        configurable: true,
-      });
-      Object.defineProperty(navigator, "languages", {
-        value: originalLanguages,
-        configurable: true,
-      });
-    }
-  });
 
   it("renders Telegram settings in English by default", async () => {
     arrangeHappyPathMocks();
@@ -1079,11 +1029,10 @@ describe("DashboardClient", () => {
     await openSettingsView(user);
 
     await waitFor(() => {
-      expect(screen.getByText("Code from Telegram")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Link Telegram" }),
+      ).toBeInTheDocument();
     });
-    expect(
-      screen.getByRole("button", { name: "Link Telegram" }),
-    ).toBeInTheDocument();
   });
 
   // --- Password change does NOT clear fields on failure ---
@@ -2575,20 +2524,6 @@ describe("DashboardClient", () => {
     });
   });
 
-  it("requires a code before claiming a Telegram link by code", async () => {
-    arrangeHappyPathMocks();
-    const user = userEvent.setup();
-
-    render(<DashboardClient />);
-    await waitForDashboardReady();
-    await openSettingsView(user);
-
-    await user.click(screen.getByRole("button", { name: "Link by code" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Enter the Telegram code.");
-    });
-    expect(mockClaimTelegramLinkCode).not.toHaveBeenCalled();
-  });
 
   // --- Keyboard navigation shortcuts (n / d / l / w / Escape) ---
 

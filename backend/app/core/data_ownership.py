@@ -356,9 +356,9 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
         "Short-lived Telegram pairing state is server-local.",
     ),
     TableOwnershipEntry(
-        "telegram_bot_link_codes",
+        "telegram_auth_tickets",
         "self_host_local",
-        "Short-lived Telegram bot link codes are server-local.",
+        "Short-lived Telegram login handshake tickets are server-local.",
     ),
     TableOwnershipEntry(
         "telegram_updates",

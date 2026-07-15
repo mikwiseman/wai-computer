@@ -72,6 +72,8 @@ import type {
   SummaryGeneration,
   SystemInfo,
   TelegramLinkStatus,
+  TelegramAuthStart,
+  TelegramAuthStatus,
   TelegramPairing,
   TokenResponse,
   TranscriptionOptions,
@@ -183,6 +185,30 @@ export function requestMagicLink(
         : {}),
     }),
   });
+}
+
+export function startTelegramAuth(
+  options: { client: "web" | "macos"; locale: "en" | "ru" },
+): Promise<TelegramAuthStart> {
+  return apiFetch<TelegramAuthStart>("/api/auth/telegram/start", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export async function getTelegramAuthStatus(ticket: string): Promise<TelegramAuthStatus> {
+  const response = await apiFetch<TelegramAuthStatus>("/api/auth/telegram/status", {
+    method: "POST",
+    body: JSON.stringify({ ticket }),
+  });
+  if (response.status === "approved") {
+    if (!response.access_token || !response.refresh_token) {
+      throw new ApiError(502, "Telegram sign-in returned an incomplete session", response);
+    }
+    syncLocalhostAuthCookie(response.access_token);
+    syncLocalhostRefreshCookie(response.refresh_token);
+  }
+  return response;
 }
 
 export function requestPasswordReset(
@@ -971,13 +997,6 @@ export function getTelegramLinkStatus(): Promise<TelegramLinkStatus> {
 
 export function startTelegramLink(): Promise<TelegramPairing> {
   return apiFetch<TelegramPairing>("/api/telegram/link/start", { method: "POST" });
-}
-
-export function claimTelegramLinkCode(code: string): Promise<TelegramLinkStatus> {
-  return apiFetch<TelegramLinkStatus>("/api/telegram/link/claim", {
-    method: "POST",
-    body: JSON.stringify({ code }),
-  });
 }
 
 export function unlinkTelegram(): Promise<void> {

@@ -424,18 +424,13 @@ describe("api client wrappers", () => {
   it("calls Telegram link endpoints", async () => {
     await api.getTelegramLinkStatus();
     await api.startTelegramLink();
-    await api.claimTelegramLinkCode("ABCD-2345");
     await api.unlinkTelegram();
 
     expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/telegram/link");
     expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/telegram/link/start", {
       method: "POST",
     });
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/telegram/link/claim", {
-      method: "POST",
-      body: JSON.stringify({ code: "ABCD-2345" }),
-    });
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/telegram/link", {
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/telegram/link", {
       method: "DELETE",
     });
   });
