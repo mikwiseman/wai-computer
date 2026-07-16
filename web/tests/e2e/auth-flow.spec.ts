@@ -288,8 +288,9 @@ test.describe("Auth flow", () => {
     await installAuthMocks(page, { enrolledVoice: true });
     await page.goto("/login");
 
-    // Verify the login page renders
-    await expect(page.locator("h1")).toContainText("Sign in");
+    // Login and registration share one account gateway; password remains a
+    // quiet recovery path for returning users.
+    await expect(page.locator("h1")).toContainText("Start anywhere. Continue everywhere.");
 
     // Fill in credentials and submit
     await fillEmailAfterHydration(page, "test@example.com");
@@ -302,21 +303,13 @@ test.describe("Auth flow", () => {
     await expect(page.getByTestId("user-email")).toContainText("test@example.com");
   });
 
-  test("register routes fresh accounts through onboarding", async ({ page }) => {
+  test("register route renders the unified passwordless account gateway", async ({ page }) => {
     await page.goto("/register");
 
-    // Verify the register page renders
-    await expect(page.locator("h1")).toContainText("Create account");
-
-    // Fill in form and submit
-    await fillEmailAfterHydration(page, "newuser@example.com");
-    await page.getByTestId("password-mode-button").click();
-    await page.getByTestId("auth-password").fill("securePass1");
-    await page.getByTestId("auth-submit").click();
-
-    // Fresh accounts always onboard first (voice setup), matching the
-    // magic-link flow; the dashboard comes after.
-    await expect(page).toHaveURL(/\/onboarding/);
+    await expect(page.locator("h1")).toContainText("Start anywhere. Continue everywhere.");
+    await expect(page.getByTestId("magic-link-button")).toContainText("Continue");
+    await expect(page.getByTestId("password-mode-button")).toContainText("Use password");
+    await expect(page.getByText(/^Create account$/)).toHaveCount(0);
   });
 
   test("login with wrong credentials shows error message", async ({ page }) => {
@@ -347,8 +340,9 @@ test.describe("Auth flow", () => {
   test("magic link request shows success message", async ({ page }) => {
     await page.goto("/login");
 
-    // The magic link button is disabled until an email is entered
-    await expect(page.getByTestId("magic-link-button")).toBeDisabled();
+    // The unified gateway keeps one primary Continue action visible.
+    await expect(page.getByTestId("magic-link-button")).toBeEnabled();
+    await expect(page.getByTestId("magic-link-button")).toContainText("Continue");
 
     // Enter an email, then click the magic link button
     await fillEmailAfterHydration(page, "test@example.com");
@@ -361,6 +355,9 @@ test.describe("Auth flow", () => {
       email: "test@example.com",
       locale: "en",
       region: "global",
+      accepted_legal_terms: true,
+      legal_terms_version: "2026-05-22",
+      legal_privacy_version: "2026-05-22",
     });
   });
 
@@ -509,17 +506,20 @@ test.describe("Auth flow with Russian browser locale", () => {
     });
 
     await page.goto("/login");
-    await expect(page.locator("h1")).toContainText("Войти");
-    await expect(page.getByTestId("magic-link-button")).toContainText("Отправить ссылку для входа");
+    await expect(page.locator("h1")).toContainText("Начни где удобно. Продолжай везде.");
+    await expect(page.getByTestId("magic-link-button")).toContainText("Продолжить");
 
     await fillEmailAfterHydration(page, "ru@example.com");
     await page.getByTestId("magic-link-button").click();
 
-    await expect(page.getByTestId("magic-link-sent")).toContainText("Проверьте почту");
+    await expect(page.getByTestId("magic-link-sent")).toContainText("Проверь почту");
     expect(authRequests.lastMagicLinkRequest()).toEqual({
       email: "ru@example.com",
       locale: "ru",
       region: "ru",
+      accepted_legal_terms: true,
+      legal_terms_version: "2026-05-22",
+      legal_privacy_version: "2026-05-22",
     });
 
     await page.goto("/auth/app?token=valid-token&client=macos");
