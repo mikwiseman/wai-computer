@@ -129,10 +129,12 @@ def test_release_staples_and_checks_copied_sparkle_updater_before_host_app():
     helper_validate = 'xcrun stapler validate "$SPARKLE_UPDATER_APP"'
     copied_helper_validate = 'xcrun stapler validate "$sparkle_updater_smoke_app"'
     copied_helper_policy = 'xcrun syspolicy_check distribution "$sparkle_updater_smoke_app"'
+    host_policy = 'xcrun syspolicy_check distribution "$APP_PATH"'
     host_staple = 'xcrun stapler staple "$APP_PATH"'
 
     assert helper_staple in build_script
     assert helper_validate in build_script
     assert copied_helper_validate in build_script
     assert copied_helper_policy in build_script
+    assert host_policy in build_script
     assert build_script.index(helper_staple) < build_script.index(host_staple)

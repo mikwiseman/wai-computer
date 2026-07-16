@@ -491,7 +491,7 @@ else
   echo "Skipping notarization: set NOTARY_KEYCHAIN_PROFILE, NOTARY_KEY + NOTARY_KEY_ID [+ NOTARY_ISSUER], or APPSTORECONNECT_CONFIG."
 fi
 
-gatekeeper_check "app bundle" spctl -a -vv --type execute "$APP_PATH"
+gatekeeper_check "app bundle" xcrun syspolicy_check distribution "$APP_PATH"
 
 DMG_PATH="$RELEASE_DIR/${APP_NAME}${VARIANT_SUFFIX}-${VERSION}-${BUILD}.dmg"
 rm -f "$DMG_PATH"
