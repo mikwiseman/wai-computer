@@ -34,6 +34,7 @@ XCODEBUILD_JOBS=${MACOS_XCODEBUILD_JOBS:-1}
 BACKGROUND_PATH="$TMP_DIR/${APP_NAME}-dmg-background.png"
 DMG_PATH=""
 APP_PATH=""
+SPARKLE_UPDATER_APP=""
 DMG_MOUNT_POINT=""
 NOTARIZATION_MODE="skipped"
 NOTARY_ARGS=()
@@ -237,8 +238,31 @@ resign_sparkle_for_distribution() {
   sign_bundle_if_present "$sparkle_version_dir/XPCServices/Installer.xpc" --preserve-metadata=identifier,entitlements
   sign_bundle_if_present "$sparkle_version_dir/XPCServices/Downloader.xpc" --preserve-metadata=identifier,entitlements
   sign_bundle_if_present "$sparkle_version_dir/Autoupdate"
-  sign_bundle_if_present "$sparkle_version_dir/Updater.app"
+  SPARKLE_UPDATER_APP="$sparkle_version_dir/Updater.app"
+  sign_bundle_if_present "$SPARKLE_UPDATER_APP"
   sign_bundle_if_present "$sparkle_framework"
+}
+
+staple_and_validate_sparkle_updater() {
+  if [[ -z "$SPARKLE_UPDATER_APP" || ! -d "$SPARKLE_UPDATER_APP" ]]; then
+    echo "Sparkle Updater.app was not found after archiving the application." >&2
+    exit 1
+  fi
+
+  # Sparkle copies Updater.app out of the host bundle before launching it. A
+  # ticket stapled only to WaiComputer.app does not follow that copy, so
+  # Gatekeeper can reject the helper before it connects back to Autoupdate.
+  # The accepted app notarization submission already contains this nested
+  # code, which lets us attach its own ticket before packaging the DMG.
+  xcrun stapler staple "$SPARKLE_UPDATER_APP"
+  xcrun stapler validate "$SPARKLE_UPDATER_APP"
+
+  local sparkle_updater_smoke_dir sparkle_updater_smoke_app
+  sparkle_updater_smoke_dir=$(mktemp -d "$TMP_DIR/sparkle-launcher-smoke.XXXXXX")
+  sparkle_updater_smoke_app="$sparkle_updater_smoke_dir/Updater.app"
+  ditto "$SPARKLE_UPDATER_APP" "$sparkle_updater_smoke_app"
+  xcrun stapler validate "$sparkle_updater_smoke_app"
+  gatekeeper_check "copied Sparkle updater helper" spctl -a -vv --type execute "$sparkle_updater_smoke_app"
 }
 
 require_tool xcodebuild
@@ -456,6 +480,7 @@ if build_notary_args; then
   APP_ZIP="$TMP_DIR/${APP_NAME}.zip"
   ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$APP_ZIP"
   notarize_file "$APP_ZIP" "app bundle archive"
+  staple_and_validate_sparkle_updater
   xcrun stapler staple "$APP_PATH"
   xcrun stapler validate "$APP_PATH"
   NOTARIZATION_MODE="app-and-dmg"

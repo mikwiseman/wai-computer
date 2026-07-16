@@ -119,3 +119,18 @@ def test_release_notes_find_previous_build_addition_not_current_removal():
     assert 'prev_commit=$(find_previous_build_commit "$prev_build")' in build_script
     assert 'CURRENT_PROJECT_VERSION: \\"${target_build}\\"' in build_script
     assert 'git log -S "CURRENT_PROJECT_VERSION: \\"${prev_build}\\""' not in build_script
+
+
+def test_release_staples_and_checks_copied_sparkle_updater_before_host_app():
+    root = Path(__file__).resolve().parents[2]
+    build_script = (root / "scripts" / "build-macos-dmg.sh").read_text(encoding="utf-8")
+
+    helper_staple = 'xcrun stapler staple "$SPARKLE_UPDATER_APP"'
+    helper_validate = 'xcrun stapler validate "$SPARKLE_UPDATER_APP"'
+    copied_helper_validate = 'xcrun stapler validate "$sparkle_updater_smoke_app"'
+    host_staple = 'xcrun stapler staple "$APP_PATH"'
+
+    assert helper_staple in build_script
+    assert helper_validate in build_script
+    assert copied_helper_validate in build_script
+    assert build_script.index(helper_staple) < build_script.index(host_staple)
