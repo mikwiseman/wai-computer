@@ -15,6 +15,44 @@ enum Spacing {
     static let huge: CGFloat = 64
 }
 
+// MARK: - Radius (concentric hierarchy)
+
+enum Radius {
+    static let sm: CGFloat = 8
+    static let md: CGFloat = 12
+    static let lg: CGFloat = 16
+    static let xl: CGFloat = 22
+    static let xxl: CGFloat = 28
+}
+
+// MARK: - Elevation
+
+enum Elevation {
+    case raised
+    case floating
+
+    var color: Color {
+        switch self {
+        case .raised: return Color.black.opacity(0.08)
+        case .floating: return Color.black.opacity(0.18)
+        }
+    }
+
+    var radius: CGFloat {
+        switch self {
+        case .raised: return 12
+        case .floating: return 28
+        }
+    }
+
+    var y: CGFloat {
+        switch self {
+        case .raised: return 4
+        case .floating: return 12
+        }
+    }
+}
+
 // MARK: - Typography
 
 enum Typography {
@@ -98,6 +136,16 @@ enum IOSAccentChoice: String, CaseIterable, Identifiable {
             return Color(uiColor: .systemGray)
         }
     }
+
+    /// Foreground for content placed directly on the accent fill. Every current
+    /// iOS system accent is bright enough that black has the stronger WCAG
+    /// contrast in both light and dark appearances.
+    var onAccentColor: Color {
+        switch self {
+        case .system, .amber, .blue, .green, .violet, .rose, .graphite:
+            return .black
+        }
+    }
 }
 
 /// AppStorage keys + defaults for the appearance preferences. Mirrors
@@ -108,6 +156,16 @@ enum IOSThemePreferences {
     static let accentKey = "waiAccentChoice"
     static let defaultAppearance: IOSAppearanceMode = .system
     static let defaultAccent: IOSAccentChoice = .amber
+
+    static var currentAppearance: IOSAppearanceMode {
+        let rawValue = UserDefaults.standard.string(forKey: appearanceKey)
+        return rawValue.flatMap(IOSAppearanceMode.init(rawValue:)) ?? defaultAppearance
+    }
+
+    static var currentAccent: IOSAccentChoice {
+        let rawValue = UserDefaults.standard.string(forKey: accentKey)
+        return rawValue.flatMap(IOSAccentChoice.init(rawValue:)) ?? defaultAccent
+    }
 }
 
 /// Locale-aware date formatting keyed to the in-app language. Mirrors
@@ -210,15 +268,20 @@ enum IOSDateFormatting {
 // MARK: - Palette
 
 enum Palette {
-    /// Warm amber accent — replaces system .blue (darkened for WCAG AA on white).
-    /// Mirrors macOS Palette so brand identity stays consistent across platforms.
-    static let accent = Color(red: 0.82, green: 0.49, blue: 0.18)
-    static let accentSubtle = accent.opacity(0.10)
+    /// App-wide accent selected in Appearance settings.
+    static var accent: Color { IOSThemePreferences.currentAccent.color }
+    static var onAccent: Color { IOSThemePreferences.currentAccent.onAccentColor }
+    static var accentSubtle: Color { accent.opacity(0.12) }
 
     static let textPrimary = Color.primary
     static let textSecondary = Color.secondary
     static let textTertiary = Color(uiColor: .tertiaryLabel)
 
+    /// Spatial Studio canvas and content surfaces. These are intentionally
+    /// opaque: Liquid Glass is reserved for navigation and floating controls.
+    static let canvas = Color(uiColor: .systemGroupedBackground)
+    static let panel = Color(uiColor: .systemBackground)
+    static let panelRaised = Color(uiColor: .secondarySystemGroupedBackground)
     static let surfaceSubtle = Color.primary.opacity(0.05)
     static let surfaceHover = Color.primary.opacity(0.08)
     static let border = Color.primary.opacity(0.10)
@@ -253,11 +316,12 @@ struct WaiPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Typography.headingSmall)
-            .foregroundStyle(.white)
+            .foregroundStyle(Palette.onAccent)
             .padding(.horizontal, Spacing.xl)
             .padding(.vertical, Spacing.md)
+            .frame(minHeight: 44)
             .background(isDisabled ? Palette.accent.opacity(0.4) : Palette.accent)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(Capsule())
             .opacity(configuration.isPressed ? 0.8 : 1.0)
     }
 }
@@ -268,6 +332,41 @@ struct WaiGhostButtonStyle: ButtonStyle {
             .font(Typography.headingSmall)
             .foregroundStyle(Palette.accent)
             .opacity(configuration.isPressed ? 0.6 : 1.0)
+    }
+}
+
+struct WaiQuietButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Typography.headingSmall)
+            .foregroundStyle(Palette.textSecondary)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .frame(minHeight: 44)
+            .background(configuration.isPressed ? Palette.surfaceHover : Color.clear)
+            .clipShape(Capsule())
+    }
+}
+
+// MARK: - Surfaces
+
+private struct WaiCardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(Spacing.lg)
+            .background(Palette.panel, in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(Palette.border, lineWidth: 1)
+            )
+    }
+}
+
+private struct WaiShadowModifier: ViewModifier {
+    let elevation: Elevation
+
+    func body(content: Content) -> some View {
+        content.shadow(color: elevation.color, radius: elevation.radius, y: elevation.y)
     }
 }
 
@@ -284,6 +383,34 @@ struct WaiSectionHeaderModifier: ViewModifier {
 }
 
 extension View {
+    func waiCard() -> some View {
+        modifier(WaiCardModifier())
+    }
+
+    func waiShadow(_ elevation: Elevation) -> some View {
+        modifier(WaiShadowModifier(elevation: elevation))
+    }
+
+    /// Liquid Glass for floating navigation and interactive chrome only.
+    /// Content cards stay opaque for hierarchy and legibility.
+    @ViewBuilder
+    func waiGlassChrome(cornerRadius: CGFloat, interactive: Bool = false) -> some View {
+        if #available(iOS 26.0, *) {
+            if interactive {
+                self.glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
+            } else {
+                self.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            }
+        } else {
+            self
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                )
+        }
+    }
+
     func waiSectionHeader() -> some View {
         modifier(WaiSectionHeaderModifier())
     }

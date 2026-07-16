@@ -1463,14 +1463,14 @@ struct MacSettingsView: View {
     @ViewBuilder
     private var appearanceSection: some View {
         Section {
-            Picker(selection: appearanceModeBinding) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 112), spacing: Spacing.sm)],
+                spacing: Spacing.sm
+            ) {
                 ForEach(MacAppearanceMode.allCases) { mode in
-                    Text(appearanceTitle(mode)).tag(mode.rawValue)
+                    appearanceModeButton(mode)
                 }
-            } label: {
-                Text(t("Theme", "Тема"))
             }
-            .pickerStyle(.segmented)
             .accessibilityIdentifier("settings-appearance-mode-picker")
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -1492,8 +1492,8 @@ struct MacSettingsView: View {
             themePreview
 
             Text(t(
-                "Uses macOS adaptive system colors so the accent works in Light, Dark, and increased contrast modes.",
-                "Использует адаптивные системные цвета macOS, чтобы акцент работал в светлой, тёмной и контрастной темах."
+                "Adaptive macOS colors keep every accent legible in Pearl, Midnight, and increased contrast modes.",
+                "Адаптивные цвета macOS сохраняют читаемость акцента в Жемчужной теме, Полночи и повышенной контрастности."
             ))
             .font(Typography.caption)
             .foregroundStyle(Palette.textTertiary)
@@ -1508,11 +1508,35 @@ struct MacSettingsView: View {
         MacAccentChoice(rawValue: accentChoiceRawValue) ?? MacThemePreferences.defaultAccent
     }
 
-    private var appearanceModeBinding: Binding<String> {
-        Binding(
-            get: { selectedAppearanceMode.rawValue },
-            set: { appearanceModeRawValue = $0 }
-        )
+    private func appearanceModeButton(_ mode: MacAppearanceMode) -> some View {
+        let isSelected = selectedAppearanceMode == mode
+        return Button {
+            appearanceModeRawValue = mode.rawValue
+        } label: {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Image(systemName: appearanceIcon(mode))
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(isSelected ? Palette.accent : Palette.textSecondary)
+                    .accessibilityHidden(true)
+
+                Text(appearanceTitle(mode))
+                    .font(Typography.headingSmall)
+                    .foregroundStyle(isSelected ? Palette.accent : Palette.textPrimary)
+                    .lineLimit(1)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            .background(isSelected ? Palette.accentSubtle : Palette.panelRaised)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(isSelected ? Palette.accent : Palette.border, lineWidth: isSelected ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(appearanceTitle(mode))
+        .accessibilityValue(isSelected ? t("Selected", "Выбрано") : t("Not selected", "Не выбрано"))
+        .accessibilityIdentifier("settings-appearance-mode-\(mode.rawValue)")
     }
 
     private var themePreview: some View {
@@ -1631,9 +1655,17 @@ struct MacSettingsView: View {
         case .system:
             return t("System", "Системная")
         case .light:
-            return t("Light", "Светлая")
+            return t("Pearl", "Жемчужная")
         case .dark:
-            return t("Dark", "Тёмная")
+            return t("Midnight", "Полночь")
+        }
+    }
+
+    private func appearanceIcon(_ mode: MacAppearanceMode) -> String {
+        switch mode {
+        case .system: return "macbook.and.iphone"
+        case .light: return "sun.max"
+        case .dark: return "moon.stars"
         }
     }
 

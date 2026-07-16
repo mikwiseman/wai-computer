@@ -1,36 +1,51 @@
 .theme-accent-picker {
   display: grid;
-  gap: 0.85rem;
+  gap: 1rem;
+}
+
+.section {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.sectionLabel {
+  color: var(--ink-faint);
+  font: var(--font-label-small);
+  letter-spacing: var(--font-label-small-tracking);
+  text-transform: uppercase;
 }
 
 /* Theme segmented control --------------------------------------------- */
 
 .theme-segmented {
-  display: inline-flex;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  background: var(--surface-subtle);
-  border-radius: var(--radius-pill);
-  width: fit-content;
-  border: 1px solid var(--border, rgba(127, 127, 127, 0.18));
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+  width: min(100%, 32rem);
 }
 
 .theme-segmented__option {
   appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--ink, currentColor);
-  padding: 0.4rem 0.95rem;
-  border-radius: var(--radius-pill);
-  font: inherit;
-  font-size: 0.85rem;
-  line-height: 1;
+  display: grid;
+  justify-items: start;
+  gap: var(--space-md);
+  min-height: 5.5rem;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--ink);
+  padding: var(--space-md);
+  border-radius: var(--radius-lg);
+  font: var(--font-heading-small);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  box-shadow: var(--shadow-1);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    background var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .theme-segmented__option:hover {
-  background: var(--surface-hover);
+  background: var(--panel-raised);
+  transform: translateY(-1px);
 }
 
 .theme-segmented__option:focus-visible {
@@ -39,12 +54,14 @@
 }
 
 .theme-segmented__option--selected {
-  background: var(--accent, #2f756d);
-  color: var(--accent-contrast, #ffffff);
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel));
+  color: var(--accent-strong);
+  box-shadow: 0 0 0 1px var(--accent-soft), var(--shadow-1);
 }
 
 .theme-segmented__option--selected:hover {
-  background: var(--accent-strong, var(--accent, #2f756d));
+  background: color-mix(in srgb, var(--accent) 13%, var(--panel));
 }
 
 /* Accent swatch row --------------------------------------------------- */
@@ -52,7 +69,7 @@
 .accent-swatch-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem;
+  gap: var(--space-md);
   align-items: center;
 }
 
@@ -60,13 +77,15 @@
   appearance: none;
   border: 0;
   padding: 0;
-  width: 1.65rem;
-  height: 1.65rem;
+  width: 2rem;
+  height: 2rem;
+  min-height: 2rem;
   border-radius: var(--radius-pill);
   cursor: pointer;
   outline: 2px solid transparent;
   outline-offset: 2px;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08) inset;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.42),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.10), var(--shadow-1);
   transition: transform 120ms ease, outline-color 120ms ease;
 }
 
@@ -79,7 +98,30 @@
 }
 
 .accent-swatch--selected {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+@media (max-width: 520px) {
+  .theme-segmented {
+    grid-template-columns: 1fr;
+  }
+
+  .theme-segmented__option {
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    justify-items: start;
+    min-height: 3rem;
+    gap: var(--space-sm);
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .accent-swatch {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
 }
 
 /* Swatch fill — driven by the REAL accent tokens (tokens.css) so each preview

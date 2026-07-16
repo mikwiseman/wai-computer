@@ -1,7 +1,7 @@
 import SwiftUI
 import WaiComputerKit
 
-/// Appearance preferences: Theme (System/Light/Dark) + accent color.
+/// Appearance preferences: Theme (System/Pearl/Midnight) + accent color.
 ///
 /// Mirrors the macOS `MacSettingsView.appearanceSection`. The selections write
 /// the same `IOSThemePreferences` AppStorage keys that the app root reads to
@@ -80,7 +80,7 @@ struct AppearanceSettingsView: View {
             .frame(maxWidth: 920, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .top)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(Palette.canvas)
         .accessibilityIdentifier("settings-appearance-regular-layout")
     }
 
@@ -90,10 +90,10 @@ struct AppearanceSettingsView: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Palette.accent)
                 .frame(width: 42, height: 42)
-                .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Palette.panelRaised)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(Palette.border, lineWidth: 1)
                 )
                 .accessibilityHidden(true)
@@ -117,8 +117,8 @@ struct AppearanceSettingsView: View {
         appearanceRegularPanel(
             title: t("Theme", "Тема"),
             subtitle: t(
-                "Follow the system or pin WaiComputer to light or dark.",
-                "Следовать системе или закрепить светлую/тёмную тему."
+                "Follow the system, choose airy Pearl, or focus in Midnight.",
+                "Следовать системе, выбрать воздушную Жемчужную тему или сфокусироваться в Полночи."
             ),
             systemImage: "circle.lefthalf.filled",
             identifier: "settings-appearance-regular-theme-panel"
@@ -162,8 +162,8 @@ struct AppearanceSettingsView: View {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 themePreview
                 Text(t(
-                    "Uses adaptive iOS system colors so the accent works in Light, Dark, and increased contrast modes.",
-                    "Использует адаптивные цвета iOS, чтобы акцент работал в светлой, тёмной и контрастной темах."
+                    "Adaptive iOS colors keep every accent legible in Pearl, Midnight, and increased contrast modes.",
+                    "Адаптивные цвета iOS сохраняют читаемость акцента в Жемчужной теме, Полночи и повышенной контрастности."
                 ))
                 .font(Typography.caption)
                 .foregroundStyle(Palette.textTertiary)
@@ -173,18 +173,46 @@ struct AppearanceSettingsView: View {
     }
 
     private var appearanceModePicker: some View {
-        Picker(selection: Binding(
-            get: { selectedAppearanceMode.rawValue },
-            set: { appearanceModeRawValue = $0 }
-        )) {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 92), spacing: Spacing.sm)],
+            spacing: Spacing.sm
+        ) {
             ForEach(IOSAppearanceMode.allCases) { mode in
-                Text(appearanceTitle(mode)).tag(mode.rawValue)
+                appearanceModeButton(mode)
             }
-        } label: {
-            Text(t("Theme", "Тема"))
         }
-        .pickerStyle(.segmented)
         .accessibilityIdentifier("settings-appearance-mode-picker")
+    }
+
+    private func appearanceModeButton(_ mode: IOSAppearanceMode) -> some View {
+        let isSelected = selectedAppearanceMode == mode
+        return Button {
+            appearanceModeRawValue = mode.rawValue
+        } label: {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Image(systemName: appearanceIcon(mode))
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(isSelected ? Palette.accent : Palette.textSecondary)
+                    .accessibilityHidden(true)
+
+                Text(appearanceTitle(mode))
+                    .font(Typography.headingSmall)
+                    .foregroundStyle(isSelected ? Palette.accent : Palette.textPrimary)
+                    .lineLimit(1)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
+            .background(isSelected ? Palette.accentSubtle : Palette.panelRaised)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(isSelected ? Palette.accent : Palette.border, lineWidth: isSelected ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(appearanceTitle(mode))
+        .accessibilityValue(isSelected ? t("Selected", "Выбрано") : t("Not selected", "Не выбрано"))
+        .accessibilityIdentifier("settings-appearance-mode-\(mode.rawValue)")
     }
 
     private func accentRow(_ choice: IOSAccentChoice) -> some View {
@@ -250,9 +278,9 @@ struct AppearanceSettingsView: View {
             .padding(.vertical, Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? selectedAccentChoice.previewColor.opacity(0.12) : Color(uiColor: .tertiarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .strokeBorder(isSelected ? selectedAccentChoice.previewColor : Palette.border, lineWidth: isSelected ? 1.5 : 1)
             )
         }
@@ -264,12 +292,12 @@ struct AppearanceSettingsView: View {
 
     private var themePreview: some View {
         HStack(spacing: Spacing.md) {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .fill(selectedAccentChoice.previewColor)
                 .frame(width: 40, height: 40)
                 .overlay(
                     Image(systemName: "paintpalette.fill")
-                        .foregroundStyle(.white)
+                        .foregroundStyle(selectedAccentChoice.onAccentColor)
                 )
                 .accessibilityHidden(true)
 
@@ -289,7 +317,13 @@ struct AppearanceSettingsView: View {
                 .disabled(true)
                 .accessibilityHidden(true)
         }
-        .padding(.vertical, Spacing.xs)
+        .padding(Spacing.md)
+        .background(Palette.panelRaised)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(Palette.border, lineWidth: 1)
+        )
     }
 
     private func appearanceRegularPanel<Content: View>(
@@ -306,7 +340,7 @@ struct AppearanceSettingsView: View {
                     .foregroundStyle(Palette.accent)
                     .frame(width: 30, height: 30)
                     .background(Palette.accentSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -322,17 +356,20 @@ struct AppearanceSettingsView: View {
                 }
             }
 
-            Divider()
+            Rectangle()
+                .fill(Palette.border)
+                .frame(height: 1)
             content()
         }
         .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Palette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .strokeBorder(Palette.border, lineWidth: 1)
         )
+        .waiShadow(.raised)
         .accessibilityIdentifier(identifier)
     }
 
@@ -341,9 +378,17 @@ struct AppearanceSettingsView: View {
         case .system:
             return t("System", "Системная")
         case .light:
-            return t("Light", "Светлая")
+            return t("Pearl", "Жемчужная")
         case .dark:
-            return t("Dark", "Тёмная")
+            return t("Midnight", "Полночь")
+        }
+    }
+
+    private func appearanceIcon(_ mode: IOSAppearanceMode) -> String {
+        switch mode {
+        case .system: return "macbook.and.iphone"
+        case .light: return "sun.max"
+        case .dark: return "moon.stars"
         }
     }
 

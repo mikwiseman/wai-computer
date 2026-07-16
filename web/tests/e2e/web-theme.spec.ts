@@ -125,6 +125,27 @@ test.describe("web-facing theme and responsive pass", () => {
     }
   });
 
+  test("system dark mode preserves the selected accent", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.addInitScript(() => {
+      window.localStorage.setItem("wai_theme", "system");
+      window.localStorage.setItem("wai_accent", "violet");
+    });
+    await page.goto("/login", { waitUntil: "load" });
+
+    const accentTokens = await page.evaluate(() => {
+      const root = getComputedStyle(document.documentElement);
+      return {
+        active: root.getPropertyValue("--accent").trim(),
+        violet: root.getPropertyValue("--accent-violet").trim(),
+        amber: root.getPropertyValue("--accent-amber").trim(),
+      };
+    });
+
+    expect(accentTokens.active).toBe(accentTokens.violet);
+    expect(accentTokens.active).not.toBe(accentTokens.amber);
+  });
+
   test("public brand marks use the current mark asset", async ({ page }) => {
     await page.goto("/");
 

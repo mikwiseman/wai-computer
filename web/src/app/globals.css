@@ -75,6 +75,7 @@
   -webkit-backdrop-filter: var(--material-thin-blur);
   backdrop-filter: var(--material-thin-blur);
   border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 var(--material-highlight), var(--material-shadow);
 }
 
 /* 1px hairline divider — mirror `WaiDivider`. */
@@ -208,6 +209,11 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -307,6 +313,60 @@ progress::-webkit-progress-value {
 progress::-moz-progress-bar {
   background: var(--accent);
   border-radius: var(--radius-pill);
+}
+
+/* Continuous controls: a restrained filled track with a generous native-feel
+ * thumb. The input remains the semantic range control for keyboard, touch,
+ * forced-colors, and assistive technology support. */
+input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-hairline);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7px;
+  border: 1px solid var(--material-thin-border);
+  border-radius: 50%;
+  background: var(--panel);
+  box-shadow: 0 0 0 5px var(--accent-soft), var(--shadow-1);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-hairline);
+}
+
+input[type="range"]::-moz-range-progress {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--material-thin-border);
+  border-radius: 50%;
+  background: var(--panel);
+  box-shadow: 0 0 0 5px var(--accent-soft), var(--shadow-1);
 }
 
 ul {
@@ -1230,16 +1290,26 @@ a.primary-button[aria-disabled="true"]:hover {
   display: grid;
   min-height: 100dvh;
   grid-template-columns: minmax(210px, 252px) minmax(0, 1fr);
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background: var(--bg);
 }
 
 .app-sidebar {
   display: flex;
-  min-height: 100dvh;
+  position: sticky;
+  z-index: 30;
+  top: var(--space-md);
+  min-height: calc(100dvh - (2 * var(--space-md)));
+  max-height: calc(100dvh - (2 * var(--space-md)));
   flex-direction: column;
-  border-right: 1px solid var(--surface-hairline);
+  overflow: visible;
+  border: 1px solid var(--material-thin-border);
+  border-radius: var(--radius-xxl);
   background: var(--material-regular-bg);
   backdrop-filter: var(--material-regular-blur);
   -webkit-backdrop-filter: var(--material-regular-blur);
+  box-shadow: inset 0 1px 0 var(--material-highlight), var(--shadow-2);
   padding: 1.05rem;
 }
 
@@ -1280,8 +1350,11 @@ a.primary-button[aria-disabled="true"]:hover {
 .sidebar-nav {
   display: flex;
   flex: 1;
+  min-height: 0;
   flex-direction: column;
   gap: 0.85rem;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .sidebar-section {
@@ -1382,6 +1455,11 @@ a.primary-button[aria-disabled="true"]:hover {
   border-top: 1px solid var(--surface-hairline);
 }
 
+.sidebar-theme {
+  display: flex;
+  margin: var(--space-md) 0;
+}
+
 .sidebar-footer .ghost-button {
   border: none;
   background: transparent;
@@ -1401,20 +1479,73 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--danger);
 }
 
+.command-dock {
+  position: fixed;
+  z-index: 60;
+  left: calc(50% + 126px);
+  bottom: max(var(--space-lg), env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  border: 1px solid var(--material-thin-border);
+  border-radius: var(--radius-pill);
+  background: var(--material-regular-bg);
+  box-shadow: inset 0 1px 0 var(--material-highlight), var(--material-shadow);
+  -webkit-backdrop-filter: var(--material-regular-blur);
+  backdrop-filter: var(--material-regular-blur);
+  transform: translateX(-50%);
+}
+
+.command-dock button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-height: 38px;
+  padding: var(--space-sm) var(--space-md);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink-soft);
+  font: var(--font-heading-small);
+  white-space: nowrap;
+}
+
+.command-dock button:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.command-dock button[aria-current="page"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
 .workspace {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 1.1rem;
-  padding: 1.25rem;
+  padding: var(--space-sm) var(--space-md) 6rem;
 }
 
 .workspace-header {
+  position: sticky;
+  top: var(--space-md);
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   min-height: 54px;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--material-thin-border);
+  border-radius: var(--radius-xl);
+  background: var(--material-thin-bg);
+  -webkit-backdrop-filter: var(--material-thin-blur);
+  backdrop-filter: var(--material-thin-blur);
+  box-shadow: inset 0 1px 0 var(--material-highlight), var(--shadow-1);
 }
 
 /* Workspace page heading — mirror Mac `Typography.displaySmall`
@@ -1455,8 +1586,8 @@ a.primary-button[aria-disabled="true"]:hover {
   min-width: 0;
   border: 1px solid var(--surface-hairline);
   border-radius: var(--radius-lg);
-  background: var(--surface-subtle);
-  box-shadow: none;
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
 }
 
 .inbox-list-panel,
@@ -3155,7 +3286,7 @@ a.primary-button[aria-disabled="true"]:hover {
   border: none;
   border-radius: var(--radius-md);
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   cursor: pointer;
   font-size: var(--font-label-size);
   font-weight: 600;
@@ -4339,10 +4470,24 @@ a.primary-button[aria-disabled="true"]:hover {
     grid-template-columns: 1fr;
   }
 
+  .web-app-shell {
+    gap: 0;
+    padding: 0;
+  }
+
   .app-sidebar {
+    position: static;
     min-height: auto;
+    max-height: none;
+    border: 0;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .workspace-header {
+    top: var(--space-sm);
   }
 
   .sidebar-nav {
@@ -6220,7 +6365,7 @@ a.primary-button[aria-disabled="true"]:hover {
   background: var(--material-thin-bg);
   backdrop-filter: var(--material-thin-blur);
   -webkit-backdrop-filter: var(--material-thin-blur);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.18);
+  box-shadow: inset 0 1px 0 var(--material-highlight), var(--material-shadow);
   font-size: 0.88rem;
   color: var(--ink);
   animation: toast-in var(--motion-duration-base) var(--motion-ease-emphasized);
@@ -6410,6 +6555,152 @@ a.primary-button[aria-disabled="true"]:hover {
   }
 }
 
+/* Mobile keeps the full information architecture without turning the first
+ * screen into a wall of navigation. Chrome becomes a compact, horizontally
+ * scrollable glass shelf; content keeps the vertical reading axis. */
+@media (max-width: 960px) {
+  .web-app-shell {
+    gap: var(--space-sm);
+    padding: var(--space-sm);
+  }
+
+  .app-sidebar {
+    position: sticky;
+    top: var(--space-sm);
+    z-index: 40;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    border: 1px solid var(--material-thin-border);
+    border-radius: var(--radius-xl);
+    background: var(--material-regular-bg);
+    box-shadow: inset 0 1px 0 var(--material-highlight), var(--shadow-2);
+    -webkit-backdrop-filter: var(--material-regular-blur);
+    backdrop-filter: var(--material-regular-blur);
+  }
+
+  .brand-block {
+    min-width: 0;
+    padding: 0;
+  }
+
+  .sidebar-theme {
+    align-self: center;
+    margin: 0;
+  }
+
+  .sidebar-nav {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: row;
+    gap: var(--space-xs);
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 0 var(--space-xs);
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+  }
+
+  .sidebar-nav::-webkit-scrollbar,
+  .sidebar-footer::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sidebar-section {
+    display: flex;
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+
+  .sidebar-nav__item,
+  .sidebar-folder-list__open {
+    flex: none;
+    width: auto;
+    min-height: 40px;
+    border: 1px solid var(--surface-hairline);
+    border-radius: var(--radius-pill);
+    background: var(--surface-subtle);
+    padding: 0.48rem 0.72rem;
+    scroll-snap-align: start;
+    white-space: nowrap;
+  }
+
+  .sidebar-folder-group,
+  .sidebar-folder-list,
+  .sidebar-folder-list__item {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: 0;
+  }
+
+  .sidebar-folder-group,
+  .sidebar-folder-list {
+    flex-direction: row;
+  }
+
+  .sidebar-folder-group__header {
+    padding: 0;
+  }
+
+  .sidebar-folder-group__header small,
+  .sidebar-folder-list__count,
+  .sidebar-folder-list__item .row-actions {
+    display: none;
+  }
+
+  .sidebar-folder-list__open {
+    overflow: visible;
+    white-space: nowrap;
+  }
+
+  .sidebar-footer {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--space-xs);
+    overflow-x: auto;
+    padding-top: var(--space-xs);
+    scrollbar-width: none;
+  }
+
+  .sidebar-footer .ghost-button {
+    flex: none;
+    min-height: 44px;
+  }
+
+  .sidebar-nav__item,
+  .sidebar-folder-list__open,
+  .command-dock button,
+  input[type="range"] {
+    min-height: 44px;
+  }
+
+  .workspace {
+    padding: 0 0 5.5rem;
+  }
+
+  .command-dock {
+    left: 50%;
+    bottom: max(var(--space-sm), env(safe-area-inset-bottom));
+    max-width: calc(100vw - (2 * var(--space-md)));
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .command-dock::-webkit-scrollbar {
+    display: none;
+  }
+
+  .workspace-header {
+    position: static;
+  }
+}
+
 /* =====================================================================
  * Safe-area-inset for iOS notch / home indicator. Honoured by anything
  * sticky or fixed near the bottom edge of the viewport.
@@ -6461,10 +6752,10 @@ a.primary-button[aria-disabled="true"]:hover {
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  background: var(--panel, #fff);
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 12px);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-3);
   overflow: hidden;
 }
 .comparison-view__header {
@@ -6676,4 +6967,49 @@ a.primary-button[aria-disabled="true"]:hover {
 .item-detail__recover-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+/* Accessibility material policy: honor reduced-transparency when available,
+ * keep an opaque fallback where backdrop-filter is unsupported, and preserve
+ * native system colors in forced-colors mode. */
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :root {
+    --material-thin-bg: var(--panel-raised);
+    --material-regular-bg: var(--panel);
+    --material-thin-blur: none;
+    --material-regular-blur: none;
+    --material-shadow: var(--shadow-2);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --material-thin-bg: var(--panel-raised);
+    --material-regular-bg: var(--panel);
+    --material-thin-blur: none;
+    --material-regular-blur: none;
+  }
+}
+
+@media (forced-colors: active) {
+  :root {
+    --material-thin-bg: Canvas;
+    --material-regular-bg: Canvas;
+    --material-thin-border: CanvasText;
+    --material-highlight: transparent;
+    --material-shadow: none;
+  }
+
+  button,
+  input,
+  select,
+  textarea,
+  .wai-glass,
+  .wai-panel {
+    border: 1px solid CanvasText;
+  }
+
+  :focus-visible {
+    outline-color: Highlight;
+  }
 }

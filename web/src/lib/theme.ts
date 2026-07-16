@@ -7,7 +7,7 @@
  * half of the picker stays in `ThemeAccentPicker.tsx`.
  *
  * The resolved-theme colors mirror the `viewport.themeColor` pair in
- * `app/layout.tsx` (light `#f9f7f2`, dark `#131211`) and the `--bg` tokens.
+ * `app/layout.tsx` (Pearl `#f5f4f0`, Midnight `#111311`) and the `--bg` tokens.
  */
 
 export type ThemeChoice = "system" | "light" | "dark";
@@ -15,10 +15,18 @@ export type ThemeChoice = "system" | "light" | "dark";
 export const THEME_STORAGE_KEY = "wai_theme";
 export const DEFAULT_THEME: ThemeChoice = "system";
 
+// `useSyncExternalStore` must return the value just written when it notifies
+// same-tab subscribers. Keep an in-memory snapshot only when browser storage
+// rejects a write (private browsing, quota, or policy restrictions); the next
+// successful write or cross-tab storage event makes localStorage authoritative
+// again.
+let themeSnapshot: ThemeChoice = DEFAULT_THEME;
+let themeSnapshotIsAuthoritative = false;
+
 /** Browser chrome color for each resolved theme — kept in step with `--bg`. */
 const META_THEME_COLOR: Record<"light" | "dark", string> = {
-  light: "#f9f7f2",
-  dark: "#131211",
+  light: "#f5f4f0",
+  dark: "#111311",
 };
 
 export function isThemeChoice(value: unknown): value is ThemeChoice {
@@ -69,11 +77,13 @@ export function applyTheme(theme: ThemeChoice): void {
 /** getSnapshot for `useSyncExternalStore` — the current stored choice. */
 export function readStoredTheme(): ThemeChoice {
   if (typeof window === "undefined") return DEFAULT_THEME;
+  if (themeSnapshotIsAuthoritative) return themeSnapshot;
   try {
     const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
-    return isThemeChoice(raw) ? raw : DEFAULT_THEME;
+    themeSnapshot = isThemeChoice(raw) ? raw : DEFAULT_THEME;
+    return themeSnapshot;
   } catch {
-    return DEFAULT_THEME;
+    return themeSnapshot;
   }
 }
 
@@ -90,7 +100,11 @@ const themeListeners = new Set<() => void>();
 export function subscribeStoredTheme(callback: () => void): () => void {
   themeListeners.add(callback);
   const onStorage = (event: StorageEvent) => {
-    if (event.key === THEME_STORAGE_KEY) callback();
+    if (event.key === THEME_STORAGE_KEY) {
+      themeSnapshot = isThemeChoice(event.newValue) ? event.newValue : DEFAULT_THEME;
+      themeSnapshotIsAuthoritative = false;
+      callback();
+    }
   };
   if (typeof window !== "undefined") {
     window.addEventListener("storage", onStorage);
@@ -105,10 +119,12 @@ export function subscribeStoredTheme(callback: () => void): () => void {
 
 export function writeStoredTheme(theme: ThemeChoice): void {
   if (typeof window === "undefined") return;
+  themeSnapshot = theme;
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    themeSnapshotIsAuthoritative = false;
   } catch {
-    // ignore quota / disabled storage
+    themeSnapshotIsAuthoritative = true;
   }
   for (const listener of themeListeners) listener();
 }

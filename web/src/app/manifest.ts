@@ -11,8 +11,8 @@ export default function manifest(): MetadataRoute.Manifest {
       "AI second brain for voice — recordings, realtime transcription, search, and summaries.",
     start_url: "/dashboard",
     display: "standalone",
-    background_color: "#f9f7f2",
-    theme_color: "#f9f7f2",
+    background_color: "#f5f4f0",
+    theme_color: "#f5f4f0",
     icons: [
       {
         src: "/app-icon.png",

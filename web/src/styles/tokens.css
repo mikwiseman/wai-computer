@@ -199,10 +199,11 @@
    *   lg — cards, panels, popovers
    *   xl — modals, sheets, floating surfaces
    * --------------------------------------------------------------------- */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-xxl: 28px;
   --radius-pill: 999px;
 
   /* ---------------------------------------------------------------------
@@ -211,10 +212,10 @@
    * web matches that by defaulting to hairline borders + surface tokens for
    * grouping, reserving these shadows for floating overlays only.
    * --------------------------------------------------------------------- */
-  --shadow-1: 0 1px 2px rgba(31, 27, 18, 0.04),
-    0 4px 12px rgba(31, 27, 18, 0.04);
-  --shadow-2: 0 8px 24px rgba(31, 27, 18, 0.06);
-  --shadow-3: 0 16px 44px rgba(31, 27, 18, 0.08);
+  --shadow-1: 0 1px 2px rgba(26, 29, 25, 0.04),
+    0 6px 18px rgba(26, 29, 25, 0.05);
+  --shadow-2: 0 14px 38px rgba(26, 29, 25, 0.08);
+  --shadow-3: 0 24px 72px rgba(26, 29, 25, 0.12);
 
   /* ---------------------------------------------------------------------
    * Surface tokens — mirror Mac `Palette.surfaceSubtle/Hover/border`
@@ -233,13 +234,15 @@
    * matches SwiftUI's UltraThin (~24px) and falls back to a near-opaque
    * panel when backdrop-filter isn't supported.
    * --------------------------------------------------------------------- */
-  --material-thin-bg: rgba(255, 253, 248, 0.66);
-  --material-thin-border: rgba(32, 29, 23, 0.08);
-  --material-thin-blur: saturate(180%) blur(24px);
+  --material-thin-bg: rgba(255, 255, 255, 0.64);
+  --material-thin-border: rgba(32, 33, 31, 0.10);
+  --material-thin-blur: saturate(180%) blur(26px);
+  --material-highlight: rgba(255, 255, 255, 0.82);
+  --material-shadow: 0 18px 52px rgba(26, 29, 25, 0.10);
   /* Regular material — a denser glass tier (for the sidebar) so it reads deeper
    * than floating popovers/toasts: a 2-step depth hierarchy. */
-  --material-regular-bg: rgba(255, 253, 248, 0.82);
-  --material-regular-blur: saturate(180%) blur(30px);
+  --material-regular-bg: rgba(255, 255, 255, 0.78);
+  --material-regular-blur: saturate(190%) blur(34px);
   --material-tint-amber: rgba(255, 149, 0, 0.10);
   --material-tint-accent: var(--accent-soft);
 
@@ -321,21 +324,21 @@
    * OKLCH) instead of the old cool blue-gray, so the app reads as calm
    * editorial paper (the 2026 knowledge-tool register: Claude/Notion/
    * Granola territory). AA re-verified on the new surfaces:
-   * ink 15.7:1 · ink-soft 5.9:1 · ink-faint 5.2:1 on --bg. */
-  --bg: #f9f7f2;
-  --panel: #fffefb;
-  --panel-subtle: #f1eee6;
-  --panel-raised: #fcfaf5;
-  --ink: #201d17;
-  --ink-soft: #675f52;
+   * ink 14.7:1 · ink-soft 5.6:1 · ink-faint 4.8:1 on --bg. */
+  --bg: #f5f4f0;
+  --panel: #ffffff;
+  --panel-subtle: #ebeae5;
+  --panel-raised: #faf9f6;
+  --ink: #20211f;
+  --ink-soft: #60625e;
   /* `-faint` is used on real metadata text (dates, counts, section eyebrows),
-   * so it must clear AA: #6f6759 is 5.22:1 on --bg and still a clear step
-   * below --ink-soft. Dark-theme --ink-faint passes too (5.69:1). */
-  --ink-faint: #6f6759;
+   * so it must clear AA: #6a6c67 is 4.83:1 on --bg and still a clear step
+   * below --ink-soft. Dark-theme --ink-faint passes at 6.81:1. */
+  --ink-faint: #6a6c67;
   --warm: #b86f2e;
   --warm-soft: rgba(184, 111, 46, 0.12);
-  --border: #e0dbd0;
-  --border-strong: #c8c1b2;
+  --border: #dcded9;
+  --border-strong: #c2c5c0;
   --danger: #ba3d37;
   --danger-contrast: #ffffff;
   /* Used as status text + icon strokes; #b86f2e was 3.66:1. #a06028 = 4.66:1. */
@@ -451,17 +454,17 @@
    * themes read as one product (not flat black; e2e guard: bg luma 18 < 80,
    * ink luma 238 > 150). Panel sits a full step above bg and borders a step
    * above panel so cards separate without shadows — the flat-wall fix. */
-  --bg: #131211;
-  --panel: #1e1b18;
-  --panel-subtle: #2a2620;
-  --panel-raised: #171614;
-  --ink: #f3f0e9;
-  --ink-soft: #cec8bc;
-  --ink-faint: #a09889;
+  --bg: #111311;
+  --panel: #1c1f1c;
+  --panel-subtle: #252925;
+  --panel-raised: #171917;
+  --ink: #f2f4f0;
+  --ink-soft: #c9cdc7;
+  --ink-faint: #989e96;
   --warm: #e0a15d;
   --warm-soft: rgba(224, 161, 93, 0.18);
-  --border: #3a342b;
-  --border-strong: #544d42;
+  --border: #353b35;
+  --border-strong: #4c554d;
   --danger: #ff8a82;
   --danger-contrast: #2a0907;
   --warning: #ffb35b;
@@ -479,9 +482,11 @@
   --surface-subtle: rgba(243, 240, 233, 0.05);
   --surface-hover: rgba(243, 240, 233, 0.08);
   --surface-hairline: rgba(243, 240, 233, 0.10);
-  --material-thin-bg: rgba(24, 22, 20, 0.66);
-  --material-regular-bg: rgba(24, 22, 20, 0.84);
-  --material-thin-border: rgba(243, 240, 233, 0.08);
+  --material-thin-bg: rgba(20, 23, 20, 0.66);
+  --material-regular-bg: rgba(20, 23, 20, 0.82);
+  --material-thin-border: rgba(242, 244, 240, 0.10);
+  --material-highlight: rgba(255, 255, 255, 0.10);
+  --material-shadow: 0 24px 72px rgba(0, 0, 0, 0.38);
   --material-tint-amber: rgba(255, 159, 10, 0.14);
   --material-tint-accent: var(--accent-soft);
 
@@ -592,17 +597,17 @@
   :root:not([data-theme]) {
     color-scheme: dark;
     /* Keep in sync with the explicit [data-theme="dark"] block above. */
-    --bg: #131211;
-    --panel: #1e1b18;
-    --panel-subtle: #2a2620;
-    --panel-raised: #171614;
-    --ink: #f3f0e9;
-    --ink-soft: #cec8bc;
-    --ink-faint: #a09889;
+    --bg: #111311;
+    --panel: #1c1f1c;
+    --panel-subtle: #252925;
+    --panel-raised: #171917;
+    --ink: #f2f4f0;
+    --ink-soft: #c9cdc7;
+    --ink-faint: #989e96;
     --warm: #e0a15d;
     --warm-soft: rgba(224, 161, 93, 0.18);
-    --border: #3a342b;
-    --border-strong: #544d42;
+    --border: #353b35;
+    --border-strong: #4c554d;
     --danger: #ff8a82;
     --danger-contrast: #2a0907;
     --warning: #ffb35b;
@@ -619,9 +624,11 @@
     --surface-subtle: rgba(243, 240, 233, 0.05);
     --surface-hover: rgba(243, 240, 233, 0.08);
     --surface-hairline: rgba(243, 240, 233, 0.10);
-    --material-thin-bg: rgba(24, 22, 20, 0.66);
-    --material-regular-bg: rgba(24, 22, 20, 0.84);
-    --material-thin-border: rgba(243, 240, 233, 0.08);
+    --material-thin-bg: rgba(20, 23, 20, 0.66);
+    --material-regular-bg: rgba(20, 23, 20, 0.82);
+    --material-thin-border: rgba(242, 244, 240, 0.10);
+    --material-highlight: rgba(255, 255, 255, 0.10);
+    --material-shadow: 0 24px 72px rgba(0, 0, 0, 0.38);
     --material-tint-amber: rgba(255, 159, 10, 0.14);
     --material-tint-accent: var(--accent-soft);
 
@@ -660,10 +667,9 @@
     --accent-graphite-soft: rgba(152, 152, 157, 0.20);
     --accent-graphite-contrast: #0e0e10;
 
-    --accent: var(--accent-amber);
-    --accent-strong: var(--accent-amber-strong);
-    --accent-soft: var(--accent-amber-soft);
-    --accent-contrast: var(--accent-amber-contrast);
+    /* Keep the active accent dispatch from the base rules. Its var() references
+     * resolve against the dark palette above, so a System theme preserves the
+     * user's selected accent instead of forcing Amber. */
   }
 }
 

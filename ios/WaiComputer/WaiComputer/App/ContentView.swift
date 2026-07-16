@@ -468,6 +468,8 @@ private struct IOSWorkspaceSplitView: View {
     @State private var folderNameDraft = ""
     @State private var folderPendingDeletion: Folder?
     @State private var dropTargetIdentifier: String?
+    @AppStorage(IOSThemePreferences.appearanceKey) private var appearanceModeRawValue = IOSThemePreferences.defaultAppearance.rawValue
+    @AppStorage(IOSThemePreferences.accentKey) private var accentChoiceRawValue = IOSThemePreferences.defaultAccent.rawValue
     let activeWaiChatId: String?
     let apiClient: APIClient
 
@@ -507,7 +509,7 @@ private struct IOSWorkspaceSplitView: View {
                 }
                 .listStyle(.sidebar)
                 .scrollContentBackground(.hidden)
-                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .background(.regularMaterial)
 
                 IOSWorkspaceSidebarFooter(
                     user: appState.currentUser,
@@ -517,14 +519,14 @@ private struct IOSWorkspaceSplitView: View {
                     .padding(.horizontal, Spacing.lg)
                     .padding(.vertical, Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .background(.regularMaterial)
             }
             .navigationTitle("WaiComputer")
             .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 340)
         } detail: {
             ZStack(alignment: .top) {
                 workspaceDetail(for: currentSection)
-                    .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+                    .background(Palette.canvas.ignoresSafeArea())
 
                 if let error = libraryViewModel.error {
                     IOSWorkspaceErrorBanner(message: error) {
@@ -536,6 +538,11 @@ private struct IOSWorkspaceSplitView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                appearanceQuickMenu
+            }
+        }
         .accessibilityIdentifier("ios-workspace-split-view")
         .task {
             await loadWorkspaceLibraryIfNeeded()
@@ -587,6 +594,57 @@ private struct IOSWorkspaceSplitView: View {
                 "Contents stay in Inbox. Only the folder is removed.",
                 "Объекты останутся в Инбоксе. Удалится только папка."
             ))
+        }
+    }
+
+    private var appearanceQuickMenu: some View {
+        Menu {
+            Picker(t("Appearance", "Оформление"), selection: $appearanceModeRawValue) {
+                ForEach(IOSAppearanceMode.allCases) { mode in
+                    Label(appearanceTitle(mode), systemImage: appearanceIcon(mode))
+                        .tag(mode.rawValue)
+                }
+            }
+
+            Divider()
+
+            Picker(t("Accent", "Акцент"), selection: $accentChoiceRawValue) {
+                ForEach(IOSAccentChoice.allCases) { accent in
+                    Text(accentTitle(accent)).tag(accent.rawValue)
+                }
+            }
+        } label: {
+            Label(t("Appearance", "Оформление"), systemImage: "circle.lefthalf.filled")
+                .labelStyle(.iconOnly)
+        }
+        .accessibilityIdentifier("ios-appearance-quick-menu")
+    }
+
+    private func appearanceTitle(_ mode: IOSAppearanceMode) -> String {
+        switch mode {
+        case .system: return t("System", "Системная")
+        case .light: return t("Pearl", "Жемчужная")
+        case .dark: return t("Midnight", "Полночь")
+        }
+    }
+
+    private func appearanceIcon(_ mode: IOSAppearanceMode) -> String {
+        switch mode {
+        case .system: return "macbook.and.iphone"
+        case .light: return "sun.max"
+        case .dark: return "moon.stars"
+        }
+    }
+
+    private func accentTitle(_ accent: IOSAccentChoice) -> String {
+        switch accent {
+        case .system: return t("System", "Системный")
+        case .amber: return t("Amber", "Янтарный")
+        case .blue: return t("Blue", "Синий")
+        case .green: return t("Green", "Зелёный")
+        case .violet: return t("Violet", "Фиолетовый")
+        case .rose: return t("Rose", "Розовый")
+        case .graphite: return t("Graphite", "Графит")
         }
     }
 

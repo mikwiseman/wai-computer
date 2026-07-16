@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/http";
@@ -1368,6 +1368,32 @@ describe("DashboardClient", () => {
     expect(screen.queryByTestId("tab-agents")).not.toBeInTheDocument();
     expect(screen.getByTestId("sidebar-folders-label")).toBeInTheDocument();
     expect(screen.getByTestId("open-create-folder")).toBeInTheDocument();
+  });
+
+  it("navigates all command-dock destinations and tracks the current page", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    const dock = within(screen.getByRole("navigation", { name: "Quick actions" }));
+    const capture = dock.getByRole("button", { name: "Capture" });
+    const library = dock.getByRole("button", { name: "Library" });
+    const askWai = dock.getByRole("button", { name: "Ask Wai" });
+
+    expect(library).toHaveAttribute("aria-current", "page");
+
+    await user.click(capture);
+    expect(capture).toHaveAttribute("aria-current", "page");
+    expect(screen.getByTestId("workspace-title")).toHaveTextContent("Dictate");
+
+    await user.click(askWai);
+    expect(askWai).toHaveAttribute("aria-current", "page");
+    expect(screen.getByTestId("workspace-title")).toHaveTextContent("Search");
+
+    await user.click(library);
+    expect(library).toHaveAttribute("aria-current", "page");
+    expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox");
   });
 
   it.each(["wai", "agents"])("routes legacy %s URLs to Search", async (viewName) => {

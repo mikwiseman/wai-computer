@@ -98,10 +98,7 @@ struct OnboardingLanguageToggle: View {
             }
             .frame(maxWidth: 260)
             .padding(2)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Palette.surfaceSubtle)
-            )
+            .waiGlassChrome(cornerRadius: Radius.md, interactive: true)
 
             if showHint {
                 Text(t(
@@ -139,8 +136,8 @@ struct OnboardingLanguageToggle: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(selected ? Color(uiColor: .systemBackground) : Color.clear)
+            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                .fill(selected ? Palette.panel : Color.clear)
         )
         .accessibilityIdentifier(identifier)
         .accessibilityLabel(title)

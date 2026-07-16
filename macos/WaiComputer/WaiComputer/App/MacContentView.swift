@@ -105,6 +105,8 @@ struct MacMainView: View {
         deviceName: Host.current().localizedName ?? "WaiComputer Mac"
     )
     @AppStorage("desktopComputerUseEnabled") private var computerUseEnabled = false
+    @AppStorage(MacThemePreferences.appearanceKey) private var appearanceModeRawValue = MacThemePreferences.defaultAppearance.rawValue
+    @AppStorage(MacThemePreferences.accentKey) private var accentChoiceRawValue = MacThemePreferences.defaultAccent.rawValue
     @State private var selectedSection: SidebarSection? = .inbox
     @State private var selectedRecordingIds: Set<String> = []
     @State private var prefetchedRecordingDetail: RecordingDetail?
@@ -330,8 +332,8 @@ struct MacMainView: View {
                     .lineLimit(1)
             }
             .padding(Spacing.lg)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            .waiGlassChrome(cornerRadius: Radius.lg)
+            .waiShadow(.floating)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .padding(.bottom, Spacing.xl)
         }
@@ -376,6 +378,12 @@ struct MacMainView: View {
     /// within the type-checker's budget.
     private var mainSplitBase: some View {
         mainSplitView
+        .background(Palette.canvas)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                appearanceQuickMenu
+            }
+        }
         .background {
             GeometryReader { proxy in
                 Color.clear
@@ -392,6 +400,59 @@ struct MacMainView: View {
         }
         .overlay(alignment: .top) {
             topBanners
+        }
+    }
+
+    private var appearanceQuickMenu: some View {
+        Menu {
+            Picker(t("Appearance", "Оформление"), selection: $appearanceModeRawValue) {
+                ForEach(MacAppearanceMode.allCases) { mode in
+                    Label(quickAppearanceTitle(mode), systemImage: quickAppearanceIcon(mode))
+                        .tag(mode.rawValue)
+                }
+            }
+
+            Divider()
+
+            Picker(t("Accent", "Акцент"), selection: $accentChoiceRawValue) {
+                ForEach(MacAccentChoice.allCases) { accent in
+                    Text(quickAccentTitle(accent)).tag(accent.rawValue)
+                }
+            }
+        } label: {
+            Label(t("Appearance", "Оформление"), systemImage: "circle.lefthalf.filled")
+                .labelStyle(.iconOnly)
+        }
+        .menuStyle(.borderlessButton)
+        .help(t("Choose theme and accent", "Выбрать тему и акцент"))
+        .accessibilityIdentifier("appearance-quick-menu")
+    }
+
+    private func quickAppearanceTitle(_ mode: MacAppearanceMode) -> String {
+        switch mode {
+        case .system: return t("System", "Системная")
+        case .light: return t("Pearl", "Жемчужная")
+        case .dark: return t("Midnight", "Полночь")
+        }
+    }
+
+    private func quickAppearanceIcon(_ mode: MacAppearanceMode) -> String {
+        switch mode {
+        case .system: return "macbook.and.iphone"
+        case .light: return "sun.max"
+        case .dark: return "moon.stars"
+        }
+    }
+
+    private func quickAccentTitle(_ accent: MacAccentChoice) -> String {
+        switch accent {
+        case .system: return t("System", "Системный")
+        case .amber: return t("Amber", "Янтарный")
+        case .blue: return t("Blue", "Синий")
+        case .green: return t("Green", "Зелёный")
+        case .violet: return t("Violet", "Фиолетовый")
+        case .rose: return t("Rose", "Розовый")
+        case .graphite: return t("Graphite", "Графит")
         }
     }
 
@@ -1870,6 +1931,7 @@ private struct BulkSelectionDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(Spacing.huge)
+        .background(Palette.canvas)
     }
 
     private func t(_ english: String, _ russian: String) -> String {

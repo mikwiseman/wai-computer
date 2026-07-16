@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { MonitorCog, Moon, SunMedium } from "lucide-react";
 import { ApiError } from "@/lib/http";
 import { updatePreferences } from "@/lib/api";
 import {
@@ -25,80 +26,18 @@ type Copy = {
 const COPY: Record<Locale, Copy> = {
   en: {
     groupLabel: "Theme",
-    theme: { system: "System", light: "Light", dark: "Dark" },
+    theme: { system: "System", light: "Pearl", dark: "Midnight" },
   },
   ru: {
     groupLabel: "Тема",
-    theme: { system: "Системная", light: "Светлая", dark: "Тёмная" },
+    theme: { system: "Системная", light: "Жемчужная", dark: "Полночь" },
   },
 };
 
-function SystemIcon() {
-  return (
-    <svg
-      className={styles.icon}
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-    >
-      <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M8 1.75A6.25 6.25 0 0 1 8 14.25Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function LightIcon() {
-  return (
-    <svg
-      className={styles.icon}
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      aria-hidden="true"
-    >
-      <circle cx="8" cy="8" r="3.15" />
-      <line x1="8" y1="1" x2="8" y2="2.4" />
-      <line x1="8" y1="13.6" x2="8" y2="15" />
-      <line x1="1" y1="8" x2="2.4" y2="8" />
-      <line x1="13.6" y1="8" x2="15" y2="8" />
-      <line x1="3.1" y1="3.1" x2="4.1" y2="4.1" />
-      <line x1="11.9" y1="11.9" x2="12.9" y2="12.9" />
-      <line x1="3.1" y1="12.9" x2="4.1" y2="11.9" />
-      <line x1="11.9" y1="4.1" x2="12.9" y2="3.1" />
-    </svg>
-  );
-}
-
-function DarkIcon() {
-  return (
-    <svg
-      className={styles.icon}
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M13.4 9.7A5.6 5.6 0 0 1 6.3 2.6 5.6 5.6 0 1 0 13.4 9.7Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-const ICONS: Record<ThemeChoice, () => React.ReactElement> = {
-  system: SystemIcon,
-  light: LightIcon,
-  dark: DarkIcon,
+const ICONS: Record<ThemeChoice, typeof MonitorCog> = {
+  system: MonitorCog,
+  light: SunMedium,
+  dark: Moon,
 };
 
 export interface ThemeToggleProps {
@@ -203,7 +142,7 @@ export function ThemeToggle({ locale, className }: ThemeToggleProps) {
               .join(" ")}
             onClick={() => handleSelect(option)}
           >
-            <Icon />
+            <Icon className={styles.icon} size={16} strokeWidth={1.8} aria-hidden="true" />
           </button>
         );
       })}

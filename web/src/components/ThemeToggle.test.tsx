@@ -91,8 +91,8 @@ describe("ThemeToggle", () => {
   it("renders Russian labels when locale is ru", () => {
     render(<ThemeToggle locale="ru" />);
     expect(screen.getByTestId("theme-toggle-system").getAttribute("aria-label")).toBe("Системная");
-    expect(screen.getByTestId("theme-toggle-light").getAttribute("aria-label")).toBe("Светлая");
-    expect(screen.getByTestId("theme-toggle-dark").getAttribute("aria-label")).toBe("Тёмная");
+    expect(screen.getByTestId("theme-toggle-light").getAttribute("aria-label")).toBe("Жемчужная");
+    expect(screen.getByTestId("theme-toggle-dark").getAttribute("aria-label")).toBe("Полночь");
     expect(screen.getByRole("radiogroup").getAttribute("aria-label")).toBe("Тема");
   });
 

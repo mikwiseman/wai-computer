@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
 import { ThemeAccentPicker } from "./ThemeAccentPicker";
 import { ApiError } from "@/lib/http";
@@ -142,6 +142,64 @@ describe("ThemeAccentPicker", () => {
     expect(setItemSpy).toHaveBeenCalledWith("wai_accent", "violet");
   });
 
+  it("keeps the selected theme and accent when localStorage rejects writes", async () => {
+    render(<ThemeAccentPicker locale="en" />);
+    await flushHydration();
+    setItemSpy.mockImplementation(() => {
+      throw new DOMException("Storage is unavailable", "QuotaExceededError");
+    });
+
+    fireEvent.click(screen.getByTestId("theme-option-dark"));
+    fireEvent.click(screen.getByTestId("accent-option-violet"));
+
+    expect(screen.getByTestId("theme-option-dark").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("accent-option-violet").getAttribute("aria-checked")).toBe("true");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(document.documentElement.getAttribute("data-accent")).toBe("violet");
+
+    // Restore persistent storage so the module-level snapshots do not leak
+    // into later tests in this file.
+    setItemSpy.mockImplementation((key: string, value: string) => {
+      localStorageValues[key] = value;
+    });
+    fireEvent.click(screen.getByTestId("theme-option-system"));
+    fireEvent.click(screen.getByTestId("accent-option-amber"));
+  });
+
+  it("keeps multiple mounted appearance controls synchronized", async () => {
+    render(
+      <>
+        <div data-testid="picker-a"><ThemeAccentPicker locale="en" /></div>
+        <div data-testid="picker-b"><ThemeAccentPicker locale="en" /></div>
+      </>,
+    );
+    await flushHydration();
+
+    const pickerA = within(screen.getByTestId("picker-a"));
+    const pickerB = within(screen.getByTestId("picker-b"));
+    fireEvent.click(pickerA.getByTestId("theme-option-dark"));
+    fireEvent.click(pickerA.getByTestId("accent-option-violet"));
+
+    expect(pickerB.getByTestId("theme-option-dark").getAttribute("aria-checked")).toBe("true");
+    expect(pickerB.getByTestId("accent-option-violet").getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("applies an accent received from another browser tab", async () => {
+    render(<ThemeAccentPicker locale="en" />);
+    await flushHydration();
+
+    localStorageValues.wai_accent = "rose";
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", {
+        key: "wai_accent",
+        newValue: "rose",
+      }));
+    });
+
+    expect(screen.getByTestId("accent-option-rose").getAttribute("aria-checked")).toBe("true");
+    expect(document.documentElement.getAttribute("data-accent")).toBe("rose");
+  });
+
   it("hydrates from localStorage on mount", () => {
     localStorageValues.wai_theme = "dark";
     localStorageValues.wai_accent = "rose";
@@ -157,8 +215,8 @@ describe("ThemeAccentPicker", () => {
   it("renders Russian copy when locale is ru", () => {
     render(<ThemeAccentPicker locale="ru" />);
     expect(screen.getByTestId("theme-option-system").textContent).toBe("Системная");
-    expect(screen.getByTestId("theme-option-light").textContent).toBe("Светлая");
-    expect(screen.getByTestId("theme-option-dark").textContent).toBe("Тёмная");
+    expect(screen.getByTestId("theme-option-light").textContent).toBe("Жемчужная");
+    expect(screen.getByTestId("theme-option-dark").textContent).toBe("Полночь");
     expect(screen.getByTestId("accent-option-amber").getAttribute("aria-label")).toBe("Янтарный");
   });
 

@@ -53,7 +53,7 @@ struct OnboardingView: View {
                 .padding(.top, Spacing.md)
         }
         .frame(minWidth: 960, minHeight: 640)
-        .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
+        .background(Palette.canvas.ignoresSafeArea())
         .onAppear {
             currentPage = Self.clampedPageIndex(currentPage, pageCount: pages.count)
             persistCurrentPage()

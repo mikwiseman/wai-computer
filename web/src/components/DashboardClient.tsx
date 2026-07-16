@@ -48,7 +48,8 @@ import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
 import { AddAnythingPanel } from "@/components/AddAnythingPanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { AppearanceMenu } from "@/components/AppearanceMenu";
+import { Library, Mic, Sparkles } from "lucide-react";
 
 // View-gated panels load on demand: they hydrate only when their view/modal
 // opens, keeping the default Inbox view's bundle and hydration lean. The
@@ -2102,8 +2103,8 @@ export function DashboardClient() {
           ))}
         </nav>
 
-        <div style={{ margin: "var(--space-md) 0" }}>
-          <ThemeToggle locale={locale} />
+        <div className="sidebar-theme">
+          <AppearanceMenu locale={locale} />
         </div>
 
         <div className="sidebar-footer">
@@ -2214,6 +2215,51 @@ export function DashboardClient() {
         {view === "dictionary" ? renderDictionaryView() : null}
         {view === "settings" ? renderSettingsView() : null}
       </main>
+
+      <nav
+        className="command-dock"
+        aria-label={locale === "ru" ? "Быстрые действия" : "Quick actions"}
+      >
+        <button
+          type="button"
+          aria-current={view === "dictate" ? "page" : undefined}
+          onClick={() => {
+            clearMessage();
+            setActiveFolderId(null);
+            setSelectedRecording(null);
+            setView("dictate");
+          }}
+        >
+          <Mic size={17} strokeWidth={1.8} aria-hidden="true" />
+          <span>{locale === "ru" ? "Запись" : "Capture"}</span>
+        </button>
+        <button
+          type="button"
+          aria-current={view === "inbox" ? "page" : undefined}
+          onClick={() => {
+            clearMessage();
+            setActiveFolderId(null);
+            setSelectedRecording(null);
+            setView("inbox");
+          }}
+        >
+          <Library size={17} strokeWidth={1.8} aria-hidden="true" />
+          <span>{locale === "ru" ? "Библиотека" : "Library"}</span>
+        </button>
+        <button
+          type="button"
+          aria-current={view === "search" ? "page" : undefined}
+          onClick={() => {
+            clearMessage();
+            setActiveFolderId(null);
+            setSelectedRecording(null);
+            setView("search");
+          }}
+        >
+          <Sparkles size={17} strokeWidth={1.8} aria-hidden="true" />
+          <span>{locale === "ru" ? "Спросить Wai" : "Ask Wai"}</span>
+        </button>
+      </nav>
 
       {folderRenameTarget ? (
         <div

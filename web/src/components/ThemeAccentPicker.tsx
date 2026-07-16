@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MonitorCog, Moon, SunMedium } from "lucide-react";
 import { ApiError } from "@/lib/http";
 import { getPreferences, updatePreferences } from "@/lib/api";
 import {
@@ -8,6 +9,7 @@ import {
   applyTheme,
   isThemeChoice,
   readStoredTheme,
+  subscribeStoredTheme,
   writeStoredTheme,
   type ThemeChoice,
 } from "@/lib/theme";
@@ -26,6 +28,8 @@ export type AccentChoice =
 const ACCENT_STORAGE_KEY = "wai_accent";
 
 const DEFAULT_ACCENT: AccentChoice = "amber";
+let accentSnapshot: AccentChoice = DEFAULT_ACCENT;
+let accentSnapshotIsAuthoritative = false;
 
 const ACCENT_ORDER: AccentChoice[] = [
   "teal",
@@ -54,8 +58,8 @@ const COPY: Record<Locale, Copy> = {
     accentGroupLabel: "Accent color",
     theme: {
       system: "System",
-      light: "Light",
-      dark: "Dark",
+      light: "Pearl",
+      dark: "Midnight",
     },
     accent: {
       teal: "Teal",
@@ -73,8 +77,8 @@ const COPY: Record<Locale, Copy> = {
     accentGroupLabel: "Цвет акцента",
     theme: {
       system: "Системная",
-      light: "Светлая",
-      dark: "Тёмная",
+      light: "Жемчужная",
+      dark: "Полночь",
     },
     accent: {
       teal: "Бирюзовый",
@@ -88,6 +92,12 @@ const COPY: Record<Locale, Copy> = {
   },
 };
 
+const THEME_ICONS: Record<ThemeChoice, typeof MonitorCog> = {
+  system: MonitorCog,
+  light: SunMedium,
+  dark: Moon,
+};
+
 function isAccentChoice(value: unknown): value is AccentChoice {
   return typeof value === "string" && ACCENT_ORDER.includes(value as AccentChoice);
 }
@@ -99,21 +109,48 @@ function applyAccent(accent: AccentChoice): void {
 
 function readStoredAccent(): AccentChoice {
   if (typeof window === "undefined") return DEFAULT_ACCENT;
+  if (accentSnapshotIsAuthoritative) return accentSnapshot;
   try {
     const raw = window.localStorage.getItem(ACCENT_STORAGE_KEY);
-    return isAccentChoice(raw) ? raw : DEFAULT_ACCENT;
+    accentSnapshot = isAccentChoice(raw) ? raw : DEFAULT_ACCENT;
+    return accentSnapshot;
   } catch {
-    return DEFAULT_ACCENT;
+    return accentSnapshot;
   }
+}
+
+const accentListeners = new Set<() => void>();
+
+function subscribeStoredAccent(callback: () => void): () => void {
+  accentListeners.add(callback);
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === ACCENT_STORAGE_KEY) {
+      accentSnapshot = isAccentChoice(event.newValue) ? event.newValue : DEFAULT_ACCENT;
+      accentSnapshotIsAuthoritative = false;
+      callback();
+    }
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener("storage", onStorage);
+  }
+  return () => {
+    accentListeners.delete(callback);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("storage", onStorage);
+    }
+  };
 }
 
 function writeStoredAccent(accent: AccentChoice): void {
   if (typeof window === "undefined") return;
+  accentSnapshot = accent;
   try {
     window.localStorage.setItem(ACCENT_STORAGE_KEY, accent);
+    accentSnapshotIsAuthoritative = false;
   } catch {
-    // ignore quota / disabled storage
+    accentSnapshotIsAuthoritative = true;
   }
+  for (const listener of accentListeners) listener();
 }
 
 export interface ThemeAccentPickerProps {
@@ -189,6 +226,27 @@ export function ThemeAccentPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (initialTheme !== undefined || initialAccent !== undefined) return undefined;
+
+    const syncTheme = () => {
+      const storedTheme = readStoredTheme();
+      setTheme(storedTheme);
+      applyTheme(storedTheme);
+    };
+    const syncAccent = () => {
+      const storedAccent = readStoredAccent();
+      setAccent(storedAccent);
+      applyAccent(storedAccent);
+    };
+    const unsubscribeTheme = subscribeStoredTheme(syncTheme);
+    const unsubscribeAccent = subscribeStoredAccent(syncAccent);
+    return () => {
+      unsubscribeTheme();
+      unsubscribeAccent();
+    };
+  }, [initialAccent, initialTheme]);
+
   // Debounced PATCH — silent on auth/404 errors; localStorage already mirrors state.
   const patchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const patchPreferences = useCallback(
@@ -243,68 +301,76 @@ export function ThemeAccentPicker({
       data-theme-current={theme}
       data-accent-current={accent}
     >
-      <div
-        className={styles["theme-segmented"]}
-        role="radiogroup"
-        aria-label={copy.themeGroupLabel}
-        data-testid="theme-segmented"
-      >
-        {(["system", "light", "dark"] as ThemeChoice[]).map((option) => {
-          const selected = theme === option;
-          const classes = [
-            styles["theme-segmented__option"],
-            selected ? styles["theme-segmented__option--selected"] : null,
-          ]
-            .filter(Boolean)
-            .join(" ");
-          return (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              data-selected={selected}
-              data-testid={`theme-option-${option}`}
-              className={classes}
-              onClick={() => handleThemeChange(option)}
-            >
-              {copy.theme[option]}
-            </button>
-          );
-        })}
-      </div>
+      <section className={styles.section}>
+        <span className={styles.sectionLabel}>{copy.themeGroupLabel}</span>
+        <div
+          className={styles["theme-segmented"]}
+          role="radiogroup"
+          aria-label={copy.themeGroupLabel}
+          data-testid="theme-segmented"
+        >
+          {(["system", "light", "dark"] as ThemeChoice[]).map((option) => {
+            const selected = theme === option;
+            const Icon = THEME_ICONS[option];
+            const classes = [
+              styles["theme-segmented__option"],
+              selected ? styles["theme-segmented__option--selected"] : null,
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return (
+              <button
+                key={option}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                data-selected={selected}
+                data-testid={`theme-option-${option}`}
+                className={classes}
+                onClick={() => handleThemeChange(option)}
+              >
+                <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
+                <span>{copy.theme[option]}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
-      <div
-        className={styles["accent-swatch-row"]}
-        role="radiogroup"
-        aria-label={copy.accentGroupLabel}
-        data-testid="accent-swatch-row"
-      >
-        {ACCENT_ORDER.map((option) => {
-          const selected = accent === option;
-          const classes = [
-            styles["accent-swatch"],
-            selected ? styles["accent-swatch--selected"] : null,
-          ]
-            .filter(Boolean)
-            .join(" ");
-          return (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              aria-label={copy.accent[option]}
-              title={copy.accent[option]}
-              data-selected={selected}
-              data-accent-option={option}
-              data-testid={`accent-option-${option}`}
-              className={classes}
-              onClick={() => handleAccentChange(option)}
-            />
-          );
-        })}
-      </div>
+      <section className={styles.section}>
+        <span className={styles.sectionLabel}>{copy.accentGroupLabel}</span>
+        <div
+          className={styles["accent-swatch-row"]}
+          role="radiogroup"
+          aria-label={copy.accentGroupLabel}
+          data-testid="accent-swatch-row"
+        >
+          {ACCENT_ORDER.map((option) => {
+            const selected = accent === option;
+            const classes = [
+              styles["accent-swatch"],
+              selected ? styles["accent-swatch--selected"] : null,
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return (
+              <button
+                key={option}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={copy.accent[option]}
+                title={copy.accent[option]}
+                data-selected={selected}
+                data-accent-option={option}
+                data-testid={`accent-option-${option}`}
+                className={classes}
+                onClick={() => handleAccentChange(option)}
+              />
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }

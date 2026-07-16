@@ -23,15 +23,15 @@ enum Spacing {
 /// `tokens.css`.
 enum Radius {
     /// Chips, small inline controls
-    static let sm: CGFloat = 6
+    static let sm: CGFloat = 8
     /// Buttons, inputs, list rows
-    static let md: CGFloat = 10
+    static let md: CGFloat = 12
     /// Cards, panels, popovers
-    static let lg: CGFloat = 14
+    static let lg: CGFloat = 16
     /// Sheets, modals, floating overlays
-    static let xl: CGFloat = 18
+    static let xl: CGFloat = 22
     /// Large floating panels (Ask Anything)
-    static let xxl: CGFloat = 24
+    static let xxl: CGFloat = 28
 }
 
 // MARK: - Typography
@@ -387,6 +387,11 @@ enum Palette {
     /// Tertiary text
     static let textTertiary = Color(nsColor: .tertiaryLabelColor)
 
+    /// Spatial Studio canvas and opaque content tiers. Glass is deliberately
+    /// reserved for navigation, toolbars, menus, and floating controls.
+    static let canvas = Color(nsColor: .windowBackgroundColor)
+    static let panel = Color(nsColor: .textBackgroundColor)
+    static let panelRaised = Color(nsColor: .controlBackgroundColor)
     /// Subtle surface — 5% opacity (visible in both light and dark mode)
     static let surfaceSubtle = Color.primary.opacity(0.05)
     /// Hover state surface — 8% opacity
@@ -569,9 +574,13 @@ extension View {
     /// macOS 26+, degrading to `.ultraThinMaterial` + hairline on 13–25.
     /// Chrome only — content surfaces (transcripts, lists) must stay opaque.
     @ViewBuilder
-    func waiGlassChrome(cornerRadius: CGFloat) -> some View {
+    func waiGlassChrome(cornerRadius: CGFloat, interactive: Bool = false) -> some View {
         if #available(macOS 26.0, *) {
-            self.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            if interactive {
+                self.glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
+            } else {
+                self.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            }
         } else {
             self
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))

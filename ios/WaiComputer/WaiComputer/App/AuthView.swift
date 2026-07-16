@@ -22,7 +22,7 @@ struct AuthView: View {
     var body: some View {
         NavigationStack {
             authContent
-            .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+            .background(Palette.canvas.ignoresSafeArea())
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: authMode) { _, _ in
                 appState.magicLinkSent = false
@@ -135,12 +135,13 @@ struct AuthView: View {
         }
         .padding(Spacing.xl)
         .frame(width: 408)
-        .background(Palette.surfaceSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Palette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .strokeBorder(Palette.border, lineWidth: 1)
         )
+        .waiShadow(.raised)
         .accessibilityIdentifier("auth-regular-form-panel")
     }
 
@@ -407,10 +408,10 @@ private extension View {
             .foregroundStyle(Palette.textPrimary)
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.md)
-            .background(Color(uiColor: .secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(Palette.panelRaised)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .strokeBorder(Palette.border, lineWidth: 1)
             )
             .frame(maxWidth: maxWidth ?? .infinity)
