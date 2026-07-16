@@ -262,7 +262,7 @@ staple_and_validate_sparkle_updater() {
   sparkle_updater_smoke_app="$sparkle_updater_smoke_dir/Updater.app"
   ditto "$SPARKLE_UPDATER_APP" "$sparkle_updater_smoke_app"
   xcrun stapler validate "$sparkle_updater_smoke_app"
-  gatekeeper_check "copied Sparkle updater helper" spctl -a -vv --type execute "$sparkle_updater_smoke_app"
+  gatekeeper_check "copied Sparkle updater helper" xcrun syspolicy_check distribution "$sparkle_updater_smoke_app"
 }
 
 require_tool xcodebuild
