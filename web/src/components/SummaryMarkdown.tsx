@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 
 /**
  * Renders the lightweight markdown the summarizer emits (bold section
@@ -139,8 +139,10 @@ export function parseSummaryBlocks(text: string): SummaryBlock[] {
   return blocks;
 }
 
-export function SummaryMarkdown({ text }: { text: string }) {
-  const blocks = parseSummaryBlocks(text);
+// Memoized: summaries are multi-KB and the panels hosting them re-render on
+// polls, notices, and keystrokes. Parsing must only re-run when text changes.
+export const SummaryMarkdown = memo(function SummaryMarkdown({ text }: { text: string }) {
+  const blocks = useMemo(() => parseSummaryBlocks(text), [text]);
   return (
     <div className="summary-markdown">
       {blocks.map((block, i) => {
@@ -169,4 +171,4 @@ export function SummaryMarkdown({ text }: { text: string }) {
       })}
     </div>
   );
-}
+});

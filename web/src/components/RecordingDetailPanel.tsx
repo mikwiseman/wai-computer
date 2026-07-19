@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   createRecordingShareLink,
   downloadRecordingSummaryAudio,
@@ -17,7 +18,7 @@ import {
   formatSpeakerLabel,
   formatTimestamp,
 } from "@/lib/format";
-import { mergeTurns, renderTranscript } from "@/lib/transcript";
+import { mergeTurns, renderTranscript, type TranscriptTurn } from "@/lib/transcript";
 import type {
   Folder,
   RecordingDetail,
@@ -246,8 +247,8 @@ function recordingTypeLabel(type: string, locale: DetailLocale): string | null {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
-function automaticSummaryStartKey(recording: RecordingDetail): string {
-  const transcriptSignature = recording.segments
+function automaticSummaryStartKey(recordingId: string, segments: Segment[]): string {
+  const transcriptSignature = segments
     .map((segment) =>
       [
         segment.id,
@@ -257,7 +258,7 @@ function automaticSummaryStartKey(recording: RecordingDetail): string {
       ].join(":"),
     )
     .join("|");
-  return `${recording.id}:${transcriptSignature}`;
+  return `${recordingId}:${transcriptSignature}`;
 }
 
 function CopyButton({
@@ -320,9 +321,11 @@ export function RecordingDetailPanel({
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<"trash" | "permanent" | null>(null);
   const [autoSummaryStartFailedKey, setAutoSummaryStartFailedKey] = useState<string | null>(null);
+  // Keyed on id + segments (not the whole detail object) so status-only poll
+  // updates don't rebuild a signature over thousands of segments.
   const autoSummaryStartKey = useMemo(
-    () => automaticSummaryStartKey(recording),
-    [recording],
+    () => automaticSummaryStartKey(recording.id, recording.segments),
+    [recording.id, recording.segments],
   );
 
   const tabs = useMemo(
@@ -337,6 +340,10 @@ export function RecordingDetailPanel({
     transcript: null,
     summary: null,
   });
+  // Scroll container for the virtualized transcript on long recordings. Held
+  // as state (not a ref): child layout effects run before this ref attaches,
+  // so the virtualizer would otherwise observe null and never re-measure.
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
 
   // WAI-ARIA Tabs pattern with automatic activation: arrow keys (and Home/End)
   // move focus between tabs and select the focused one, so the whole tab strip
@@ -726,6 +733,7 @@ export function RecordingDetailPanel({
         className="detail-panel__content"
         role="tabpanel"
         aria-labelledby={`recording-tab-${tab}`}
+        ref={setScrollElement}
       >
         {tab === "transcript" && (
           <TranscriptTab
@@ -735,6 +743,7 @@ export function RecordingDetailPanel({
             onRecordingUpdate={onRecordingUpdate}
             copy={copy}
             locale={locale}
+            scrollElement={scrollElement}
           />
         )}
         {tab === "summary" && (
@@ -808,6 +817,108 @@ export function RecordingDetailPanel({
   );
 }
 
+// Above this many turns the transcript switches to windowed rendering. Below
+// it, plain rows keep find-in-page and screen-reader flow for typical notes;
+// above it, mounting every row (each with a stateful SpeakerChip) is what
+// froze the panel on multi-hour recordings.
+const VIRTUALIZE_AFTER_TURNS = 120;
+// Matches `contain-intrinsic-size: auto 7rem` on .transcript-row.
+const ESTIMATED_TURN_HEIGHT_PX = 112;
+// Matches the .reading-stack flex gap so virtualized rows keep the rhythm.
+const TURN_GAP_PX = 18;
+
+const TranscriptTurnRow = memo(function TranscriptTurnRow({
+  turn,
+  recordingId,
+  locale,
+  onUpdated,
+}: {
+  turn: TranscriptTurn;
+  recordingId: string;
+  locale: DetailLocale;
+  onUpdated: (detail: RecordingDetail) => void;
+}) {
+  const head = turn.segments[0];
+  if (!head) return null;
+  // When the diariser exposes raw machine labels like "speaker_0" but no
+  // person is assigned yet, render a friendly "Speaker 1" via display_name.
+  // raw_label is preserved so the backend assign-speaker call still receives
+  // the original token (assigning relabels the whole turn).
+  const chipSegment =
+    !head.display_name && !head.person_id
+      ? {
+          ...head,
+          display_name: formatSpeakerLabel(head.speaker, head.raw_label, null, locale),
+        }
+      : head;
+  return (
+    <article className="transcript-row">
+      <div className="metadata-row">
+        {head.raw_label || head.speaker ? (
+          <SpeakerChip segment={chipSegment} recordingId={recordingId} onUpdated={onUpdated} />
+        ) : null}
+        <span className="mono">{formatTimestamp(turn.startMs)}</span>
+      </div>
+      <p>{turn.text}</p>
+    </article>
+  );
+});
+
+function VirtualizedTranscript({
+  turns,
+  recordingId,
+  locale,
+  onUpdated,
+  scrollElement,
+}: {
+  turns: TranscriptTurn[];
+  recordingId: string;
+  locale: DetailLocale;
+  onUpdated: (detail: RecordingDetail) => void;
+  scrollElement: HTMLDivElement | null;
+}) {
+  const virtualizer = useVirtualizer({
+    count: turns.length,
+    getScrollElement: () => scrollElement,
+    estimateSize: () => ESTIMATED_TURN_HEIGHT_PX + TURN_GAP_PX,
+    overscan: 8,
+    getItemKey: (index) => turns[index]?.segments[0]?.id ?? index,
+  });
+  return (
+    <div
+      style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+      data-testid="virtualized-transcript"
+    >
+      {virtualizer.getVirtualItems().map((item) => {
+        const turn = turns[item.index];
+        if (!turn) return null;
+        return (
+          <div
+            key={item.key}
+            data-index={item.index}
+            ref={virtualizer.measureElement}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              transform: `translateY(${item.start}px)`,
+              paddingBottom: TURN_GAP_PX,
+            }}
+          >
+            <TranscriptTurnRow
+              turn={turn}
+              recordingId={recordingId}
+              locale={locale}
+              onUpdated={onUpdated}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function TranscriptTab({
   segments,
   status,
@@ -815,6 +926,7 @@ function TranscriptTab({
   onRecordingUpdate,
   copy,
   locale,
+  scrollElement,
 }: {
   segments: Segment[];
   status: string;
@@ -822,6 +934,7 @@ function TranscriptTab({
   onRecordingUpdate?: (r: RecordingDetail) => void;
   copy: DetailCopy;
   locale: DetailLocale;
+  scrollElement: HTMLDivElement | null;
 }) {
   // Merge consecutive same-speaker utterances into turns once per segment set:
   // this drives both the reading view (one card per turn) and the copy buttons.
@@ -831,6 +944,12 @@ function TranscriptTab({
   const turns = useMemo(() => mergeTurns(segments), [segments]);
   const plainText = useCallback(() => renderTranscript(turns, "plain"), [turns]);
   const timestampedText = useCallback(() => renderTranscript(turns, "timestamped"), [turns]);
+  // Stable identity so memoized rows and chips don't re-render when the panel
+  // re-renders for unrelated reasons (notices, rename keystrokes, polls).
+  const handleUpdated = useCallback(
+    (detail: RecordingDetail) => onRecordingUpdate?.(detail),
+    [onRecordingUpdate],
+  );
 
   if (segments.length === 0) {
     if (isRecordingProcessing(status)) {
@@ -863,36 +982,29 @@ function TranscriptTab({
           />
         </div>
       </div>
-      {turns.map((turn) => {
-        const head = turn.segments[0];
-        if (!head) return null;
-        // When the diariser exposes raw machine labels like "speaker_0" but no
-        // person is assigned yet, render a friendly "Speaker 1" via display_name.
-        // raw_label is preserved so the backend assign-speaker call still receives
-        // the original token (assigning relabels the whole turn).
-        const chipSegment =
-          !head.display_name && !head.person_id
-            ? {
-                ...head,
-                display_name: formatSpeakerLabel(head.speaker, head.raw_label, null, locale),
-              }
-            : head;
-        return (
-          <article key={head.id} className="transcript-row">
-            <div className="metadata-row">
-              {head.raw_label || head.speaker ? (
-                <SpeakerChip
-                  segment={chipSegment}
-                  recordingId={recordingId}
-                  onUpdated={(detail) => onRecordingUpdate?.(detail)}
-                />
-              ) : null}
-              <span className="mono">{formatTimestamp(turn.startMs)}</span>
-            </div>
-            <p>{turn.text}</p>
-          </article>
-        );
-      })}
+      {turns.length > VIRTUALIZE_AFTER_TURNS ? (
+        <VirtualizedTranscript
+          turns={turns}
+          recordingId={recordingId}
+          locale={locale}
+          onUpdated={handleUpdated}
+          scrollElement={scrollElement}
+        />
+      ) : (
+        turns.map((turn) => {
+          const head = turn.segments[0];
+          if (!head) return null;
+          return (
+            <TranscriptTurnRow
+              key={head.id}
+              turn={turn}
+              recordingId={recordingId}
+              locale={locale}
+              onUpdated={handleUpdated}
+            />
+          );
+        })
+      )}
     </div>
   );
 }

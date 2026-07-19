@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { assignSpeaker, listPeople } from "@/lib/api";
 import type { Person, RecordingDetail, Segment } from "@/lib/types";
@@ -17,7 +17,9 @@ function displayLabel(segment: Segment): string {
   return segment.display_name ?? segment.raw_label ?? segment.speaker ?? "Speaker";
 }
 
-export function SpeakerChip({
+// Memoized: a long meeting mounts one chip per turn (hundreds+). Rows keep
+// their segment/callback identities stable, so unchanged chips skip re-render.
+export const SpeakerChip = memo(function SpeakerChip({
   segment,
   recordingId,
   onUpdated,
@@ -223,4 +225,4 @@ export function SpeakerChip({
       ) : null}
     </span>
   );
-}
+});

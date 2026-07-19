@@ -1,6 +1,15 @@
 "use client";
 
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  KeyboardEvent,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   createChat,
@@ -288,6 +297,97 @@ function persistedTurnState(
   return null;
 }
 
+// One completed thread row. Memoized so streaming the live turn (which
+// re-renders the panel once per animation frame) doesn't re-run plainText /
+// timeline extraction / markdown parsing for every historical message.
+const MessageRow = memo(function MessageRow({
+  message,
+  completedTurn,
+  locale,
+  copy,
+  onResolve,
+  recordingTitlesById,
+}: {
+  message: CompanionMessage;
+  completedTurn: CompanionTurn | undefined;
+  locale: Locale;
+  copy: CompanionCopy;
+  onResolve?: (actionId: string, decision: Decision) => void;
+  recordingTitlesById: Map<string, string>;
+}) {
+  if (message.role === "user") {
+    return (
+      <article
+        className="qa-bubble"
+        data-role="user"
+        data-testid="companion-message-user"
+        style={{ marginBottom: 12, whiteSpace: "pre-wrap" }}
+      >
+        <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>
+          {copy.user}
+        </strong>
+        <div>{plainText(message.content)}</div>
+      </article>
+    );
+  }
+
+  const storedItems = completedTurn ? [] : storedTimelineItemsForMessage(message);
+  const assistantText = plainText(message.content);
+  const hasVisibleOutput =
+    Boolean(completedTurn)
+    || storedItems.length > 0
+    || assistantText.trim().length > 0;
+  const state = persistedTurnState(message.status, copy, hasVisibleOutput);
+
+  return (
+    <article
+      className="qa-bubble qa-bubble--assistant"
+      data-role="assistant"
+      data-testid="companion-message-assistant"
+      style={{ marginBottom: 12 }}
+    >
+      <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>
+        {copy.assistant}
+      </strong>
+      {state ? (
+        <p role={state.role} className={state.className} data-testid={state.testId}>
+          {state.text}
+        </p>
+      ) : null}
+      {completedTurn ? (
+        <CompanionTimeline
+          items={completedTurn.items}
+          isLive={false}
+          locale={locale}
+          onResolve={onResolve}
+        />
+      ) : storedItems.length > 0 ? (
+        <CompanionTimeline
+          items={storedItems}
+          isLive={false}
+          locale={locale}
+          onResolve={onResolve}
+        />
+      ) : (
+        <Markdown text={assistantText} />
+      )}
+      {message.citations.length > 0 ? (
+        <CitationStrip
+          citations={message.citations.map((c) => ({
+            index: c.citation_index,
+            segment_id: c.segment_id ?? "",
+            recording_id: c.recording_id ?? "",
+            start_ms: null,
+            end_ms: null,
+          }))}
+          recordingTitles={recordingTitlesById}
+          fallbackTitle={copy.recordingFallback}
+        />
+      ) : null}
+    </article>
+  );
+});
+
 function localDateString(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -350,6 +450,32 @@ export function CompanionPanel({
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const initialized = useRef(false);
   const initialSentRef = useRef<string | null>(null);
+  // Token events arrive one per await, so React can't batch them — without
+  // coalescing every token re-renders the whole thread. Flush at most one
+  // liveTurn update per animation frame; critical transitions flush directly.
+  const liveTurnFrameRef = useRef<number | null>(null);
+  const pendingLiveTurnRef = useRef<CompanionTurn | null>(null);
+
+  const cancelScheduledLiveTurn = useCallback(() => {
+    if (liveTurnFrameRef.current !== null) {
+      cancelAnimationFrame(liveTurnFrameRef.current);
+      liveTurnFrameRef.current = null;
+    }
+    pendingLiveTurnRef.current = null;
+  }, []);
+
+  const scheduleLiveTurn = useCallback((next: CompanionTurn) => {
+    pendingLiveTurnRef.current = next;
+    if (liveTurnFrameRef.current !== null) return;
+    liveTurnFrameRef.current = requestAnimationFrame(() => {
+      liveTurnFrameRef.current = null;
+      const pending = pendingLiveTurnRef.current;
+      pendingLiveTurnRef.current = null;
+      if (pending) setLiveTurn(pending);
+    });
+  }, []);
+
+  useEffect(() => cancelScheduledLiveTurn, [cancelScheduledLiveTurn]);
 
   useEffect(() => {
     if (localeProp) {
@@ -562,6 +688,7 @@ export function CompanionPanel({
         if (evt.type === "error") {
           receivedError = true;
           turn = markTurnInterrupted(turn, failedText(locale));
+          cancelScheduledLiveTurn();
           setLiveTurn(turn);
           setError(evt.message);
           // Failed mid-turn — restore the question for an easy retry unless
@@ -580,9 +707,11 @@ export function CompanionPanel({
           );
         }
         turn = ingestEvent(turn, evt);
-        setLiveTurn(turn);
+        scheduleLiveTurn(turn);
         if (evt.type === "token") setStage("composing");
         if (evt.type === "done") {
+          cancelScheduledLiveTurn();
+          setLiveTurn(turn);
           if (!turnIsEmpty(turn)) {
             const messageId = evt.message_id;
             const completed = turn;
@@ -614,6 +743,7 @@ export function CompanionPanel({
         return;
       }
       turn = markTurnInterrupted(turn, failedText(locale));
+      cancelScheduledLiveTurn();
       setLiveTurn(turn);
       setError(formatError(e, copy));
       setInput((current) => (current.trim() ? current : question));
@@ -624,6 +754,9 @@ export function CompanionPanel({
         /* keep optimistic row visible */
       }
     } finally {
+      // A frame scheduled just before exit would resurrect a stale turn after
+      // the reset to emptyTurn(); drop it.
+      cancelScheduledLiveTurn();
       setLoading(false);
       setStage("idle");
       if (abortRef.current === controller) {
@@ -632,57 +765,76 @@ export function CompanionPanel({
     }
   }
 
-  function setActionRes(actionId: string, resolution: CompanionActionResolution) {
-    setLiveTurn((prev) => setActionResolution(prev, actionId, resolution));
-    setMessages((prev) =>
-      prev.map((message) => {
-        const nextToolCalls = setStoredActionResolution(
-          message.tool_calls,
-          actionId,
-          resolution,
-        );
-        return nextToolCalls === message.tool_calls
-          ? message
-          : { ...message, tool_calls: nextToolCalls };
-      }),
-    );
-    setCompletedTurns((prev) => {
-      let changed = false;
-      const next: Record<string, CompanionTurn> = {};
-      for (const [key, value] of Object.entries(prev)) {
-        const updated = setActionResolution(value, actionId, resolution);
-        next[key] = updated;
-        if (updated !== value) changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }
+  const setActionRes = useCallback(
+    (actionId: string, resolution: CompanionActionResolution) => {
+      setLiveTurn((prev) => setActionResolution(prev, actionId, resolution));
+      setMessages((prev) =>
+        prev.map((message) => {
+          const nextToolCalls = setStoredActionResolution(
+            message.tool_calls,
+            actionId,
+            resolution,
+          );
+          return nextToolCalls === message.tool_calls
+            ? message
+            : { ...message, tool_calls: nextToolCalls };
+        }),
+      );
+      setCompletedTurns((prev) => {
+        let changed = false;
+        const next: Record<string, CompanionTurn> = {};
+        for (const [key, value] of Object.entries(prev)) {
+          const updated = setActionResolution(value, actionId, resolution);
+          next[key] = updated;
+          if (updated !== value) changed = true;
+        }
+        return changed ? next : prev;
+      });
+    },
+    [],
+  );
 
-  async function handleResolve(chatId: string, actionId: string, decision: Decision) {
-    setActionRes(actionId, { state: "executing" });
-    try {
-      const resp = await resolveAction(chatId, actionId, decision);
-      setActionRes(actionId, {
-        state: "resolved",
-        status: resp.status,
-        detail: resp.recipient ?? "",
-      });
-    } catch (e) {
-      const detail = formatError(e, copy);
-      setActionRes(actionId, {
-        state: "resolved",
-        status: e instanceof ApiError && e.status === 410 ? "expired" : "failed",
-        detail,
-      });
-      setError(detail);
-    }
-  }
+  const handleResolve = useCallback(
+    async (chatId: string, actionId: string, decision: Decision) => {
+      setActionRes(actionId, { state: "executing" });
+      try {
+        const resp = await resolveAction(chatId, actionId, decision);
+        setActionRes(actionId, {
+          state: "resolved",
+          status: resp.status,
+          detail: resp.recipient ?? "",
+        });
+      } catch (e) {
+        const detail = formatError(e, copy);
+        setActionRes(actionId, {
+          state: "resolved",
+          status: e instanceof ApiError && e.status === 410 ? "expired" : "failed",
+          detail,
+        });
+        setError(detail);
+      }
+    },
+    [copy, setActionRes],
+  );
+
+  // Stable per-chat resolver so memoized message rows don't re-render when the
+  // panel re-renders for streaming/liveTurn reasons.
+  const resolveInActiveChat = useMemo(() => {
+    if (!activeChatId) return undefined;
+    const chatId = activeChatId;
+    return (actionId: string, decision: Decision) =>
+      void handleResolve(chatId, actionId, decision);
+  }, [activeChatId, handleResolve]);
 
   function handleStop() {
     abortRef.current?.abort();
     abortRef.current = null;
+    // Progress can still be sitting in the coalescing frame; fold it in so
+    // stopping never discards visibly-earned plan/tool progress.
+    const pending = pendingLiveTurnRef.current;
+    cancelScheduledLiveTurn();
     setLiveTurn((prev) =>
-      markTurnInterrupted(prev, stoppedText(locale)),
+      markTurnInterrupted(pending ?? prev, stoppedText(locale)),
     );
     setLoading(false);
     setStage("idle");
@@ -811,94 +963,17 @@ export function CompanionPanel({
           </div>
         ) : null}
 
-        {messages.map((m) => {
-          if (m.role === "user") {
-            return (
-              <article
-                key={m.id}
-                className="qa-bubble"
-                data-role="user"
-                data-testid="companion-message-user"
-                style={{ marginBottom: 12, whiteSpace: "pre-wrap" }}
-              >
-                <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>
-                  {copy.user}
-                </strong>
-                <div>{plainText(m.content)}</div>
-              </article>
-            );
-          }
-
-          const completedTurn = completedTurns[m.id];
-          const storedItems = completedTurn ? [] : storedTimelineItemsForMessage(m);
-          const assistantText = plainText(m.content);
-          const hasVisibleOutput =
-            Boolean(completedTurn)
-            || storedItems.length > 0
-            || assistantText.trim().length > 0;
-          const state = persistedTurnState(m.status, copy, hasVisibleOutput);
-
-          return (
-            <article
-              key={m.id}
-              className="qa-bubble qa-bubble--assistant"
-              data-role="assistant"
-              data-testid="companion-message-assistant"
-              style={{ marginBottom: 12 }}
-            >
-              <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>
-                {copy.assistant}
-              </strong>
-              {state ? (
-                <p
-                  role={state.role}
-                  className={state.className}
-                  data-testid={state.testId}
-                >
-                  {state.text}
-                </p>
-              ) : null}
-              {completedTurn ? (
-                <CompanionTimeline
-                  items={completedTurn.items}
-                  isLive={false}
-                  locale={locale}
-                  onResolve={
-                    activeChatId
-                      ? (aid, dec) => void handleResolve(activeChatId, aid, dec)
-                      : undefined
-                  }
-                />
-              ) : storedItems.length > 0 ? (
-                <CompanionTimeline
-                  items={storedItems}
-                  isLive={false}
-                  locale={locale}
-                  onResolve={
-                    activeChatId
-                      ? (aid, dec) => void handleResolve(activeChatId, aid, dec)
-                      : undefined
-                  }
-                />
-              ) : (
-                <Markdown text={assistantText} />
-              )}
-              {m.citations.length > 0 ? (
-                <CitationStrip
-                  citations={m.citations.map((c) => ({
-                    index: c.citation_index,
-                    segment_id: c.segment_id ?? "",
-                    recording_id: c.recording_id ?? "",
-                    start_ms: null,
-                    end_ms: null,
-                  }))}
-                  recordingTitles={recordingTitlesById}
-                  fallbackTitle={copy.recordingFallback}
-                />
-              ) : null}
-            </article>
-          );
-        })}
+        {messages.map((m) => (
+          <MessageRow
+            key={m.id}
+            message={m}
+            completedTurn={completedTurns[m.id]}
+            locale={locale}
+            copy={copy}
+            onResolve={resolveInActiveChat}
+            recordingTitlesById={recordingTitlesById}
+          />
+        ))}
 
         {loading || !turnIsEmpty(liveTurn) ? (
           <article
@@ -921,11 +996,7 @@ export function CompanionPanel({
                 items={liveTurn.items}
                 isLive={true}
                 locale={locale}
-                onResolve={
-                  activeChatId
-                    ? (aid, dec) => void handleResolve(activeChatId, aid, dec)
-                    : undefined
-                }
+                onResolve={resolveInActiveChat}
               />
             )}
             {liveTurn.citations.length > 0 ? (

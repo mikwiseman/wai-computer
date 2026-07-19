@@ -197,6 +197,69 @@ describe("RecordingDetailPanel", () => {
     expect(screen.getByText("Sounds good")).toBeTruthy();
   });
 
+  it("windows long transcripts instead of mounting every turn", () => {
+    // jsdom lays nothing out (offsetWidth/offsetHeight are always 0), which
+    // would make the virtualizer mount nothing; give elements a plausible size
+    // so the scroll window math runs.
+    const originalOffsetHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "offsetHeight",
+    );
+    const originalOffsetWidth = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "offsetWidth",
+    );
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      value: 600,
+    });
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      value: 800,
+    });
+    try {
+      // Alternating speakers so every segment becomes its own turn.
+      const segments = Array.from({ length: 500 }, (_, i) => ({
+        id: `s${i}`,
+        speaker: i % 2 === 0 ? "Alice" : "Bob",
+        content: `Utterance number ${i}`,
+        start_ms: i * 4000,
+        end_ms: i * 4000 + 3000,
+        confidence: 0.9,
+      }));
+      render(<RecordingDetailPanel recording={makeRecording({ segments })} />);
+
+      const container = screen.getByTestId("virtualized-transcript");
+      const mounted = container.querySelectorAll("article.transcript-row").length;
+      expect(mounted).toBeGreaterThan(0);
+      // The perf contract: only a scroll window mounts, not all 500 turns.
+      expect(mounted).toBeLessThan(50);
+      // The scroll spacer reserves room for everything that isn't mounted.
+      expect(Number.parseInt((container as HTMLElement).style.height, 10)).toBeGreaterThan(10000);
+    } finally {
+      if (originalOffsetHeight) {
+        Object.defineProperty(HTMLElement.prototype, "offsetHeight", originalOffsetHeight);
+      }
+      if (originalOffsetWidth) {
+        Object.defineProperty(HTMLElement.prototype, "offsetWidth", originalOffsetWidth);
+      }
+    }
+  });
+
+  it("renders short transcripts as plain rows (find-in-page keeps working)", () => {
+    const segments = Array.from({ length: 6 }, (_, i) => ({
+      id: `s${i}`,
+      speaker: i % 2 === 0 ? "Alice" : "Bob",
+      content: `Line ${i}`,
+      start_ms: i * 1000,
+      end_ms: i * 1000 + 900,
+      confidence: 0.9,
+    }));
+    render(<RecordingDetailPanel recording={makeRecording({ segments })} />);
+    expect(screen.queryByTestId("virtualized-transcript")).toBeNull();
+    expect(document.querySelectorAll("article.transcript-row")).toHaveLength(6);
+  });
+
   // Re-match speakers (Mac parity)
   it("re-matches speakers and refreshes the recording", async () => {
     const withSegments = makeRecording({

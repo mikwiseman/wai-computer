@@ -111,6 +111,7 @@ import { ApiError } from "@/lib/http";
 import { localizeErrorMessage } from "@/lib/error-l10n";
 import { macDmgUrl } from "@/lib/links";
 import { formatDurationClock, formatListTimestamp } from "@/lib/format";
+import { preserveRecordingDetailIdentity } from "@/lib/recording-identity";
 import type {
   BulkAction,
   DictationDictionaryWord,
@@ -1232,7 +1233,9 @@ export function DashboardClient() {
       try {
         const detail = await getRecording(selectedRecording.id);
         if (cancelled) return;
-        setSelectedRecording(detail);
+        // Preserve identity where nothing changed so the poll doesn't
+        // reconcile thousands of memoized transcript rows for a no-op.
+        setSelectedRecording((prev) => preserveRecordingDetailIdentity(prev, detail));
         setRecordings((current) =>
           current.map((recording) =>
             recording.id === detail.id
@@ -1306,7 +1309,7 @@ export function DashboardClient() {
   // would retrigger that effect after every fetch (each update re-renders this
   // component), looping detail requests forever.
   const handleRecordingDetailUpdate = useCallback((detail: RecordingDetail) => {
-    setSelectedRecording(detail);
+    setSelectedRecording((prev) => preserveRecordingDetailIdentity(prev, detail));
     setRecordings((current) =>
       current.map((recording) =>
         recording.id === detail.id
@@ -3494,7 +3497,7 @@ function UniversalInboxPanel({
 
   useEffect(() => {
     if (!initialRecording || initialRecording.deleted_at) return;
-    setSelectedRecording(initialRecording);
+    setSelectedRecording((prev) => preserveRecordingDetailIdentity(prev, initialRecording));
     // Keep the existing row object when it already points at this recording.
     // A fresh row per detail fetch would retrigger the selectedRow effect,
     // which refetches the detail and loops the update cycle forever.
@@ -3522,7 +3525,7 @@ function UniversalInboxPanel({
       try {
         const detail = await getRecording(selectedRow.source_id);
         if (cancelled) return;
-        setSelectedRecording(detail);
+        setSelectedRecording((prev) => preserveRecordingDetailIdentity(prev, detail));
         onRecordingUpdate(detail);
       } catch (error: unknown) {
         if (!cancelled) onError(formatError(error, locale));
@@ -4147,7 +4150,7 @@ function UniversalInboxPanel({
                 void onAssignRecordingToFolder(recordingId, folderId)
               }
               onRecordingUpdate={(detail) => {
-                setSelectedRecording(detail);
+                setSelectedRecording((prev) => preserveRecordingDetailIdentity(prev, detail));
                 onRecordingUpdate(detail);
               }}
               onRestore={() => undefined}

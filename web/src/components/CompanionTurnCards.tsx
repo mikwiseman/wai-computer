@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, memo, type ReactNode, useMemo, useState } from "react";
 
 import type {
   CompanionActionProposal,
@@ -374,15 +374,18 @@ type MdBlock =
   | { kind: "ordered"; items: string[] }
   | { kind: "code"; text: string };
 
-export function Markdown({ text }: { text: string }) {
+// Memoized: chat threads re-render on every streamed token; past messages'
+// markdown must not re-parse per token (O(messages × tokens) without this).
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
+  const blocks = useMemo(() => parseMarkdown(text), [text]);
   return (
     <div className="wai-markdown">
-      {parseMarkdown(text).map((block, i) => (
+      {blocks.map((block, i) => (
         <Fragment key={i}>{renderBlock(block)}</Fragment>
       ))}
     </div>
   );
-}
+});
 
 function renderBlock(block: MdBlock): ReactNode {
   switch (block.kind) {

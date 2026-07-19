@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { exportSharedRecording, getSharedRecording } from "@/lib/api";
 import type { AuthLocale } from "@/lib/auth-locale";
-import { formatDurationClock, formatSpeakerLabel, stripInlineCodeMarkdown } from "@/lib/format";
+import { formatDurationClock, stripInlineCodeMarkdown } from "@/lib/format";
+import { mergeTurns } from "@/lib/transcript";
 import { SummaryMarkdown, renderSummaryInline } from "@/components/SummaryMarkdown";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import type { SharedRecording } from "@/lib/types";
@@ -161,6 +162,27 @@ export function SharedRecordingClient({
       ? typeLabels[locale][recording.type as keyof typeof typeLabels.en]
       : recording?.type;
 
+  // A long meeting shares thousands of raw utterances; rendering one row per
+  // utterance froze this page. Merge them into readable turns once (same view
+  // the dashboard uses) and strip markdown per utterance before merging so the
+  // join can't pair backticks across utterances.
+  const transcriptTurns = useMemo(() => {
+    if (!recording) return [];
+    const stripped = recording.segments.map((segment) => ({
+      ...segment,
+      content: stripInlineCodeMarkdown(segment.content),
+    }));
+    return mergeTurns(stripped, locale);
+  }, [recording, locale]);
+
+  const sortedHighlights = useMemo(
+    () =>
+      recording
+        ? [...recording.highlights].sort((a, b) => (a.start_ms ?? 0) - (b.start_ms ?? 0))
+        : [],
+    [recording],
+  );
+
   if (loading) {
     return (
       <main id="main" className="shared-page">
@@ -278,9 +300,7 @@ export function SharedRecordingClient({
           <section className="shared-section">
             <h2>{labels.keyMoments}</h2>
             <div className="reading-stack">
-              {[...recording.highlights]
-                .sort((a, b) => (a.start_ms ?? 0) - (b.start_ms ?? 0))
-                .map((highlight) => (
+              {sortedHighlights.map((highlight) => (
                   <div key={highlight.id} className="transcript-row">
                     <div className="metadata-row">
                       {highlight.start_ms !== null ? (
@@ -299,25 +319,17 @@ export function SharedRecordingClient({
 
         <section className="shared-section">
           <h2>{labels.transcript}</h2>
-          {recording.segments.length > 0 ? (
+          {transcriptTurns.length > 0 ? (
             <div className="reading-stack shared-transcript-stack">
-              {recording.segments.map((segment) => {
-                const speakerLabel = formatSpeakerLabel(
-                  segment.speaker,
-                  segment.raw_label,
-                  segment.display_name,
-                  locale,
-                );
-                return (
-                  <div key={segment.id} className="transcript-row">
-                    <div className="metadata-row">
-                      <strong>{speakerLabel}</strong>
-                      <span className="mono">{formatTimestamp(segment.start_ms)}</span>
-                    </div>
-                    <p>{stripInlineCodeMarkdown(segment.content)}</p>
+              {transcriptTurns.map((turn) => (
+                <div key={turn.segments[0]?.id ?? turn.key} className="transcript-row">
+                  <div className="metadata-row">
+                    <strong>{turn.speaker}</strong>
+                    <span className="mono">{formatTimestamp(turn.startMs)}</span>
                   </div>
-                );
-              })}
+                  <p>{turn.text}</p>
+                </div>
+              ))}
             </div>
           ) : (
             <p className="muted-text">{labels.noTranscript}</p>
