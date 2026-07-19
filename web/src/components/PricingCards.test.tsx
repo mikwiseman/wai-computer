@@ -1,22 +1,44 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createBillingCheckout } from "@/lib/billing";
+import { getSessionState } from "@/lib/api";
 import { PricingCards } from "./PricingCards";
 
 vi.mock("@/lib/billing", () => ({
   createBillingCheckout: vi.fn(),
 }));
 
+vi.mock("@/lib/api", () => ({
+  getSessionState: vi.fn(),
+}));
+
 const mockedCheckout = vi.mocked(createBillingCheckout);
+const mockedSessionState = vi.mocked(getSessionState);
 
 describe("PricingCards", () => {
   beforeEach(() => {
     mockedCheckout.mockReset();
+    mockedSessionState.mockReset();
+    mockedSessionState.mockResolvedValue({ authenticated: false });
     Object.defineProperty(window, "location", {
       configurable: true,
       value: { href: "" },
     });
+  });
+
+  it("resolves anonymous session state via the always-200 probe", async () => {
+    render(<PricingCards locale="en" currency="usd" />);
+    await waitFor(() => expect(mockedSessionState).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Sign in to upgrade" })).toBeInTheDocument();
+  });
+
+  it("shows the real checkout button when the probe reports a session", async () => {
+    mockedSessionState.mockResolvedValue({ authenticated: true });
+    render(<PricingCards locale="en" currency="usd" />);
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Sign in to upgrade" })).not.toBeInTheDocument(),
+    );
   });
 
   it("renders English pricing and toggles annual price", async () => {

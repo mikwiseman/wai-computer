@@ -592,7 +592,9 @@ export function RecordingDetailPanel({
               <span>{recordingTypeLabel(recording.type, locale)}</span>
             ) : null}
             <span>{formatListTimestamp(recording.created_at, locale)}</span>
-            {recording.duration_seconds ? <span>{formatDurationClock(recording.duration_seconds)}</span> : null}
+            {recording.duration_seconds ? (
+              <span>{`· ${formatDurationClock(recording.duration_seconds)}`}</span>
+            ) : null}
           </div>
         </div>
 

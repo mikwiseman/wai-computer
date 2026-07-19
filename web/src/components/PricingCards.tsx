@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/api";
+import { getSessionState } from "@/lib/api";
 import { createBillingCheckout } from "@/lib/billing";
 
 type Locale = "en" | "ru";
@@ -166,9 +166,11 @@ export function PricingCards({
   useEffect(() => {
     if (signedIn !== undefined) return;
     let cancelled = false;
-    getCurrentUser()
-      .then(() => {
-        if (!cancelled) setDetectedSignedIn(true);
+    // Session probe, not /auth/me: the probe answers 200 for anonymous
+    // visitors, so public pricing pages never log failed requests.
+    getSessionState()
+      .then(({ authenticated }) => {
+        if (!cancelled) setDetectedSignedIn(authenticated);
       })
       .catch(() => {
         if (!cancelled) setDetectedSignedIn(false);

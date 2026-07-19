@@ -251,6 +251,12 @@ export function getCurrentUser(): Promise<User> {
   return apiFetch<User>("/api/auth/me");
 }
 
+/** Always-200 session probe for public pages: unlike getCurrentUser, an
+ *  anonymous visitor produces no 401s (and no console error noise). */
+export function getSessionState(): Promise<{ authenticated: boolean }> {
+  return apiFetch<{ authenticated: boolean }>("/api/auth/session");
+}
+
 export function getSystemInfo(): Promise<SystemInfo> {
   return apiFetch<SystemInfo>("/api/system/info");
 }

@@ -487,6 +487,71 @@ async def _canonicalize_people_names(names: list[str], *, language: str) -> list
         return cleaned
 
 
+class _KeyPointsSchema(BaseModel):
+    key_points: list[str] = Field(max_length=15)
+
+
+KEY_POINT_CONSOLIDATION_INSTRUCTIONS = """\
+You are given key points merged from section summaries of ONE recording. Because
+each section was summarized independently, the same fact often appears more than
+once in different wording.
+
+Return a consolidated list:
+- Each distinct fact exactly once. Merge restatements of the same fact into the
+  single clearest phrasing already present in the input.
+- Keep the original language and the original order of first appearance.
+- Do not invent, generalize, or drop distinct facts. Only collapse duplicates.
+
+Key points:
+"""
+
+
+async def _consolidate_key_points(points: list[str], *, language: str) -> list[str]:
+    """Collapse same-fact-different-wording key points that survive the
+    deterministic merge (chunk summaries restate shared context). Cosmetic
+    enrichment like people canonicalization: on failure the summary keeps the
+    deterministically merged list — captured to Sentry, never silent."""
+    cleaned = _dedup_strings(points, cap=15)
+    if len(cleaned) < 4:
+        return cleaned
+    client = get_cerebras_client()
+
+    async def _attempt(max_completion_tokens: int) -> list[str]:
+        response = await client.chat.completions.create(
+            model=settings.cerebras_llm_model,
+            messages=_summary_messages(
+                KEY_POINT_CONSOLIDATION_INSTRUCTIONS, "\n".join(cleaned)
+            ),
+            response_format=strict_json_response_format(_KeyPointsSchema, name="key_points_canon"),
+            reasoning_effort="low",
+            max_completion_tokens=max_completion_tokens,
+        )
+        parsed = chat_completion_parsed(
+            response, _KeyPointsSchema, operation="Key point consolidation"
+        )
+        consolidated = _dedup_strings(parsed.key_points, cap=15)
+        # A consolidation can only shrink or keep the list; anything else means
+        # the model rewrote instead of merging — keep the deterministic list.
+        return consolidated if 0 < len(consolidated) <= len(cleaned) else cleaned
+
+    try:
+        try:
+            return await _attempt(CANONICALIZATION_MAX_COMPLETION_TOKENS)
+        except CerebrasResponseError as exc:
+            if "length" not in str(exc):
+                raise
+            return await _attempt(CANONICALIZATION_RETRY_MAX_COMPLETION_TOKENS)
+    except Exception as exc:  # noqa: BLE001 — degrade loudly, never fail the summary
+        capture_sentry_exception(exc)
+        logger.warning(
+            "key point consolidation degraded to deterministic merge "
+            "points=%s error_type=%s",
+            len(cleaned),
+            type(exc).__name__,
+        )
+        return cleaned
+
+
 async def _map_reduce_summarize(
     transcript: str,
     *,
@@ -562,6 +627,11 @@ async def _map_reduce_summarize(
     # reduce prose instead would re-introduce diarization speaker labels.
     merged["people_mentioned"] = await _canonicalize_people_names(
         merged["people_mentioned"], language=language
+    )
+    # Chunk summaries restate shared context, so the deterministic union keeps
+    # the same fact in several wordings; collapse those too.
+    merged["key_points"] = await _consolidate_key_points(
+        merged["key_points"], language=language
     )
     return SummaryResult(
         title=reduced.title,
@@ -916,6 +986,9 @@ async def _map_reduce_summarize_content(
     )
     merged["people_mentioned"] = await _canonicalize_people_names(
         merged["people_mentioned"], language=language
+    )
+    merged["key_points"] = await _consolidate_key_points(
+        merged["key_points"], language=language
     )
     return SummaryResult(
         title=reduced.title,

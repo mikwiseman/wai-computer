@@ -133,7 +133,8 @@ describe("RecordingDetailPanel", () => {
     // Nearly every recording is a meeting — the default type is hidden noise.
     expect(screen.queryByText("Meeting")).toBeNull();
     expect(screen.getByText(/April 1/)).toBeTruthy();
-    expect(screen.getByText("6:00")).toBeTruthy();
+    // Duration is separated from the timestamp with the same "·" the list rows use.
+    expect(screen.getByText("· 6:00")).toBeTruthy();
   });
 
   it("labels non-default recording types", () => {

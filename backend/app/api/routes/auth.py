@@ -12,7 +12,7 @@ from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, Database
+from app.api.deps import CurrentUser, Database, OptionalUser
 from app.config import get_settings
 from app.core.observability import (
     add_sentry_breadcrumb,
@@ -888,6 +888,21 @@ async def logout(
     else:
         logger.info("logout completed token_revoked=false source=none")
     return MessageResponse(message="Logged out")
+
+
+class SessionStateResponse(BaseModel):
+    authenticated: bool
+
+
+@router.get("/session", response_model=SessionStateResponse)
+async def get_session_state(user: OptionalUser) -> SessionStateResponse:
+    """Always-200 session probe.
+
+    Public pages (pricing) resolve signed-in state on mount; probing /me
+    guaranteed a 401 + a refresh attempt for every anonymous visitor, littering
+    their console with failed-request errors. This never errors.
+    """
+    return SessionStateResponse(authenticated=user is not None)
 
 
 @router.get("/me", response_model=UserResponse)

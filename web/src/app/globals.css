@@ -2802,7 +2802,8 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .tool-panel,
 .wai-panel {
-  min-height: calc(100dvh - 104px);
+  /* Match .search-workspace: end above the command dock's floating zone. */
+  min-height: calc(100dvh - 104px - 4.5rem);
   padding: 1rem;
 }
 
@@ -2813,7 +2814,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .qa-panel {
   display: flex;
   height: 100%;
-  min-height: calc(100dvh - 104px);
+  min-height: calc(100dvh - 104px - 4.5rem);
   flex-direction: column;
   background: var(--panel);
 }
@@ -3345,7 +3346,10 @@ a.primary-button[aria-disabled="true"]:hover {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(380px, 1.1fr);
   gap: 1rem;
-  min-height: calc(100dvh - 104px);
+  /* Leave the command dock's floating zone clear: without the 4.5rem carve-out
+   * the panel's resting bottom edge sits at the viewport bottom and the dock
+   * floats over the Wai composer. */
+  min-height: calc(100dvh - 104px - 4.5rem);
 }
 
 .search-tool-panel,
@@ -6613,6 +6617,13 @@ a.primary-button[aria-disabled="true"]:hover {
     flex-direction: row;
     align-items: center;
     gap: var(--space-xs);
+  }
+
+  /* The horizontal pill strip has no room for the verbose folders
+   * empty-state; it rendered as a ~300px text blob clipped at the viewport
+   * edge. The "+" pill still offers folder creation. */
+  .sidebar-folder-list__empty {
+    display: none;
   }
 
   .sidebar-nav__item,

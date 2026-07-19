@@ -774,6 +774,79 @@ async def test_map_reduce_fails_loudly_when_a_chunk_fails_twice(monkeypatch):
         await summarizer_module.summarize_transcript(long_transcript)
 
 
+async def test_map_reduce_consolidates_restated_key_points(monkeypatch):
+    """Chunk summaries restate shared context; the deterministic union keeps
+    the same fact in several wordings and the consolidation pass collapses
+    them without inventing or dropping distinct facts."""
+    seen_input: list[list[str]] = []
+
+    async def fake_once(transcript, **kwargs):
+        if kwargs.get("name") == "recording_summary_reduce":
+            return _canned_summary(title="Final", summary="unified")
+        return _canned_summary(
+            key_points=[
+                "Обсуждалась производительность интерфейса",
+                "Планы на квартал рассмотрены",
+            ]
+        )
+
+    async def fake_canon(names, *, language):
+        return list(names)
+
+    async def fake_consolidate(points, *, language):
+        seen_input.append(list(points))
+        return ["Производительность интерфейса", "Планы на квартал"]
+
+    monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
+    monkeypatch.setattr(summarizer_module, "_canonicalize_people_names", fake_canon)
+    monkeypatch.setattr(summarizer_module, "_consolidate_key_points", fake_consolidate)
+
+    long_transcript = "\n".join(f"строка {i} разговора" for i in range(4000))
+    result = await summarizer_module.summarize_transcript(long_transcript)
+
+    assert seen_input, "consolidation must receive the merged key point union"
+    assert result.key_points == ["Производительность интерфейса", "Планы на квартал"]
+
+
+async def test_consolidate_key_points_guards_against_rewrites(monkeypatch):
+    """If the model returns MORE items than it was given (rewrote instead of
+    merging), the deterministic list wins."""
+
+    class _Msg:
+        def __init__(self, text):
+            self.content = text
+
+    class _Choice:
+        def __init__(self, text):
+            self.finish_reason = "stop"
+            self.message = _Msg(text)
+
+    class _Resp:
+        def __init__(self, text):
+            self.model = "gpt-oss-120b"
+            self.choices = [_Choice(text)]
+
+    grown = summarizer_module._KeyPointsSchema(
+        key_points=["a", "b", "c", "d", "e", "f"]
+    ).model_dump_json()
+
+    class _Completions:
+        async def create(self, **kwargs):
+            return _Resp(grown)
+
+    class _Chat:
+        completions = _Completions()
+
+    class _Client:
+        chat = _Chat()
+
+    monkeypatch.setattr(summarizer_module, "get_cerebras_client", lambda: _Client())
+
+    original = ["точка один", "точка два", "точка три", "точка четыре"]
+    result = await summarizer_module._consolidate_key_points(original, language="ru")
+    assert result == original
+
+
 async def test_map_reduce_canonicalizes_people_from_clean_union(monkeypatch):
     """Long (map-reduce) transcripts: people are canonicalized from the clean,
     complete chunk union — NOT re-extracted from the reduce prose, which would

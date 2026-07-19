@@ -223,6 +223,40 @@ async def test_login_invalid_credentials_localized_without_enumeration(client: A
 
 
 @pytest.mark.asyncio
+async def test_session_probe_is_200_for_anonymous_visitors(client: AsyncClient):
+    """Public pages probe the session on mount; a 401 here litters every
+    anonymous visitor's console with failed-request errors (and triggered a
+    pointless refresh attempt). The probe must always answer 200."""
+    response = await client.get("/api/auth/session")
+    assert response.status_code == 200
+    assert response.json() == {"authenticated": False}
+
+
+@pytest.mark.asyncio
+async def test_session_probe_recognizes_a_signed_in_user(client: AsyncClient):
+    reg = await client.post(
+        "/api/auth/register",
+        json={"email": "probe@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
+    )
+    token = reg.json()["access_token"]
+
+    response = await client.get(
+        "/api/auth/session", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"authenticated": True}
+
+
+@pytest.mark.asyncio
+async def test_session_probe_treats_garbage_tokens_as_anonymous(client: AsyncClient):
+    response = await client.get(
+        "/api/auth/session", headers={"Authorization": "Bearer not-a-real-token"}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"authenticated": False}
+
+
+@pytest.mark.asyncio
 async def test_me_endpoint_returns_user(client: AsyncClient):
     """Test GET /api/auth/me returns full user data with valid token."""
     reg_response = await client.post(
