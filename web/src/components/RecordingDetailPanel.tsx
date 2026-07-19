@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import {
   createRecordingShareLink,
   downloadRecordingSummaryAudio,
@@ -340,10 +340,6 @@ export function RecordingDetailPanel({
     transcript: null,
     summary: null,
   });
-  // Scroll container for the virtualized transcript on long recordings. Held
-  // as state (not a ref): child layout effects run before this ref attaches,
-  // so the virtualizer would otherwise observe null and never re-measure.
-  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
 
   // WAI-ARIA Tabs pattern with automatic activation: arrow keys (and Home/End)
   // move focus between tabs and select the focused one, so the whole tab strip
@@ -733,7 +729,6 @@ export function RecordingDetailPanel({
         className="detail-panel__content"
         role="tabpanel"
         aria-labelledby={`recording-tab-${tab}`}
-        ref={setScrollElement}
       >
         {tab === "transcript" && (
           <TranscriptTab
@@ -743,7 +738,6 @@ export function RecordingDetailPanel({
             onRecordingUpdate={onRecordingUpdate}
             copy={copy}
             locale={locale}
-            scrollElement={scrollElement}
           />
         )}
         {tab === "summary" && (
@@ -869,23 +863,32 @@ function VirtualizedTranscript({
   recordingId,
   locale,
   onUpdated,
-  scrollElement,
 }: {
   turns: TranscriptTurn[];
   recordingId: string;
   locale: DetailLocale;
   onUpdated: (detail: RecordingDetail) => void;
-  scrollElement: HTMLDivElement | null;
 }) {
-  const virtualizer = useVirtualizer({
+  // Both app layouts (library and inbox) scroll the WINDOW — the panels grow
+  // with their content — so the virtual window tracks document scroll, offset
+  // by where this list starts (scrollMargin).
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    setScrollMargin(el.getBoundingClientRect().top + window.scrollY);
+  }, [turns.length]);
+  const virtualizer = useWindowVirtualizer({
     count: turns.length,
-    getScrollElement: () => scrollElement,
     estimateSize: () => ESTIMATED_TURN_HEIGHT_PX + TURN_GAP_PX,
     overscan: 8,
+    scrollMargin,
     getItemKey: (index) => turns[index]?.segments[0]?.id ?? index,
   });
   return (
     <div
+      ref={listRef}
       style={{ height: virtualizer.getTotalSize(), position: "relative" }}
       data-testid="virtualized-transcript"
     >
@@ -902,7 +905,7 @@ function VirtualizedTranscript({
               top: 0,
               left: 0,
               width: "100%",
-              transform: `translateY(${item.start}px)`,
+              transform: `translateY(${item.start - scrollMargin}px)`,
               paddingBottom: TURN_GAP_PX,
             }}
           >
@@ -926,7 +929,6 @@ function TranscriptTab({
   onRecordingUpdate,
   copy,
   locale,
-  scrollElement,
 }: {
   segments: Segment[];
   status: string;
@@ -934,7 +936,6 @@ function TranscriptTab({
   onRecordingUpdate?: (r: RecordingDetail) => void;
   copy: DetailCopy;
   locale: DetailLocale;
-  scrollElement: HTMLDivElement | null;
 }) {
   // Merge consecutive same-speaker utterances into turns once per segment set:
   // this drives both the reading view (one card per turn) and the copy buttons.
@@ -988,7 +989,6 @@ function TranscriptTab({
           recordingId={recordingId}
           locale={locale}
           onUpdated={handleUpdated}
-          scrollElement={scrollElement}
         />
       ) : (
         turns.map((turn) => {
