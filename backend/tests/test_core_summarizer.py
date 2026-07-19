@@ -126,6 +126,18 @@ def mock_settings():
 
 
 class TestSummarizeTranscript:
+    @pytest.fixture(autouse=True)
+    def _identity_canonicalization(self):
+        """Single-pass summaries canonicalize people via one extra LLM call;
+        neutralize it here so call-count and last-call assertions stay about
+        the summary request itself. Dedicated tests cover canonicalization."""
+
+        async def _identity(names, *, language):
+            return list(names)
+
+        with patch.object(summarizer_module, "_canonicalize_people_names", _identity):
+            yield
+
     async def test_returns_summary_result_from_parsed_payload(self):
         mock_response = _parsed_response(_summary_schema_payload())
         mock_client = MagicMock()
@@ -355,7 +367,11 @@ class TestContentSummariesAndMoments:
         assert "dominant language of the content" in default_prompt
         assert "4-10 sentences" in default_prompt
 
-    async def test_summarize_content_returns_structured_result(self):
+    async def test_summarize_content_returns_structured_result(self, monkeypatch):
+        async def _identity(names, *, language):
+            return list(names)
+
+        monkeypatch.setattr(summarizer_module, "_canonicalize_people_names", _identity)
         mock_response = _parsed_response(_summary_schema_payload(title="Saved Article"))
         mock_client = MagicMock()
         mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
@@ -600,6 +616,162 @@ async def test_summarize_transcript_single_pass_below_threshold(monkeypatch):
     monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
     await summarizer_module.summarize_transcript("short transcript")
     assert calls == ["recording_summary"]
+
+
+def test_chunk_transcript_hard_splits_single_giant_line():
+    """Extracted articles/PDFs can be one paragraph with no newlines; the
+    chunker must still respect the budget instead of emitting one mega-chunk."""
+    from app.core.summarizer import _chunk_transcript
+
+    text = "слово " * 3000  # one ~18k-char line, no newlines
+    chunks = _chunk_transcript(text.strip(), max_chars=4000, overlap_lines=2)
+    assert len(chunks) > 1
+    assert all(len(chunk) <= 4200 for chunk in chunks)
+    assert "".join(chunks).replace("\n", "") == text.strip().replace("\n", "")
+
+
+async def test_single_pass_transcript_canonicalizes_people(monkeypatch):
+    """Short recordings previously kept grammatical-case duplicates that the
+    map-reduce path already merges."""
+    seen: list[list[str]] = []
+
+    async def fake_once(transcript, **kwargs):
+        return _canned_summary(people_mentioned=["Коля", "Колей"])
+
+    async def fake_canon(names, *, language):
+        seen.append(list(names))
+        return ["Коля"]
+
+    monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
+    monkeypatch.setattr(summarizer_module, "_canonicalize_people_names", fake_canon)
+
+    result = await summarizer_module.summarize_transcript("короткая запись")
+    assert seen == [["Коля", "Колей"]]
+    assert result.people_mentioned == ["Коля"]
+
+
+async def test_single_pass_transcript_skips_canonicalization_for_one_name(monkeypatch):
+    async def fake_once(transcript, **kwargs):
+        return _canned_summary(people_mentioned=["Коля"])
+
+    async def fake_canon(names, *, language):  # pragma: no cover - must not run
+        raise AssertionError("canonicalization must not run for a single name")
+
+    monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
+    monkeypatch.setattr(summarizer_module, "_canonicalize_people_names", fake_canon)
+
+    result = await summarizer_module.summarize_transcript("короткая запись")
+    assert result.people_mentioned == ["Коля"]
+
+
+async def test_summarize_content_map_reduces_long_items(monkeypatch):
+    """Long saved articles/PDFs previously overflowed the single pass and
+    failed outright; they must chunk-and-merge like long recordings."""
+    calls: list[str] = []
+
+    async def fake_content_once(text, **kwargs):
+        is_reduce = "section summaries" in (kwargs.get("instructions") or "")
+        calls.append("reduce" if is_reduce else "map")
+        return _canned_summary(title="Long Article", summary="part")
+
+    async def fake_canon(names, *, language):
+        return list(names)
+
+    monkeypatch.setattr(summarizer_module, "_summarize_content_once", fake_content_once)
+    monkeypatch.setattr(summarizer_module, "_canonicalize_people_names", fake_canon)
+
+    long_body = "\n".join(f"абзац {i} статьи о технологиях" for i in range(4000))
+    assert len(long_body) > summarizer_module.MAP_REDUCE_CHAR_THRESHOLD
+
+    result = await summarizer_module.summarize_content(long_body, content_kind="article")
+    assert result.title == "Long Article"
+    assert calls.count("map") >= 2
+    assert calls.count("reduce") == 1
+
+
+async def test_extract_key_moments_chunks_long_content_and_dedups(monkeypatch):
+    calls: list[int] = []
+
+    async def fake_moments_once(text, *, language):
+        calls.append(len(text))
+        return [
+            summarizer_module.KeyMoment(
+                timestamp=None,
+                moment="Общий момент",
+                why_it_matters="повторяется в каждом чанке",
+                quote=None,
+                importance="medium",
+            ),
+            summarizer_module.KeyMoment(
+                timestamp=None,
+                moment=f"Уникальный момент {len(calls)}",
+                why_it_matters="свой в каждом чанке",
+                quote=None,
+                importance="high",
+            ),
+        ]
+
+    monkeypatch.setattr(summarizer_module, "_extract_key_moments_once", fake_moments_once)
+
+    long_body = "\n".join(f"абзац {i} статьи" for i in range(4000))
+    assert len(long_body) > summarizer_module.MAP_REDUCE_CHAR_THRESHOLD
+
+    moments = await summarizer_module.extract_key_moments(long_body)
+    assert len(calls) >= 2
+    # The repeated moment appears once; each unique one survives.
+    assert sum(1 for m in moments if m.moment == "Общий момент") == 1
+    assert len(moments) == 1 + len(calls)
+
+
+async def test_map_reduce_retries_a_failed_chunk_once_instead_of_failing_all(monkeypatch):
+    """One transient provider blip on one chunk must not abort (and later
+    re-bill) every other chunk; the failed chunk retries once."""
+    attempts: dict[str, int] = {}
+    failed_once: set[str] = set()
+
+    async def fake_once(transcript, **kwargs):
+        if kwargs.get("name") == "recording_summary_chunk":
+            attempts[transcript] = attempts.get(transcript, 0) + 1
+            # Exactly one chunk (the first seen) fails, and only on its
+            # first attempt.
+            if not failed_once and attempts[transcript] == 1:
+                failed_once.add(transcript)
+                raise RuntimeError("simulated 429")
+        return _canned_summary()
+
+    async def fake_canon(names, *, language):
+        return list(names)
+
+    monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
+    monkeypatch.setattr(summarizer_module, "_canonicalize_people_names", fake_canon)
+    monkeypatch.setattr(summarizer_module, "MAP_REDUCE_CHUNK_RETRY_DELAY_SECONDS", 0)
+
+    # Unique lines so every chunk is a distinct string (distinct dict keys).
+    long_transcript = "\n".join(f"строка {i} разговора о делах" for i in range(4000))
+    assert len(long_transcript) > summarizer_module.MAP_REDUCE_CHAR_THRESHOLD
+
+    result = await summarizer_module.summarize_transcript(long_transcript)
+    assert result.summary == "chunk summary"
+    # Exactly one chunk needed a second attempt; the rest ran once.
+    assert sorted(attempts.values(), reverse=True)[0] == 2
+    assert all(count in (1, 2) for count in attempts.values())
+
+
+async def test_map_reduce_fails_loudly_when_a_chunk_fails_twice(monkeypatch):
+    """A chunk that fails its retry too must fail the whole summary (no
+    silent content gaps)."""
+
+    async def fake_once(transcript, **kwargs):
+        if kwargs.get("name") == "recording_summary_chunk":
+            raise RuntimeError("provider down")
+        return _canned_summary()
+
+    monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
+    monkeypatch.setattr(summarizer_module, "MAP_REDUCE_CHUNK_RETRY_DELAY_SECONDS", 0)
+
+    long_transcript = "\n".join("разговор о делах" for _ in range(4000))
+    with pytest.raises(RuntimeError, match="provider down"):
+        await summarizer_module.summarize_transcript(long_transcript)
 
 
 async def test_map_reduce_canonicalizes_people_from_clean_union(monkeypatch):

@@ -63,6 +63,19 @@ def test_apply_transcript_replacements_is_word_bounded_and_case_insensitive() ->
     assert replaced == "Позвонить в GigaLam, GigaLam ждёт. Мегагигалам не трогаем."
 
 
+def test_apply_transcript_replacements_treats_replacement_literally() -> None:
+    # re.sub replacement templates interpret backslashes and group refs; user
+    # dictionary values like Windows paths or "\1" must land verbatim instead
+    # of raising re.error and failing the whole transcription.
+    assert apply_transcript_replacements(
+        "открой path сейчас", [("path", r"C:\Users")]
+    ) == r"открой C:\Users сейчас"
+    assert apply_transcript_replacements("см. group", [("group", r"\1")]) == r"см. \1"
+    assert apply_transcript_replacements(
+        "хвост back", [("back", "оборвался\\")]
+    ) == "хвост оборвался\\"
+
+
 def test_payload_groups_words_into_speaker_segments() -> None:
     payload = {
         "language_code": "ru",

@@ -113,7 +113,9 @@ def apply_transcript_replacements(
             rf"(?<![\w]){re.escape(find)}(?![\w])",
             re.IGNORECASE | re.UNICODE,
         )
-        result = pattern.sub(replacement, result)
+        # A callable replacement is inserted verbatim; passing the string would
+        # interpret user text like "C:\Users" or "\1" as a template and raise.
+        result = pattern.sub(lambda _match, _value=replacement: _value, result)
     return result
 
 

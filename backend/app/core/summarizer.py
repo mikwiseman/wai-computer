@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -168,6 +168,7 @@ MAP_REDUCE_CHAR_THRESHOLD = 40_000
 MAP_REDUCE_CHUNK_CHARS = 28_000
 MAP_REDUCE_OVERLAP_LINES = 2
 MAP_REDUCE_MAX_CONCURRENCY = 4
+MAP_REDUCE_CHUNK_RETRY_DELAY_SECONDS = 2.0
 
 # gpt-oss reasoning tokens count against max_completion_tokens; 4096 starved
 # long-recording summaries (finish_reason=length killed the reduce pass on a
@@ -319,15 +320,26 @@ def _chunk_transcript(
     overlap_lines: int = MAP_REDUCE_OVERLAP_LINES,
 ) -> list[str]:
     """Split a (speaker-labeled) transcript on line boundaries into <=max_chars
-    chunks, carrying a few trailing lines into the next chunk for continuity."""
-    lines = transcript.split("\n")
+    chunks, carrying a few trailing lines into the next chunk for continuity.
+
+    Lines longer than ``max_chars`` (extracted articles/PDFs can be one giant
+    paragraph with no newlines) are hard-split so no chunk exceeds the budget."""
+    lines: list[str] = []
+    for line in transcript.split("\n"):
+        while len(line) > max_chars:
+            lines.append(line[:max_chars])
+            line = line[max_chars:]
+        lines.append(line)
     chunks: list[str] = []
     current: list[str] = []
     size = 0
     for line in lines:
         if current and size + len(line) + 1 > max_chars:
             chunks.append("\n".join(current))
-            current = current[-overlap_lines:] if overlap_lines > 0 else []
+            carried = current[-overlap_lines:] if overlap_lines > 0 else []
+            # Overlap exists for dialog continuity between short utterances; a
+            # hard-split mega-line carried as overlap would blow the budget.
+            current = [x for x in carried if len(x) <= max_chars // 4]
             size = sum(len(x) + 1 for x in current)
         current.append(line)
         size += len(line) + 1
@@ -491,17 +503,39 @@ async def _map_reduce_summarize(
     )
     semaphore = asyncio.Semaphore(MAP_REDUCE_MAX_CONCURRENCY)
 
-    async def _map_one(chunk: str) -> SummaryResult:
+    async def _map_one(chunk: str, index: int) -> SummaryResult:
         async with semaphore:
-            return await _summarize_transcript_once(
-                chunk,
-                language=language,
-                style=style,
-                instructions=instructions,
-                name="recording_summary_chunk",
-            )
+            try:
+                return await _summarize_transcript_once(
+                    chunk,
+                    language=language,
+                    style=style,
+                    instructions=instructions,
+                    name="recording_summary_chunk",
+                )
+            except Exception as exc:  # noqa: BLE001 — one cheap per-chunk retry
+                # A transient provider blip on ONE chunk used to abort the whole
+                # gather and re-bill every chunk via the task-level retry. Retry
+                # just this chunk once; a second failure still fails the summary
+                # loudly (no silent content gaps).
+                logger.warning(
+                    "summary chunk %s/%s failed (%s); retrying that chunk once",
+                    index + 1,
+                    len(chunks),
+                    type(exc).__name__,
+                )
+                await asyncio.sleep(MAP_REDUCE_CHUNK_RETRY_DELAY_SECONDS)
+                return await _summarize_transcript_once(
+                    chunk,
+                    language=language,
+                    style=style,
+                    instructions=instructions,
+                    name="recording_summary_chunk",
+                )
 
-    partials = list(await asyncio.gather(*(_map_one(chunk) for chunk in chunks)))
+    partials = list(
+        await asyncio.gather(*(_map_one(chunk, i) for i, chunk in enumerate(chunks)))
+    )
     merged = _merge_partial_summaries(partials)
 
     # Reduce: synthesize ONE coherent overview from the chunk summaries. The list
@@ -563,6 +597,17 @@ async def summarize_transcript(
         result = await _summarize_transcript_once(
             transcript, language=language, style=style, instructions=instructions
         )
+        # The map-reduce path canonicalizes people across chunks; the single
+        # pass previously kept grammatical-case duplicates (Коля/Колей) that
+        # the prompt alone doesn't always merge. Same treatment when there is
+        # anything to merge.
+        if len(result.people_mentioned) > 1:
+            result = replace(
+                result,
+                people_mentioned=await _canonicalize_people_names(
+                    result.people_mentioned, language=language
+                ),
+            )
     add_sentry_breadcrumb(category="summarizer", message="Summarization completed")
     return result
 
@@ -714,11 +759,51 @@ async def summarize_content(
     )
     _require_cerebras_key()
 
+    if len(text) > MAP_REDUCE_CHAR_THRESHOLD:
+        result = await _map_reduce_summarize_content(
+            text,
+            content_kind=content_kind,
+            language=language,
+            style=style,
+            instructions=instructions,
+        )
+    else:
+        result = await _summarize_content_once(
+            text,
+            content_kind=content_kind,
+            language=language,
+            style=style,
+            instructions=instructions,
+        )
+        if len(result.people_mentioned) > 1:
+            result = replace(
+                result,
+                people_mentioned=await _canonicalize_people_names(
+                    result.people_mentioned, language=language
+                ),
+            )
+
+    add_sentry_breadcrumb(category="summarizer", message="Content summarization completed")
+    return result
+
+
+async def _summarize_content_once(
+    text: str,
+    *,
+    content_kind: str,
+    language: str,
+    style: str,
+    instructions: str | None,
+) -> SummaryResult:
+    """One structured content-summary pass with the finish_reason=length retry
+    the transcript path has: long articles otherwise starve the completion
+    budget and fail outright instead of retrying with a larger one."""
     prompt = build_content_summary_prompt(
         content_kind=content_kind, language=language, style=style, instructions=instructions
     )
     client = get_cerebras_client()
-    try:
+
+    async def _attempt(max_completion_tokens: int):
         response = await client.chat.completions.create(
             model=settings.cerebras_llm_model,
             messages=_summary_messages(prompt, text),
@@ -727,22 +812,30 @@ async def summarize_content(
                 name="content_summary",
             ),
             reasoning_effort="medium",
-            max_completion_tokens=4096,
+            max_completion_tokens=max_completion_tokens,
         )
-    except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
-        capture_sentry_exception(exc)
-        raise SummarizationError(f"Content summarization failed: {exc}") from exc
-
-    try:
-        parsed = chat_completion_parsed(
+        return chat_completion_parsed(
             response,
             _SummarySchema,
             operation="Content summarization",
         )
-    except CerebrasResponseError as exc:
+
+    try:
+        try:
+            parsed = await _attempt(SUMMARY_MAX_COMPLETION_TOKENS)
+        except CerebrasResponseError as exc:
+            if "length" not in str(exc):
+                raise
+            add_sentry_breadcrumb(
+                category="summarizer",
+                message="Content summarization retry with larger completion budget",
+                data={"first_budget": SUMMARY_MAX_COMPLETION_TOKENS},
+            )
+            parsed = await _attempt(SUMMARY_RETRY_MAX_COMPLETION_TOKENS)
+    except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
+        capture_sentry_exception(exc)
         raise SummarizationError(f"Content summarization failed: {exc}") from exc
 
-    add_sentry_breadcrumb(category="summarizer", message="Content summarization completed")
     return SummaryResult(
         title=parsed.title,
         summary=parsed.summary,
@@ -754,6 +847,81 @@ async def summarize_content(
         follow_up_questions=parsed.follow_up_questions,
         sentiment=parsed.sentiment,
         highlights=[h.model_dump() for h in parsed.highlights],
+    )
+
+
+async def _map_reduce_summarize_content(
+    text: str,
+    *,
+    content_kind: str,
+    language: str,
+    style: str,
+    instructions: str | None,
+) -> SummaryResult:
+    """Summarize long content (full articles, PDFs, video transcripts) by
+    chunk then merge — the same shape ``_map_reduce_summarize`` gives long
+    recordings. Long items previously overflowed the single pass and failed."""
+    chunks = _chunk_transcript(text)
+    add_sentry_breadcrumb(
+        category="summarizer",
+        message="Map-reduce content summarization",
+        data={"chunks": len(chunks), "content_length": len(text), "kind": content_kind},
+    )
+    semaphore = asyncio.Semaphore(MAP_REDUCE_MAX_CONCURRENCY)
+
+    async def _map_one(chunk: str, index: int) -> SummaryResult:
+        async with semaphore:
+            try:
+                return await _summarize_content_once(
+                    chunk,
+                    content_kind=content_kind,
+                    language=language,
+                    style=style,
+                    instructions=instructions,
+                )
+            except Exception as exc:  # noqa: BLE001 — one cheap per-chunk retry
+                logger.warning(
+                    "content summary chunk %s/%s failed (%s); retrying that chunk once",
+                    index + 1,
+                    len(chunks),
+                    type(exc).__name__,
+                )
+                await asyncio.sleep(MAP_REDUCE_CHUNK_RETRY_DELAY_SECONDS)
+                return await _summarize_content_once(
+                    chunk,
+                    content_kind=content_kind,
+                    language=language,
+                    style=style,
+                    instructions=instructions,
+                )
+
+    partials = list(
+        await asyncio.gather(*(_map_one(chunk, i) for i, chunk in enumerate(chunks)))
+    )
+    merged = _merge_partial_summaries(partials)
+
+    reduce_instructions = (
+        (instructions + "\n\n" if instructions else "")
+        + "The text below is an ordered set of section summaries of ONE longer "
+        "piece of content. Produce a single unified summary of the whole — do "
+        "not mention 'sections' and do not repeat the same point twice."
+    )
+    combined = "\n\n".join(p.summary.strip() for p in partials if p.summary.strip())
+    reduced = await _summarize_content_once(
+        combined,
+        content_kind=content_kind,
+        language=language,
+        style=style,
+        instructions=reduce_instructions,
+    )
+    merged["people_mentioned"] = await _canonicalize_people_names(
+        merged["people_mentioned"], language=language
+    )
+    return SummaryResult(
+        title=reduced.title,
+        summary=reduced.summary,
+        sentiment=reduced.sentiment,
+        **merged,
     )
 
 
@@ -789,14 +957,39 @@ async def extract_key_moments(
     )
     _require_cerebras_key()
 
+    if len(text) > MAP_REDUCE_CHAR_THRESHOLD:
+        # Long content: extract per chunk and union in order. Moments are
+        # independent rows, so chunked extraction composes naturally; a single
+        # pass previously overflowed the context/completion and failed.
+        chunks = _chunk_transcript(text)
+        moments: list[KeyMoment] = []
+        seen: set[str] = set()
+        for chunk in chunks:
+            for moment in await _extract_key_moments_once(chunk, language=language):
+                key = moment.moment.strip().casefold()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                moments.append(moment)
+        return moments
+
+    return await _extract_key_moments_once(text, language=language)
+
+
+async def _extract_key_moments_once(
+    text: str,
+    *,
+    language: str,
+) -> list[KeyMoment]:
     language_instruction = (
         f"\nWrite all text in {language}."
         if language and language not in {DEFAULT_SUMMARY_LANGUAGE, "multi"}
         else "\nWrite all text in the dominant language of the content."
     )
     client = get_cerebras_client()
-    try:
-        prompt = KEY_MOMENTS_INSTRUCTIONS + language_instruction + "\n\nContent:\n"
+    prompt = KEY_MOMENTS_INSTRUCTIONS + language_instruction + "\n\nContent:\n"
+
+    async def _attempt(max_completion_tokens: int):
         response = await client.chat.completions.create(
             model=settings.cerebras_llm_model,
             messages=_summary_messages(prompt, text),
@@ -805,19 +998,28 @@ async def extract_key_moments(
                 name="key_moments",
             ),
             reasoning_effort="medium",
-            max_completion_tokens=4096,
+            max_completion_tokens=max_completion_tokens,
         )
-    except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
-        capture_sentry_exception(exc)
-        raise SummarizationError(f"Key moments extraction failed: {exc}") from exc
-
-    try:
-        parsed = chat_completion_parsed(
+        return chat_completion_parsed(
             response,
             _KeyMomentsSchema,
             operation="Key moments extraction",
         )
-    except CerebrasResponseError as exc:
+
+    try:
+        try:
+            parsed = await _attempt(SUMMARY_MAX_COMPLETION_TOKENS)
+        except CerebrasResponseError as exc:
+            if "length" not in str(exc):
+                raise
+            add_sentry_breadcrumb(
+                category="summarizer",
+                message="Key moments retry with larger completion budget",
+                data={"first_budget": SUMMARY_MAX_COMPLETION_TOKENS},
+            )
+            parsed = await _attempt(SUMMARY_RETRY_MAX_COMPLETION_TOKENS)
+    except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
+        capture_sentry_exception(exc)
         raise SummarizationError(f"Key moments extraction failed: {exc}") from exc
 
     return [
