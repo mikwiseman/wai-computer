@@ -9,6 +9,9 @@ struct TranscriptView: View {
     var onAssigned: ((RecordingDetail) -> Void)?
     @EnvironmentObject private var languageManager: LanguageManager
     @State private var copied = false
+    /// Memoizes `mergeTurns` so state changes (copy feedback, language, tab
+    /// switches) don't re-sort and re-merge long transcripts on every body pass.
+    @State private var displayCache = TranscriptDisplayCache()
 
     var body: some View {
         if segments.isEmpty {
@@ -23,7 +26,7 @@ struct TranscriptView: View {
                         copyTranscriptButton
                     }
 
-                    ForEach(TranscriptRendering.mergeTurns(segments, languageCode: speakerLanguageCode)) { turn in
+                    ForEach(displayCache.turns(for: segments, languageCode: speakerLanguageCode)) { turn in
                         SegmentView(
                             segment: turn.displaySegment,
                             recordingId: recordingId,
@@ -146,6 +149,47 @@ struct TranscriptView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+/// Caches merged transcript turns keyed by cheap segment-array identity checks
+/// (mirrors `MacTranscriptDisplayCache`), so body passes reuse the previous
+/// merge instead of recomputing it for identical inputs.
+private final class TranscriptDisplayCache {
+    private var lastKey: TranscriptSegmentsCacheKey?
+    private var lastLanguageCode: String?
+    private var cachedTurns: [TranscriptTurn] = []
+
+    func turns(for segments: [Segment], languageCode: String) -> [TranscriptTurn] {
+        let key = TranscriptSegmentsCacheKey(segments: segments)
+        if key == lastKey, languageCode == lastLanguageCode {
+            return cachedTurns
+        }
+
+        cachedTurns = TranscriptRendering.mergeTurns(segments, languageCode: languageCode)
+        lastKey = key
+        lastLanguageCode = languageCode
+        return cachedTurns
+    }
+}
+
+private struct TranscriptSegmentsCacheKey: Equatable {
+    let storageAddress: UInt?
+    let count: Int
+    let firstId: String?
+    let firstContentCount: Int?
+    let lastId: String?
+    let lastContentCount: Int?
+
+    init(segments: [Segment]) {
+        storageAddress = segments.withUnsafeBufferPointer { buffer in
+            buffer.baseAddress.map { UInt(bitPattern: $0) }
+        }
+        count = segments.count
+        firstId = segments.first?.id
+        firstContentCount = segments.first?.content.count
+        lastId = segments.last?.id
+        lastContentCount = segments.last?.content.count
     }
 }
 

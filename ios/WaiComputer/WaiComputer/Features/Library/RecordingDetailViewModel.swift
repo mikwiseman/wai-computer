@@ -34,7 +34,9 @@ enum TranscriptAvailability: Equatable {
 
 @MainActor
 class RecordingDetailViewModel: ObservableObject {
-    @Published var detail: RecordingDetail?
+    @Published var detail: RecordingDetail? {
+        didSet { detailRevision += 1 }
+    }
     @Published var isLoading = false
     @Published var error: String?
     @Published var localRecoveryManifest: RecordingBackupManifest?
@@ -46,6 +48,35 @@ class RecordingDetailViewModel: ObservableObject {
     private var summaryAudioPlayer: AVAudioPlayer?
     private var summaryAudioPlaybackToken = UUID()
     private var loadGeneration = 0
+
+    // Memoized transcript turns. `mergeTurns` sorts + groups (O(n log n)); it
+    // used to re-run on every SwiftUI body pass (tab switches, the auto-refresh
+    // poll, summary-audio state), which stalls the main thread on long
+    // transcripts. Detail mutations bump `detailRevision`, keeping the
+    // per-body cache key check constant-time even for long transcripts.
+    private var detailRevision = 0
+    private var cachedTurns: [TranscriptTurn] = []
+    private var cachedTurnsKey: TranscriptTurnsCacheKey?
+
+    private struct TranscriptTurnsCacheKey: Equatable {
+        let languageCode: String
+        let revision: Int
+    }
+
+    /// Merged, render-ready transcript turns — memoized (see `cachedTurns`).
+    /// The view calls this once per body pass; the work only happens when the
+    /// cache key (detail revision + language) changes.
+    func transcriptTurns(languageCode: String) -> [TranscriptTurn] {
+        let segments = detail?.segments ?? []
+        let key = TranscriptTurnsCacheKey(languageCode: languageCode, revision: detailRevision)
+        if key == cachedTurnsKey {
+            return cachedTurns
+        }
+        let turns = TranscriptRendering.mergeTurns(segments, languageCode: languageCode)
+        cachedTurns = turns
+        cachedTurnsKey = key
+        return turns
+    }
 
     var transcriptAvailability: TranscriptAvailability {
         guard let detail else { return .empty }

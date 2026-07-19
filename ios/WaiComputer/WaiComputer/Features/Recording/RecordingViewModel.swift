@@ -21,6 +21,143 @@ enum RecordingConnectionState: Equatable {
     case reconnecting(attempt: Int, maxAttempts: Int)
 }
 
+/// Incrementally accumulates the committed (final) live-transcript text so each
+/// realtime delta costs O(appended text) instead of re-joining every committed
+/// line — the old full rebuild made long recordings quadratic across a session.
+///
+/// Output stays byte-identical to the previous full rebuild in both formats:
+/// - Plain (no speaker labels anywhere): line texts joined by single spaces.
+/// - Speakers: consecutive same-speaker lines merge into one
+///   "<Speaker label>: <text text …>" paragraph; paragraphs joined by "\n\n".
+///
+/// Both renderings are maintained on every append so the format can flip the
+/// moment the first speaker label arrives without an O(n) rebuild. Rare
+/// non-append mutations (replacement events, language changes) rebuild from
+/// `lines` using the exact legacy algorithm.
+struct CommittedLiveTranscriptBuilder {
+    private(set) var lines: [(speaker: String?, text: String)] = []
+    /// True when any committed line carries a non-empty speaker label — the
+    /// incremental version of the old per-event `committedLines.contains` scan.
+    private(set) var hasSpeakerLabel = false
+
+    private var plainText = ""
+    private var speakerText = ""
+    private var openGroupSpeaker: String?
+    private var openGroupText = ""
+    /// Language key the speaker labels inside `speakerText` were rendered with.
+    private var speakerTextLanguageKey: String?
+
+    var lastLineSpeaker: String? { lines.last?.speaker }
+
+    mutating func reset() {
+        self = CommittedLiveTranscriptBuilder()
+    }
+
+    mutating func append(
+        speaker: String?,
+        text: String,
+        languageKey: String,
+        displaySpeaker: (String) -> String
+    ) {
+        refreshSpeakerTextIfLanguageChanged(languageKey: languageKey, displaySpeaker: displaySpeaker)
+
+        plainText += lines.isEmpty ? text : " " + text
+
+        let groupSpeaker = speaker ?? "Speaker"
+        if groupSpeaker == openGroupSpeaker {
+            guard !openGroupText.isEmpty else {
+                // The open group started with an empty line and was dropped from
+                // the rendering; rebuilding keeps the legacy semantics exact.
+                lines.append((speaker, text))
+                rebuild(languageKey: languageKey, displaySpeaker: displaySpeaker)
+                return
+            }
+            openGroupText += " " + text
+            speakerText += " " + text
+        } else {
+            openGroupSpeaker = groupSpeaker
+            openGroupText = text
+            if !text.isEmpty {
+                speakerText += speakerText.isEmpty ? "" : "\n\n"
+                speakerText += "\(displaySpeaker(groupSpeaker)): \(text)"
+            }
+        }
+
+        lines.append((speaker, text))
+        if let speaker, !speaker.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            hasSpeakerLabel = true
+        }
+    }
+
+    /// Replace the last committed line (provider corrections). Appends when no
+    /// line exists yet, mirroring the old `transcriptReplacement` handling.
+    mutating func replaceLast(
+        speaker: String?,
+        text: String,
+        languageKey: String,
+        displaySpeaker: (String) -> String
+    ) {
+        if lines.isEmpty {
+            lines.append((speaker, text))
+        } else {
+            lines[lines.count - 1] = (speaker, text)
+        }
+        rebuild(languageKey: languageKey, displaySpeaker: displaySpeaker)
+    }
+
+    mutating func committedText(
+        showsSpeakers: Bool,
+        languageKey: String,
+        displaySpeaker: (String) -> String
+    ) -> String {
+        guard showsSpeakers else { return plainText }
+        refreshSpeakerTextIfLanguageChanged(languageKey: languageKey, displaySpeaker: displaySpeaker)
+        return speakerText
+    }
+
+    private mutating func refreshSpeakerTextIfLanguageChanged(
+        languageKey: String,
+        displaySpeaker: (String) -> String
+    ) {
+        guard speakerTextLanguageKey != languageKey else { return }
+        rebuild(languageKey: languageKey, displaySpeaker: displaySpeaker)
+    }
+
+    /// Full rebuild from `lines` — the exact legacy join algorithms.
+    private mutating func rebuild(languageKey: String, displaySpeaker: (String) -> String) {
+        plainText = lines.map(\.text).joined(separator: " ")
+        hasSpeakerLabel = lines.contains { speaker, _ in
+            guard let speaker else { return false }
+            return !speaker.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        var rendered = ""
+        var currentSpeaker: String?
+        var currentText = ""
+        for line in lines {
+            let speaker = line.speaker ?? "Speaker"
+            if speaker == currentSpeaker {
+                currentText += " " + line.text
+            } else {
+                if !currentText.isEmpty, let s = currentSpeaker {
+                    rendered += rendered.isEmpty ? "" : "\n\n"
+                    rendered += "\(displaySpeaker(s)): \(currentText)"
+                }
+                currentSpeaker = speaker
+                currentText = line.text
+            }
+        }
+        if !currentText.isEmpty, let s = currentSpeaker {
+            rendered += rendered.isEmpty ? "" : "\n\n"
+            rendered += "\(displaySpeaker(s)): \(currentText)"
+        }
+        speakerText = rendered
+        openGroupSpeaker = currentSpeaker
+        openGroupText = currentText
+        speakerTextLanguageKey = languageKey
+    }
+}
+
 @MainActor
 class RecordingViewModel: ObservableObject {
     @Published var isRecording = false
@@ -42,12 +179,20 @@ class RecordingViewModel: ObservableObject {
     @Published var connectionState: RecordingConnectionState = .connected
     @Published private(set) var liveTranscriptionOffline = false
 
-    /// Committed (final) transcript lines, with speaker labels when available.
-    private var committedLines: [(speaker: String?, text: String)] = []
+    /// Committed (final) transcript accumulator — appends per delta instead of
+    /// re-joining every committed line on each realtime event.
+    private var committedBuilder = CommittedLiveTranscriptBuilder()
     /// Current interim text (replaced on each new interim result).
     private var interimText = ""
     /// Speaker of the current interim result.
     private var interimSpeaker: String?
+
+    /// Coalesces interim-driven `@Published` updates to at most ~10 Hz so
+    /// several-per-second realtime deltas don't each trigger a full SwiftUI
+    /// pass over the live transcript.
+    private static let interimPublishInterval: Duration = .milliseconds(100)
+    private var pendingInterimPublish: Task<Void, Never>?
+    private var lastLiveTranscriptPublish: ContinuousClock.Instant?
 
     /// Guards against starting a new recording while cleanup is in progress.
     private var isCleaningUp = false
@@ -141,10 +286,11 @@ class RecordingViewModel: ObservableObject {
         guard phase == .idle else { return }
 
         error = nil
+        cancelPendingLiveTranscriptPublish()
         currentTranscript = ""
         committedTranscript = ""
         interimTranscript = ""
-        committedLines = []
+        committedBuilder.reset()
         interimText = ""
         interimSpeaker = nil
         currentRecordingId = nil
@@ -362,8 +508,13 @@ class RecordingViewModel: ObservableObject {
             let didFinalize = await self.finishStreaming(self.webSocketManager)
 
             // Collect final segments, preserving the last interim phrase if the provider never finalizes it.
+            let collectedSegments = await self.webSocketManager?.collectedSegments ?? []
+            // Any coalesced interim update must be reflected in
+            // `currentTranscript` before the finalizer compares it against the
+            // provider segments.
+            self.flushPendingLiveTranscript()
             let segments = self.finalizedSegments(
-                from: await self.webSocketManager?.collectedSegments ?? [],
+                from: collectedSegments,
                 didFinalize: didFinalize
             )
 
@@ -554,10 +705,11 @@ class RecordingViewModel: ObservableObject {
             self.isServerComplete = false
             self.recording = nil
             self.currentRecordingId = nil
+            self.cancelPendingLiveTranscriptPublish()
             self.currentTranscript = ""
             self.committedTranscript = ""
             self.interimTranscript = ""
-            self.committedLines = []
+            self.committedBuilder.reset()
             self.interimText = ""
             self.interimSpeaker = nil
             self.audioEncoder = nil
@@ -604,10 +756,11 @@ class RecordingViewModel: ObservableObject {
 
     /// Reset transcript and recording state.
     func resetState() {
+        cancelPendingLiveTranscriptPublish()
         currentTranscript = ""
         committedTranscript = ""
         interimTranscript = ""
-        committedLines = []
+        committedBuilder.reset()
         interimText = ""
         interimSpeaker = nil
         currentRecordingId = nil
@@ -1014,27 +1167,30 @@ class RecordingViewModel: ObservableObject {
             break
         case .transcript(let segment):
             if segment.isFinal {
-                committedLines.append((speaker: segment.speaker, text: segment.text))
+                committedBuilder.append(
+                    speaker: segment.speaker,
+                    text: segment.text,
+                    languageKey: speakerLanguageCode,
+                    displaySpeaker: displaySpeaker
+                )
                 interimText = ""
                 interimSpeaker = nil
+                publishLiveTranscript(coalescing: false)
             } else {
                 interimText = segment.text
                 interimSpeaker = segment.speaker
+                publishLiveTranscript(coalescing: true)
             }
-            currentTranscript = buildTranscriptText()
-            committedTranscript = buildCommittedTranscriptText()
-            interimTranscript = buildInterimTranscriptText()
         case .transcriptReplacement(let segment):
-            if committedLines.isEmpty {
-                committedLines.append((speaker: segment.speaker, text: segment.text))
-            } else {
-                committedLines[committedLines.count - 1] = (speaker: segment.speaker, text: segment.text)
-            }
+            committedBuilder.replaceLast(
+                speaker: segment.speaker,
+                text: segment.text,
+                languageKey: speakerLanguageCode,
+                displaySpeaker: displaySpeaker
+            )
             interimText = ""
             interimSpeaker = nil
-            currentTranscript = buildTranscriptText()
-            committedTranscript = buildCommittedTranscriptText()
-            interimTranscript = buildInterimTranscriptText()
+            publishLiveTranscript(coalescing: false)
         case .disconnected(let err):
             if let err, phase == .recording {
                 await continueRecordingWithoutLiveTranscription(
@@ -1111,50 +1267,78 @@ class RecordingViewModel: ObservableObject {
         await webSocketManager?.stopRealtimeStreamingForLocalRecording(reason: reason)
     }
 
-    /// Combined committed + interim text used by accessibility/legacy consumers.
-    private func buildTranscriptText() -> String {
-        let committed = buildCommittedTranscriptText()
+    /// Publish the current transcript state to the `@Published` mirrors.
+    /// Interim deltas coalesce to at most one publish per
+    /// `interimPublishInterval` (latest-wins); finals and replacements publish
+    /// immediately so the committed text never lags a stop/save.
+    private func publishLiveTranscript(coalescing: Bool) {
+        guard coalescing else {
+            cancelPendingLiveTranscriptPublish()
+            publishLiveTranscriptNow()
+            return
+        }
+
+        // A scheduled publish picks up the latest interim state when it fires.
+        guard pendingInterimPublish == nil else { return }
+
+        let now = ContinuousClock.now
+        guard let last = lastLiveTranscriptPublish, now - last < Self.interimPublishInterval else {
+            publishLiveTranscriptNow()
+            return
+        }
+
+        let delay = Self.interimPublishInterval - (now - last)
+        pendingInterimPublish = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            self.pendingInterimPublish = nil
+            self.publishLiveTranscriptNow()
+        }
+    }
+
+    private func publishLiveTranscriptNow() {
+        lastLiveTranscriptPublish = ContinuousClock.now
+        let committed = committedBuilder.committedText(
+            showsSpeakers: shouldShowSpeakers,
+            languageKey: speakerLanguageCode,
+            displaySpeaker: displaySpeaker
+        )
         let interim = buildInterimTranscriptText()
-        if interim.isEmpty { return committed }
-        if committed.isEmpty { return interim }
-        // Speaker mode uses a paragraph break, single-channel uses a space.
-        return shouldShowSpeakers
-            ? committed + "\n\n" + interim
-            : committed + " " + interim
+        let combined: String
+        if interim.isEmpty {
+            combined = committed
+        } else if committed.isEmpty {
+            combined = interim
+        } else {
+            // Speaker mode uses a paragraph break, single-channel uses a space.
+            combined = shouldShowSpeakers
+                ? committed + "\n\n" + interim
+                : committed + " " + interim
+        }
+        // Assign only on change: writing a @Published property fires
+        // objectWillChange even when the value is identical.
+        if committedTranscript != committed { committedTranscript = committed }
+        if interimTranscript != interim { interimTranscript = interim }
+        if currentTranscript != combined { currentTranscript = combined }
+    }
+
+    /// Ensure any coalesced interim update is reflected in the published
+    /// strings before they feed the finalize/save path.
+    private func flushPendingLiveTranscript() {
+        guard pendingInterimPublish != nil else { return }
+        cancelPendingLiveTranscriptPublish()
+        publishLiveTranscriptNow()
+    }
+
+    private func cancelPendingLiveTranscriptPublish() {
+        pendingInterimPublish?.cancel()
+        pendingInterimPublish = nil
     }
 
     /// True when realtime metadata carries any non-empty speaker labels.
     private var shouldShowSpeakers: Bool {
-        committedLines.contains { speaker, _ in
-            guard let speaker else { return false }
-            return !speaker.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        } || !(interimSpeaker?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-    }
-
-    /// Committed lines only — never includes the rolling interim guess.
-    private func buildCommittedTranscriptText() -> String {
-        guard shouldShowSpeakers else {
-            return committedLines.map(\.text).joined(separator: " ")
-        }
-        var parts: [String] = []
-        var currentSpeaker: String? = nil
-        var currentText = ""
-        for line in committedLines {
-            let speaker = line.speaker ?? "Speaker"
-            if speaker == currentSpeaker {
-                currentText += " " + line.text
-            } else {
-                if !currentText.isEmpty, let s = currentSpeaker {
-                    parts.append("\(displaySpeaker(s)): \(currentText)")
-                }
-                currentSpeaker = speaker
-                currentText = line.text
-            }
-        }
-        if !currentText.isEmpty, let s = currentSpeaker {
-            parts.append("\(displaySpeaker(s)): \(currentText)")
-        }
-        return parts.joined(separator: "\n\n")
+        committedBuilder.hasSpeakerLabel
+            || !(interimSpeaker?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
     /// Just the trailing interim text, with a speaker prefix when relevant.
@@ -1165,7 +1349,7 @@ class RecordingViewModel: ObservableObject {
         }
         // Avoid duplicating the speaker prefix when the interim line continues
         // the same (raw) speaker as the most recent committed line.
-        let lastSpeaker = committedLines.last?.speaker
+        let lastSpeaker = committedBuilder.lastLineSpeaker
         if interimSpeaker == lastSpeaker {
             return interimText
         }
@@ -1245,5 +1429,6 @@ class RecordingViewModel: ObservableObject {
         audioTask?.cancel()
         transcriptTask?.cancel()
         cleanupTask?.cancel()
+        pendingInterimPublish?.cancel()
     }
 }

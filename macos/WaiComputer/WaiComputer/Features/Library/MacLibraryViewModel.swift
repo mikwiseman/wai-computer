@@ -84,7 +84,12 @@ class MacLibraryViewModel: ObservableObject {
             let activeRecordings = try await active
             let trashedItems = try await trashed
             let folderItems = try await folderList
-            let backupManifests = (try? RecordingBackupStore.manifestsByRecordingId()) ?? [:]
+            // The manifest crawl decodes one JSON file per local backup; run it
+            // off the main actor — this reload repeats every ~4s while anything
+            // is processing, and the crawl on the main thread froze the library.
+            let backupManifests = await Task.detached(priority: .userInitiated) {
+                (try? RecordingBackupStore.manifestsByRecordingId()) ?? [:]
+            }.value
             guard generation == loadGeneration else { return }
 
             recordings = activeRecordings

@@ -1259,6 +1259,291 @@ final class OnboardingPermissionGateTests: XCTestCase {
         XCTAssertTrue(source.contains(".navigationBarTitleDisplayMode(exportHorizontalSizeClass == .regular ? .inline : .large)"))
     }
 
+    // MARK: - Live transcript performance (append-only builder + chunked rendering)
+
+    func testCommittedLiveTranscriptBuilderMatchesLegacyRebuildAcrossEventSequences() {
+        let displaySpeaker: (String) -> String = { raw in
+            raw == "Speaker" ? "Speaker" : "SPK<\(raw)>"
+        }
+
+        enum Event {
+            case append(speaker: String?, text: String)
+            case replace(speaker: String?, text: String)
+        }
+
+        // Covers: plain lines, nil→"Speaker" grouping, literal "Speaker"
+        // merging with nil-speaker lines, same-speaker runs, speaker switches,
+        // replacement corrections, and whitespace-only labels (grouped by raw
+        // value but never counted as a visible speaker).
+        let events: [Event] = [
+            .append(speaker: nil, text: "hello"),
+            .append(speaker: nil, text: "world"),
+            .append(speaker: "speaker_0", text: "first"),
+            .append(speaker: "speaker_0", text: "second"),
+            .replace(speaker: "speaker_0", text: "second, corrected"),
+            .append(speaker: "speaker_1", text: "third"),
+            .append(speaker: "Speaker", text: "fourth"),
+            .append(speaker: nil, text: "fifth"),
+            .replace(speaker: nil, text: "fifth, fixed"),
+            .append(speaker: "  ", text: "sixth"),
+            .append(speaker: "speaker_0", text: "seventh"),
+        ]
+
+        var builder = CommittedLiveTranscriptBuilder()
+        var legacyLines: [(speaker: String?, text: String)] = []
+
+        for (index, event) in events.enumerated() {
+            switch event {
+            case .append(let speaker, let text):
+                builder.append(
+                    speaker: speaker, text: text,
+                    languageKey: "en", displaySpeaker: displaySpeaker
+                )
+                legacyLines.append((speaker, text))
+            case .replace(let speaker, let text):
+                builder.replaceLast(
+                    speaker: speaker, text: text,
+                    languageKey: "en", displaySpeaker: displaySpeaker
+                )
+                if legacyLines.isEmpty {
+                    legacyLines.append((speaker, text))
+                } else {
+                    legacyLines[legacyLines.count - 1] = (speaker, text)
+                }
+            }
+
+            // The builder must match the legacy full rebuild byte-for-byte in
+            // both formats after every event, so the format can flip at any
+            // moment (first speaker label may arrive via an interim).
+            XCTAssertEqual(
+                builder.committedText(showsSpeakers: false, languageKey: "en", displaySpeaker: displaySpeaker),
+                legacyCommittedText(lines: legacyLines, showsSpeakers: false, displaySpeaker: displaySpeaker),
+                "plain text diverged after event #\(index)"
+            )
+            XCTAssertEqual(
+                builder.committedText(showsSpeakers: true, languageKey: "en", displaySpeaker: displaySpeaker),
+                legacyCommittedText(lines: legacyLines, showsSpeakers: true, displaySpeaker: displaySpeaker),
+                "speaker text diverged after event #\(index)"
+            )
+            XCTAssertEqual(
+                builder.hasSpeakerLabel,
+                legacyLines.contains { speaker, _ in
+                    guard let speaker else { return false }
+                    return !speaker.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                },
+                "speaker-label flag diverged after event #\(index)"
+            )
+            XCTAssertEqual(builder.lastLineSpeaker, legacyLines.last?.speaker)
+        }
+    }
+
+    func testCommittedLiveTranscriptBuilderRebuildsSpeakerLabelsOnLanguageChange() {
+        let english: (String) -> String = { _ in "Speaker 1" }
+        let russian: (String) -> String = { _ in "Говорящий 1" }
+
+        var builder = CommittedLiveTranscriptBuilder()
+        builder.append(speaker: "speaker_0", text: "привет", languageKey: "en", displaySpeaker: english)
+        builder.append(speaker: "speaker_0", text: "мир", languageKey: "en", displaySpeaker: english)
+
+        XCTAssertEqual(
+            builder.committedText(showsSpeakers: true, languageKey: "en", displaySpeaker: english),
+            "Speaker 1: привет мир"
+        )
+        // Switching the language key re-renders already-committed labels.
+        XCTAssertEqual(
+            builder.committedText(showsSpeakers: true, languageKey: "ru", displaySpeaker: russian),
+            "Говорящий 1: привет мир"
+        )
+    }
+
+    func testCommittedLiveTranscriptBuilderReplaceOnEmptyAppendsLikeLegacyHandler() {
+        var builder = CommittedLiveTranscriptBuilder()
+        builder.replaceLast(speaker: nil, text: "only line", languageKey: "en", displaySpeaker: { $0 })
+
+        XCTAssertEqual(
+            builder.committedText(showsSpeakers: false, languageKey: "en", displaySpeaker: { $0 }),
+            "only line"
+        )
+        XCTAssertEqual(builder.lines.count, 1)
+    }
+
+    func testLiveTranscriptChunkCacheExtendsLastChunkForAppendOnlyGrowth() {
+        let cache = LiveTranscriptChunkCache()
+
+        XCTAssertTrue(cache.chunks(for: "").isEmpty)
+
+        let first = cache.chunks(for: "Hello")
+        XCTAssertEqual(first.map(\.text), ["Hello"])
+
+        let grown = cache.chunks(for: "Hello world")
+        XCTAssertEqual(grown.map(\.text), ["Hello world"])
+        XCTAssertEqual(grown.map(\.id), first.map(\.id), "append-only growth must keep chunk identity stable")
+
+        // Once the last chunk crosses the size cap, the next delta opens a new
+        // row (with its separator trimmed) instead of growing the old one.
+        let long = "Hello world " + String(repeating: "a", count: 1_300)
+        let capped = cache.chunks(for: long)
+        XCTAssertEqual(capped.count, 1)
+
+        let overflow = cache.chunks(for: long + " tail words")
+        XCTAssertEqual(overflow.count, 2)
+        XCTAssertEqual(overflow.last?.text, "tail words")
+        XCTAssertEqual(overflow.first?.text, long)
+    }
+
+    func testLiveTranscriptChunkCacheRebuildsOnRewriteAndResetsOnEmpty() {
+        let cache = LiveTranscriptChunkCache()
+        _ = cache.chunks(for: "Original committed text")
+
+        // Replacement events rewrite the tail — not append-only — so the
+        // cache must rebuild rather than append.
+        let rewritten = cache.chunks(for: "Original committed rewrite")
+        XCTAssertEqual(rewritten.map(\.text), ["Original committed rewrite"])
+
+        // A long transcript rebuild splits at word boundaries within the cap.
+        let words = Array(repeating: "transcript", count: 400).joined(separator: " ")
+        let chunks = cache.chunks(for: words)
+        XCTAssertGreaterThan(chunks.count, 1)
+        XCTAssertTrue(chunks.allSatisfy { $0.text.count <= 1_200 })
+        XCTAssertEqual(chunks.map(\.text).joined(separator: " "), words)
+
+        // Clearing the transcript (new recording) resets identity.
+        XCTAssertTrue(cache.chunks(for: "").isEmpty)
+        XCTAssertEqual(cache.chunks(for: "fresh").first?.id, 0)
+    }
+
+    @MainActor
+    func testRecordingDetailViewModelMemoizesTranscriptTurnsAndInvalidatesOnDetailChange() {
+        let segments = [
+            Segment(id: "s1", speaker: "Speaker 1", rawLabel: "speaker_1", content: "Hello there.", startMs: 0, endMs: 1_000),
+            Segment(id: "s2", speaker: "Speaker 1", rawLabel: "speaker_1", content: "How are you?", startMs: 1_000, endMs: 2_000),
+            Segment(id: "s3", speaker: "Speaker 2", rawLabel: "speaker_2", content: "I am well.", startMs: 2_000, endMs: 3_000),
+        ]
+        let viewModel = RecordingDetailViewModel()
+        viewModel.detail = RecordingDetail(
+            id: "rec-memo",
+            title: "Memo",
+            type: .meeting,
+            status: .ready,
+            createdAt: Date(timeIntervalSince1970: 1_709_292_000),
+            segments: segments
+        )
+
+        // Consecutive same-speaker utterances merge into one turn → 2 turns.
+        let first = viewModel.transcriptTurns(languageCode: "en")
+        XCTAssertEqual(first.count, 2)
+        XCTAssertEqual(first.first?.text, "Hello there. How are you?")
+
+        // Repeated call (the memoized per-body path) returns identical turns.
+        let second = viewModel.transcriptTurns(languageCode: "en")
+        XCTAssertEqual(second.map(\.id), first.map(\.id))
+        XCTAssertEqual(second.map(\.text), first.map(\.text))
+
+        // Reassigning every utterance to one person must invalidate the cache
+        // and regroup into a single turn.
+        let reassigned = segments.map { segment in
+            Segment(
+                id: segment.id,
+                speaker: segment.speaker,
+                rawLabel: segment.rawLabel,
+                personId: "person-1",
+                content: segment.content,
+                startMs: segment.startMs,
+                endMs: segment.endMs
+            )
+        }
+        viewModel.detail = RecordingDetail(
+            id: "rec-memo",
+            title: "Memo",
+            type: .meeting,
+            status: .ready,
+            createdAt: Date(timeIntervalSince1970: 1_709_292_000),
+            segments: reassigned
+        )
+
+        let afterReassign = viewModel.transcriptTurns(languageCode: "en")
+        XCTAssertEqual(afterReassign.count, 1, "cache must invalidate when speaker assignments change")
+        XCTAssertEqual(afterReassign.first?.text, "Hello there. How are you? I am well.")
+
+        // Language changes recompute for the new locale.
+        XCTAssertEqual(viewModel.transcriptTurns(languageCode: "ru").count, 1)
+    }
+
+    func testLiveRecordingRendersCommittedTranscriptAsChunkedRows() throws {
+        let viewSource = try iosSource("WaiComputer/Features/Recording/RecordingView.swift")
+
+        XCTAssertTrue(viewSource.contains("@State private var committedChunkCache = LiveTranscriptChunkCache()"))
+        XCTAssertTrue(viewSource.contains("let committedChunks = committedChunkCache.chunks(for: viewModel.committedTranscript)"))
+        XCTAssertTrue(viewSource.contains("ForEach(committedChunks)"))
+        // One ever-growing Text forced SwiftUI to re-lay-out the entire
+        // committed transcript on every realtime delta.
+        XCTAssertFalse(viewSource.contains("Text(viewModel.committedTranscript)"))
+        // Animated auto-scroll only on committed growth; interim ticks follow
+        // without animation.
+        XCTAssertTrue(viewSource.contains(".onChange(of: viewModel.committedTranscript)"))
+        XCTAssertTrue(viewSource.contains(".onChange(of: viewModel.interimTranscript)"))
+        XCTAssertFalse(viewSource.contains(".onChange(of: viewModel.currentTranscript)"))
+    }
+
+    func testLiveRecordingViewModelAppendsCommittedTextAndCoalescesInterimPublishes() throws {
+        let modelSource = try iosSource("WaiComputer/Features/Recording/RecordingViewModel.swift")
+
+        XCTAssertTrue(modelSource.contains("private var committedBuilder = CommittedLiveTranscriptBuilder()"))
+        XCTAssertTrue(modelSource.contains("private static let interimPublishInterval: Duration = .milliseconds(100)"))
+        XCTAssertTrue(modelSource.contains("publishLiveTranscript(coalescing: true)"))
+        XCTAssertTrue(modelSource.contains("publishLiveTranscript(coalescing: false)"))
+        // Coalesced interim state must be flushed before segments finalize.
+        XCTAssertTrue(modelSource.contains("self.flushPendingLiveTranscript()"))
+        // The per-event full rebuilds must not come back.
+        XCTAssertFalse(modelSource.contains("committedTranscript = buildCommittedTranscriptText()"))
+        XCTAssertFalse(modelSource.contains("currentTranscript = buildTranscriptText()"))
+    }
+
+    func testTranscriptDetailSurfacesMemoizeMergedTurns() throws {
+        let transcriptSource = try iosSource("WaiComputer/Features/Library/TranscriptView.swift")
+        let detailViewSource = try iosSource("WaiComputer/Features/Library/RecordingDetailView.swift")
+        let detailModelSource = try iosSource("WaiComputer/Features/Library/RecordingDetailViewModel.swift")
+
+        XCTAssertTrue(transcriptSource.contains("@State private var displayCache = TranscriptDisplayCache()"))
+        XCTAssertTrue(transcriptSource.contains("ForEach(displayCache.turns(for: segments, languageCode: speakerLanguageCode))"))
+        XCTAssertFalse(transcriptSource.contains("ForEach(TranscriptRendering.mergeTurns("))
+        XCTAssertTrue(detailViewSource.contains("ForEach(viewModel.transcriptTurns(languageCode: speakerLanguageCode))"))
+        XCTAssertFalse(detailViewSource.contains("ForEach(TranscriptRendering.mergeTurns("))
+        XCTAssertTrue(detailModelSource.contains("didSet { detailRevision += 1 }"))
+        XCTAssertTrue(detailModelSource.contains("TranscriptTurnsCacheKey(languageCode: languageCode, revision: detailRevision)"))
+    }
+
+    /// Reference implementation of the pre-optimization full rebuild, kept in
+    /// the tests as the semantic contract for `CommittedLiveTranscriptBuilder`.
+    private func legacyCommittedText(
+        lines: [(speaker: String?, text: String)],
+        showsSpeakers: Bool,
+        displaySpeaker: (String) -> String
+    ) -> String {
+        guard showsSpeakers else {
+            return lines.map(\.text).joined(separator: " ")
+        }
+        var parts: [String] = []
+        var currentSpeaker: String?
+        var currentText = ""
+        for line in lines {
+            let speaker = line.speaker ?? "Speaker"
+            if speaker == currentSpeaker {
+                currentText += " " + line.text
+            } else {
+                if !currentText.isEmpty, let s = currentSpeaker {
+                    parts.append("\(displaySpeaker(s)): \(currentText)")
+                }
+                currentSpeaker = speaker
+                currentText = line.text
+            }
+        }
+        if !currentText.isEmpty, let s = currentSpeaker {
+            parts.append("\(displaySpeaker(s)): \(currentText)")
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
     private func XCTAssertImportTypes(
         _ types: [UTType],
         includeExtension ext: String,

@@ -11,6 +11,9 @@ struct RecordingView: View {
     @State private var folders: [Folder] = []
     @State private var selectedFolderId: String?
     @State private var foldersError: String?
+    /// Splits the committed live transcript into stable rows so each realtime
+    /// delta re-lays-out only the last row, not one ever-growing Text.
+    @State private var committedChunkCache = LiveTranscriptChunkCache()
 
     private var isScreenshotMode: Bool {
         IOSTestingMode.current.isScreenshot
@@ -537,39 +540,42 @@ struct RecordingView: View {
     @ViewBuilder
     private func liveTranscriptPreview(maxHeight: CGFloat?) -> some View {
         if viewModel.shouldShowTranscript {
+            let committedChunks = committedChunkCache.chunks(for: viewModel.committedTranscript)
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Spacing.sm) {
+                    LazyVStack(alignment: .leading, spacing: Spacing.xs) {
                         if viewModel.currentTranscript.isEmpty {
                             Text(viewModel.emptyTranscriptText)
                                 .font(Typography.reading)
                                 .foregroundStyle(Palette.textSecondary)
                                 .italic()
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding()
                         } else {
-                            VStack(alignment: .leading, spacing: Spacing.xs) {
-                                if !viewModel.committedTranscript.isEmpty {
-                                    Text(viewModel.committedTranscript)
-                                        .font(Typography.reading)
-                                        .lineSpacing(5)
-                                        .textSelection(.enabled)
-                                        .accessibilityAddTraits(.updatesFrequently)
-                                }
-                                if !viewModel.interimTranscript.isEmpty {
-                                    Text(viewModel.interimTranscript)
-                                        .font(Typography.reading.italic())
-                                        .lineSpacing(5)
-                                        .foregroundStyle(Palette.textTertiary)
-                                        .textSelection(.enabled)
-                                        .accessibilityHidden(true)
-                                }
+                            // Committed text renders as chunked rows so SwiftUI
+                            // only re-lays-out the growing last chunk per delta.
+                            ForEach(committedChunks) { chunk in
+                                Text(chunk.text)
+                                    .font(Typography.reading)
+                                    .lineSpacing(5)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .accessibilityAddTraits(.updatesFrequently)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding()
-                            .id("transcript-bottom")
+                            if !viewModel.interimTranscript.isEmpty {
+                                Text(viewModel.interimTranscript)
+                                    .font(Typography.reading.italic())
+                                    .lineSpacing(5)
+                                    .foregroundStyle(Palette.textTertiary)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .accessibilityHidden(true)
+                            }
+                            Color.clear
+                                .frame(height: 1)
+                                .id("transcript-bottom")
                         }
                     }
+                    .padding()
                 }
                 .frame(maxHeight: maxHeight)
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
@@ -578,10 +584,16 @@ struct RecordingView: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .strokeBorder(Palette.border, lineWidth: 1)
                 }
-                .onChange(of: viewModel.currentTranscript) { _, _ in
+                .onChange(of: viewModel.committedTranscript) { _, _ in
                     withAnimation {
                         proxy.scrollTo("transcript-bottom", anchor: .bottom)
                     }
+                }
+                .onChange(of: viewModel.interimTranscript) { _, _ in
+                    // Interim ticks (≤10 Hz) follow the tail without animation —
+                    // animating every tick keeps an animation permanently in
+                    // flight.
+                    proxy.scrollTo("transcript-bottom", anchor: .bottom)
                 }
             }
             .accessibilityElement(children: .contain)
@@ -786,6 +798,94 @@ struct RecordingView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+/// Chunks the committed live transcript into stable, row-sized pieces (mirrors
+/// the macOS live-text chunking approach). The common realtime path is
+/// append-only, so new text extends the last chunk in place; anything else
+/// (replacement events, speaker-format flips, restore) rebuilds all chunks.
+final class LiveTranscriptChunkCache {
+    struct Chunk: Identifiable, Equatable {
+        let id: Int
+        var text: String
+    }
+
+    private static let chunkCharacterLimit = 1_200
+
+    private var cachedText = ""
+    private var cachedChunks: [Chunk] = []
+    private var nextChunkID = 0
+
+    func chunks(for text: String) -> [Chunk] {
+        guard !text.isEmpty else {
+            cachedText = ""
+            cachedChunks = []
+            nextChunkID = 0
+            return []
+        }
+        guard text != cachedText else { return cachedChunks }
+
+        if !cachedText.isEmpty, text.hasPrefix(cachedText) {
+            append(String(text.dropFirst(cachedText.count)))
+        } else {
+            cachedChunks = Self.makeChunks(from: text)
+            nextChunkID = (cachedChunks.last?.id ?? -1) + 1
+        }
+        cachedText = text
+        return cachedChunks
+    }
+
+    private func append(_ suffix: String) {
+        guard !suffix.isEmpty else { return }
+        if let last = cachedChunks.last, last.text.count < Self.chunkCharacterLimit {
+            cachedChunks[cachedChunks.count - 1].text += suffix
+            return
+        }
+        // Live deltas begin with their separator (" " or "\n\n"); drop it so a
+        // new row does not start with blank space. Rows are display-only — the
+        // underlying committed transcript string is untouched.
+        let trimmed = String(suffix.drop(while: { $0 == " " || $0 == "\n" }))
+        guard !trimmed.isEmpty else { return }
+        cachedChunks.append(Chunk(id: nextChunkID, text: trimmed))
+        nextChunkID += 1
+    }
+
+    private static func makeChunks(from text: String) -> [Chunk] {
+        var chunks: [Chunk] = []
+        var id = 0
+        var start = text.startIndex
+
+        while start < text.endIndex {
+            let hardEnd = text.index(
+                start,
+                offsetBy: chunkCharacterLimit,
+                limitedBy: text.endIndex
+            ) ?? text.endIndex
+            var end = hardEnd
+
+            if hardEnd < text.endIndex {
+                let slice = text[start..<hardEnd]
+                if let newline = slice.lastIndex(of: "\n"),
+                   text.distance(from: start, to: newline) > chunkCharacterLimit / 2 {
+                    end = text.index(after: newline)
+                } else if let space = slice.lastIndex(of: " "),
+                          text.distance(from: start, to: space) > chunkCharacterLimit / 2 {
+                    end = text.index(after: space)
+                }
+            }
+
+            let chunkText = String(text[start..<end])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !chunkText.isEmpty {
+                chunks.append(Chunk(id: id, text: chunkText))
+                id += 1
+            }
+
+            start = end
+        }
+
+        return chunks
     }
 }
 

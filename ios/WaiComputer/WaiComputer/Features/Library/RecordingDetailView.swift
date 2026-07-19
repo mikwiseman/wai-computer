@@ -659,7 +659,7 @@ struct RecordingDetailView: View {
                 regularTranscriptEmptyState
             } else {
                 LazyVStack(alignment: .leading, spacing: Spacing.lg) {
-                    ForEach(TranscriptRendering.mergeTurns(detail.segments, languageCode: speakerLanguageCode)) { turn in
+                    ForEach(viewModel.transcriptTurns(languageCode: speakerLanguageCode)) { turn in
                         SegmentView(
                             segment: turn.displaySegment,
                             recordingId: detail.id,

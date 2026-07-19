@@ -236,6 +236,10 @@ final class DictationManager: ObservableObject {
 
     // Transcript accumulation (live updates for overlay).
     private var committedTexts: [String] = []
+    // Cached join of committedTexts: interims arrive several times a second
+    // and each used to re-join the whole session (O(n²) over a hands-free
+    // hold). Invariant: always equals committedTexts.joined(separator: " ").
+    private var committedJoined = ""
     private var currentInterim = ""
     private var liveTranscriptCandidate = ""
     private var isConfigured = false
@@ -642,6 +646,7 @@ final class DictationManager: ObservableObject {
 
         error = nil
         committedTexts = []
+        committedJoined = ""
         currentInterim = ""
         liveTranscriptCandidate = ""
         interimTranscript = ""
@@ -1921,6 +1926,9 @@ final class DictationManager: ObservableObject {
             }
             instrumentationSession?.event(.committedTranscript, data: ["chars": segment.text.count])
             committedTexts.append(segment.text)
+            committedJoined = committedJoined.isEmpty
+                ? segment.text
+                : committedJoined + " " + segment.text
             currentInterim = ""
             captureLiveTranscriptCandidate()
             interimTranscript = buildTranscript()
@@ -1938,6 +1946,9 @@ final class DictationManager: ObservableObject {
             } else {
                 committedTexts[committedTexts.count - 1] = segment.text
             }
+            // Replacements are rare (one per correction); a full re-join here
+            // keeps the invariant without complicating the hot append path.
+            committedJoined = committedTexts.joined(separator: " ")
             currentInterim = ""
             captureLiveTranscriptCandidate()
             interimTranscript = buildTranscript()
@@ -2050,7 +2061,7 @@ final class DictationManager: ObservableObject {
     }
 
     private func buildTranscript() -> String {
-        let committed = committedTexts.joined(separator: " ")
+        let committed = committedJoined
         if currentInterim.isEmpty {
             return committed
         } else if committed.isEmpty {

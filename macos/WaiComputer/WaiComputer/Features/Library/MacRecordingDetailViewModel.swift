@@ -163,8 +163,13 @@ class MacRecordingDetailViewModel: ObservableObject {
             } else {
                 detail = try await apiClient.getRecording(id: recordingId)
             }
+            // Local-recovery reads decode backup JSON from disk; keep them off
+            // the main actor — this load repeats every 2-4s while processing.
+            let localRecovery = await Task.detached(priority: .userInitiated) {
+                Self.localRecoveryDetail(for: detail)
+            }.value
             guard generation == loadGeneration else { return }
-            applyFetchedDetail(detail)
+            applyFetchedDetail(localRecovery)
         } catch {
             guard generation == loadGeneration else { return }
             self.error = error.userFacingMessage(context: .library)
@@ -287,7 +292,8 @@ class MacRecordingDetailViewModel: ObservableObject {
         guard let id = recordingDetail?.id else { return false }
         do {
             _ = try await apiClient.moveRecording(id: id, folderId: folderId)
-            applyFetchedDetail(try await apiClient.getRecording(id: id))
+            let refreshed = try await apiClient.getRecording(id: id)
+            applyFetchedDetail(Self.localRecoveryDetail(for: refreshed))
             return true
         } catch {
             self.error = error.userFacingMessage(context: .library)
@@ -301,7 +307,8 @@ class MacRecordingDetailViewModel: ObservableObject {
         guard !trimmed.isEmpty else { return false }
         do {
             _ = try await apiClient.updateRecording(id: id, title: trimmed)
-            applyFetchedDetail(try await apiClient.getRecording(id: id))
+            let refreshed = try await apiClient.getRecording(id: id)
+            applyFetchedDetail(Self.localRecoveryDetail(for: refreshed))
             return true
         } catch {
             self.error = error.userFacingMessage(context: .library)
@@ -363,41 +370,51 @@ class MacRecordingDetailViewModel: ObservableObject {
         playingSummaryAudioRecordingId = nil
     }
 
-    private func applyFetchedDetail(_ detail: RecordingDetail) {
-        let localRecovery = localRecoveryDetail(for: detail)
-        recordingDetail = localRecovery.detail
-        localRecoveryManifest = localRecovery.manifest
+    private func applyFetchedDetail(_ localRecovery: LocalRecoveryResolution) {
+        // Polls return byte-identical payloads most ticks; skipping the publish
+        // keeps the memoized turn cache valid and avoids re-rendering a long
+        // transcript for a no-op.
+        if recordingDetail != localRecovery.detail {
+            recordingDetail = localRecovery.detail
+        }
+        if localRecoveryManifest != localRecovery.manifest {
+            localRecoveryManifest = localRecovery.manifest
+        }
         if let recoveryError = localRecovery.error {
             self.error = recoveryError.userFacingMessage(context: .library)
         }
     }
 
-    private func localRecoveryDetail(for detail: RecordingDetail) -> (
-        detail: RecordingDetail,
-        manifest: RecordingBackupManifest?,
-        error: Error?
-    ) {
+    struct LocalRecoveryResolution: Sendable {
+        let detail: RecordingDetail
+        let manifest: RecordingBackupManifest?
+        let error: Error?
+    }
+
+    nonisolated private static func localRecoveryDetail(
+        for detail: RecordingDetail
+    ) -> LocalRecoveryResolution {
         do {
             guard let manifest = try RecordingBackupStore.manifest(recordingId: detail.id) else {
-                return (detail, nil, nil)
+                return LocalRecoveryResolution(detail: detail, manifest: nil, error: nil)
             }
 
             guard detail.segments.isEmpty else {
-                return (detail, manifest, nil)
+                return LocalRecoveryResolution(detail: detail, manifest: manifest, error: nil)
             }
 
             let segments: [Segment]
             do {
                 segments = try localSegments(recordingId: detail.id, manifest: manifest)
             } catch {
-                return (detail, manifest, error)
+                return LocalRecoveryResolution(detail: detail, manifest: manifest, error: error)
             }
             guard !segments.isEmpty else {
-                return (detail, manifest, nil)
+                return LocalRecoveryResolution(detail: detail, manifest: manifest, error: nil)
             }
 
-            return (
-                RecordingDetail(
+            return LocalRecoveryResolution(
+                detail: RecordingDetail(
                     id: detail.id,
                     title: detail.title,
                     type: detail.type,
@@ -419,15 +436,15 @@ class MacRecordingDetailViewModel: ObservableObject {
                     actionItems: detail.actionItems,
                     highlights: detail.highlights
                 ),
-                manifest,
-                nil
+                manifest: manifest,
+                error: nil
             )
         } catch {
-            return (detail, nil, error)
+            return LocalRecoveryResolution(detail: detail, manifest: nil, error: error)
         }
     }
 
-    private func localSegments(
+    nonisolated private static func localSegments(
         recordingId: String,
         manifest: RecordingBackupManifest
     ) throws -> [Segment] {

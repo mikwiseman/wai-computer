@@ -1621,11 +1621,17 @@ class LibraryViewModel: ObservableObject {
             // surface (no-fallbacks) and must NOT silently wipe the existing
             // "saved locally" / "needs attention" badges. If it throws we keep
             // the prior badge sets and show a dismissible banner; the fetched
-            // recordings still render below.
+            // recordings still render below. The crawl decodes one JSON file
+            // per backup, so it runs off the main actor — this reload repeats
+            // every ~4s while anything is processing.
+            let manifestsResult = await Task.detached(priority: .userInitiated) {
+                Result { try RecordingBackupStore.manifestsByRecordingId() }
+            }.value
             let backupManifests: [String: RecordingBackupManifest]?
-            do {
-                backupManifests = try RecordingBackupStore.manifestsByRecordingId()
-            } catch {
+            switch manifestsResult {
+            case .success(let manifests):
+                backupManifests = manifests
+            case .failure(let error):
                 backupManifests = nil
                 self.error = error.userFacingMessage(context: .library)
             }
