@@ -2,6 +2,19 @@
 # never succeed — Let's Encrypt paused the account for that hostname after
 # repeated failures. Re-add only after creating the DNS record at the edge.
 
+# HTTP/3 is OFF here on purpose: public traffic terminates at the wai-ru edge
+# proxy (63.250.57.133, /etc/caddy on that host), which serves h3 to browsers
+# and proxies to this origin over TCP. This origin's only client is that edge,
+# so advertising h3 here would be dead weight — and an advertised-but-
+# unreachable h3 endpoint is actively harmful (browsers cache Alt-Svc for 30
+# days and race the blackhole; observed as 30-44s page-load stalls before the
+# edge's udp/443 was opened on 2026-07-20).
+{
+    servers {
+        protocols h1 h2
+    }
+}
+
 # Local-only health endpoint for the Docker healthcheck: plain HTTP on the
 # container loopback, no TLS handshake and no round-trip through the public
 # edge proxy.

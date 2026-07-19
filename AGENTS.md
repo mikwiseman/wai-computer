@@ -10,6 +10,7 @@ AI second brain for recordings, transcription, search, and summaries.
 ## Production
 
 - Canonical host: `https://wai.computer` (API at `/api/*`, health at `/health`). No separate API hostname.
+- DNS points at the **wai-ru edge proxy** (`root@63.250.57.133`, Caddy configs in `/etc/caddy/sites-enabled/`), which terminates TLS + HTTP/3 and reverse-proxies to the origin below over TCP. Debug edge-vs-origin issues by comparing responses from both (origin direct: `curl --resolve wai.computer:443:157.180.47.68 …`).
 - In-app MCP connect instructions live in Settings → MCP on every platform; the displayed URL is the hardcoded prod canonical `https://wai.computer/mcp`.
 - Server: `root@157.180.47.68`, deploy root `/opt/waicomputer`.
 - Runtime env: `/etc/waicomputer/backend.env` is the source of truth; `/opt/waicomputer/backend/.env` is a symlink to it.
