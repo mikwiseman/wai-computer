@@ -144,6 +144,7 @@ build_and_load_images() {
     "${pull_args[@]}" \
     --build-arg "GIT_SHA=${GIT_SHA}" \
     --build-arg "GIT_DIRTY=${GIT_DIRTY}" \
+    --label "is.waiwai.cleanup=local-deploy-artifact" \
     --tag "$WAICOMPUTER_BACKEND_IMAGE" \
     --load \
     backend
@@ -160,6 +161,7 @@ build_and_load_images() {
     --build-arg "SENTRY_RELEASE=waicomputer-web@${GIT_SHA}" \
     --build-arg "SENTRY_UPLOAD_REQUIRED=1" \
     --secret id=sentry_auth_token,env=SENTRY_AUTH_TOKEN \
+    --label "is.waiwai.cleanup=local-deploy-artifact" \
     --tag "$WAICOMPUTER_WEB_IMAGE" \
     --load \
     .
@@ -176,6 +178,13 @@ build_and_load_images() {
   docker save "$WAICOMPUTER_BACKEND_IMAGE" "$WAICOMPUTER_WEB_IMAGE" \
     | gzip -1 \
     | ssh_remote "gzip -dc | docker load"
+}
+
+prune_local_deploy_images() {
+  echo "Pruning local WaiComputer deploy images older than 7 days ..."
+  docker image prune -a -f \
+    --filter "label=is.waiwai.cleanup=local-deploy-artifact" \
+    --filter "until=168h"
 }
 
 if [[ -z "$VPS_USER" ]]; then
@@ -277,5 +286,14 @@ ssh_remote \
 
 SENTRY_ORG=${SENTRY_ORG:-waiwai-diy} scripts/sentry-release.sh "waicomputer-backend" "waicomputer-backend@${GIT_SHA}" production
 SENTRY_ORG=${SENTRY_ORG:-waiwai-diy} scripts/sentry-release.sh "waicomputer-web" "waicomputer-web@${GIT_SHA}" production
+
+echo "Production deployment completed."
+
+if [[ "$DEPLOY_IMAGE_SOURCE" == "local" ]]; then
+  if ! prune_local_deploy_images; then
+    echo "ERROR: production deployment succeeded, but local deploy image cleanup failed." >&2
+    exit 1
+  fi
+fi
 
 echo "Deployment completed."

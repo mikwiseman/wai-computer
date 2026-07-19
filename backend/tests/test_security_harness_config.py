@@ -229,6 +229,38 @@ def test_deploy_builds_and_loads_images_before_remote_swap():
     assert "ALLOW_SERVER_SIDE_BUILD='0'" in script
 
 
+def test_local_deploy_labels_images_for_bounded_retention():
+    script = (REPO_ROOT / "scripts/deploy-api.sh").read_text()
+
+    assert script.count('--label "is.waiwai.cleanup=local-deploy-artifact"') == 2
+
+
+def test_local_deploy_prunes_only_expired_labeled_images_after_success():
+    script = (REPO_ROOT / "scripts/deploy-api.sh").read_text()
+
+    assert "prune_local_deploy_images" in script
+    assert "docker image prune -a -f" in script
+    assert '--filter "label=is.waiwai.cleanup=local-deploy-artifact"' in script
+    assert '--filter "until=168h"' in script
+    assert "docker system prune" not in script
+    assert "docker volume prune" not in script
+    assert "docker container prune" not in script
+
+    cleanup_guard = (
+        'if [[ "$DEPLOY_IMAGE_SOURCE" == "local" ]]; then\n'
+        "  if ! prune_local_deploy_images; then"
+    )
+    cleanup_error = (
+        "production deployment succeeded, but local deploy image cleanup failed"
+    )
+    assert cleanup_guard in script
+    assert cleanup_error in script
+    assert script.index('scripts/sentry-release.sh "waicomputer-web"') < script.index(
+        cleanup_guard
+    )
+    assert script.index(cleanup_guard) < script.index('echo "Deployment completed."')
+
+
 def test_deploy_forwards_active_transcription_override_to_remote_build():
     script = (REPO_ROOT / "scripts/deploy-api.sh").read_text()
 
