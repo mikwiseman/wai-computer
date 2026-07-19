@@ -58,12 +58,15 @@ def _create_engine():
     # runaway query can never pin a worker + pooled connection for minutes.
     # Celery keeps the unbounded NullPool branch above — batch tasks (embedding
     # backfill, recovery sweeps) may legitimately run longer statements.
+    # Sized against Postgres max_connections=50 (docker-compose): 2 workers ×
+    # (8+4) = 24 API connections max, leaving headroom for the three Celery
+    # workers (NullPool, one connection per running task), backups, and psql.
     return create_async_engine(
         settings.database_url,
         echo=settings.debug,
         pool_pre_ping=True,
-        pool_size=10,
-        max_overflow=5,
+        pool_size=8,
+        max_overflow=4,
         pool_recycle=1800,
         json_serializer=_json_serializer,
         connect_args={

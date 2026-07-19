@@ -23,7 +23,7 @@ services:
       -c shared_buffers=64MB
       -c work_mem=4MB
       -c effective_cache_size=256MB
-      -c max_connections=30
+      -c max_connections=50
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
@@ -201,6 +201,10 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      # Caddy advertises HTTP/3 via Alt-Svc (cached by browsers for 30 days);
+      # without the UDP mapping that endpoint is a blackhole and returning
+      # visitors stall racing QUIC before falling back to TCP.
+      - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ../releases/macos:/srv/releases/macos:ro

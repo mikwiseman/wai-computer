@@ -68,8 +68,11 @@ def test_pooled_engine_sets_statement_timeout_and_pool_sizing(monkeypatch):
 
     server_settings = captured["connect_args"]["server_settings"]
     assert int(server_settings["statement_timeout"]) >= 10_000
-    assert captured["pool_size"] >= 10
-    assert captured["max_overflow"] >= 5
+    assert captured["pool_size"] >= 8
+    assert captured["max_overflow"] >= 4
+    # Ceiling check: 2 gunicorn workers must fit inside Postgres
+    # max_connections=50 with room for Celery + tooling.
+    assert 2 * (captured["pool_size"] + captured["max_overflow"]) <= 30
     assert captured["pool_pre_ping"] is True
 
 
