@@ -155,10 +155,44 @@ public actor DictationSession {
             phase = .done
             return outcome
         } catch {
+            // The connection-loss handler may have salvaged while we were
+            // suspended in endTurn/close on a dead socket.
+            if let completedOutcome {
+                return completedOutcome
+            }
+            if case .failed = phase {
+                // A server-reported failure from the event loop takes
+                // precedence over salvage (auth/quota/server rejections).
+                await stopBackgroundWorkAndReleaseLease()
+                throw error
+            }
+            if let salvaged = await salvageAccumulatedSegments(context: "finalize") {
+                return salvaged
+            }
             phase = .failed("provider.finalize: \(error.localizedDescription)")
             await stopBackgroundWorkAndReleaseLease()
             throw error
         }
+    }
+
+    /// Committed segments already captured are the user's words. When the
+    /// socket dies mid-press, return them as the outcome instead of throwing
+    /// the whole dictation away; with nothing captured, fail loudly.
+    private func salvageAccumulatedSegments(context: String) async -> Outcome? {
+        let segments = accumulatedSegments
+        let transcript = segments.map(\.text).filter { !$0.isEmpty }.joined(separator: " ")
+        guard !transcript.isEmpty else { return nil }
+        sessionLog.warning(
+            "[Session \(self.id.uuidString, privacy: .public)] \(context, privacy: .public) failed mid-press; salvaging \(segments.count) committed segment(s)"
+        )
+        // Publish the outcome BEFORE any suspension so a concurrently running
+        // commit() observes it instead of racing the dead socket again.
+        let outcome = Outcome(segments: segments, transcript: transcript, language: detectedLanguage)
+        completedOutcome = outcome
+        phase = .done
+        await provider.cancel()
+        await stopBackgroundWorkAndReleaseLease()
+        return outcome
     }
 
     /// Cancel without producing a transcript. Idempotent.
@@ -189,7 +223,7 @@ public actor DictationSession {
         }
     }
 
-    private func handle(event: TranscriptionEvent) {
+    private func handle(event: TranscriptionEvent) async {
         switch event {
         case .interim(_, let lang):
             if let lang { detectedLanguage = lang }
@@ -207,6 +241,15 @@ public actor DictationSession {
             if case .serverError = reason {
                 phase = .failed("provider.closed.serverError")
                 audioTask?.cancel()
+            } else if reason == .networkLost || reason == .sessionTimeLimitExceeded {
+                // Socket died mid-press (Wi-Fi blip, session cap). Salvage the
+                // committed text so releasing the hotkey pastes what was
+                // captured instead of failing the whole dictation.
+                guard phase == .listening || phase == .finalizing else { return }
+                if await salvageAccumulatedSegments(context: "connection loss (\(reason))") == nil {
+                    phase = .failed("provider.closed.\(reason)")
+                    audioTask?.cancel()
+                }
             }
         default:
             break

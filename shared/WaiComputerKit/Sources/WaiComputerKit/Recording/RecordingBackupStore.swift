@@ -466,6 +466,19 @@ public enum RecordingBackupStore {
     }
 
     public static func listBackups() throws -> [RecordingBackup] {
+        try backupsWithManifests().map(\.backup)
+    }
+
+    /// One crawl, one manifest decode per backup, newest-first.
+    ///
+    /// The previous shape decoded manifests inside the sort comparator
+    /// (~2·N·log₂N reads) and again in `manifestsByRecordingId()` — with the
+    /// library view refreshing every few seconds during processing, dozens of
+    /// local backups meant hundreds of synchronous main-thread file decodes
+    /// per refresh.
+    public static func backupsWithManifests() throws
+        -> [(backup: RecordingBackup, manifest: RecordingBackupManifest?)]
+    {
         let base = try baseDirectory()
         guard FileManager.default.fileExists(atPath: base.path) else {
             return []
@@ -479,15 +492,17 @@ public enum RecordingBackupStore {
         .filter { url in
             (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         }
-        .compactMap { url in
+        .compactMap { url -> (RecordingBackup, RecordingBackupManifest?)? in
             let recordingId = url.lastPathComponent
-            return try? existingBackup(recordingId: recordingId)
+            guard let backup = try? existingBackup(recordingId: recordingId) else {
+                return nil
+            }
+            return (backup, try? readManifest(from: backup.manifestURL))
         }
         .sorted { lhs, rhs in
-            let lhsDate = (try? readManifest(from: lhs.manifestURL)?.updatedAt) ?? .distantPast
-            let rhsDate = (try? readManifest(from: rhs.manifestURL)?.updatedAt) ?? .distantPast
-            return lhsDate > rhsDate
+            (lhs.1?.updatedAt ?? .distantPast) > (rhs.1?.updatedAt ?? .distantPast)
         }
+        .map { (backup: $0.0, manifest: $0.1) }
     }
 
     /// Returns the expected audio file URL for a recording, without checking existence.
@@ -609,13 +624,11 @@ public enum RecordingBackupStore {
 
     public static func manifestsByRecordingId() throws -> [String: RecordingBackupManifest] {
         var manifests: [String: RecordingBackupManifest] = [:]
-
-        for backup in try listBackups() {
-            if let manifest = try readManifest(from: backup.manifestURL) {
-                manifests[backup.recordingId] = manifest
+        for entry in try backupsWithManifests() {
+            if let manifest = entry.manifest {
+                manifests[entry.backup.recordingId] = manifest
             }
         }
-
         return manifests
     }
 

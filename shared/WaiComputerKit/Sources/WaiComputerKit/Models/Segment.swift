@@ -211,3 +211,10 @@ public struct ActionItem: Codable, Identifiable, Sendable {
         case createdAt = "created_at"
     }
 }
+
+// Synthesized equality so detail-refresh polls can cheaply skip publishing an
+// unchanged transcript (avoiding a full turn re-merge + list invalidation).
+extension Segment: Equatable {}
+extension Summary: Equatable {}
+extension Decision: Equatable {}
+extension ActionItem: Equatable {}

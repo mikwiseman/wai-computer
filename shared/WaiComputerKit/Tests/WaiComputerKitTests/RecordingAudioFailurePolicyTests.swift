@@ -16,6 +16,10 @@ final class RecordingAudioFailurePolicyTests: XCTestCase {
             "upload_abandoned",
             "upload_size_mismatch",
             "audio_decode_failed",
+            // Daily transcription caps reset at midnight UTC; the local backup
+            // must survive so the next sync retries instead of losing audio.
+            "user_minutes",
+            "global_minutes",
         ] {
             XCTAssertTrue(RecordingAudioFailurePolicy.isRetryableServerFailureCode(code))
         }

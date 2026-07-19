@@ -14,6 +14,11 @@ public enum RecordingAudioFailurePolicy {
         "upload_abandoned",
         "upload_size_mismatch",
         "audio_decode_failed",
+        // Temporary daily transcription caps (reset at midnight UTC). Marking
+        // them permanent used to delete the only recoverable copy of a
+        // recording that merely arrived on a busy day.
+        "user_minutes",
+        "global_minutes",
     ]
 
     public static func isRetryableServerFailureCode(_ code: String?) -> Bool {

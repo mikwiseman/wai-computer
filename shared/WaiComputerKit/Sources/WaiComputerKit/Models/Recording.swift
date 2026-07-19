@@ -718,3 +718,8 @@ public extension Recording {
         return languageCode.lowercased().hasPrefix("ru")
     }
 }
+
+// Synthesized equality so detail-refresh polls can cheaply skip publishing an
+// unchanged detail (avoiding a full turn re-merge + list invalidation).
+extension RecordingHighlight: Equatable {}
+extension RecordingDetail: Equatable {}

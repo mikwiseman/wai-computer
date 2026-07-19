@@ -225,7 +225,78 @@ private actor FailingSendDictationProvider: ProviderSession {
     }
 }
 
+private actor NetworkLostDictationProvider: ProviderSession {
+    nonisolated let events: AsyncStream<TranscriptionEvent>
+    private let eventContinuation: AsyncStream<TranscriptionEvent>.Continuation
+
+    init() {
+        let events = AsyncStream.makeStream(of: TranscriptionEvent.self)
+        self.events = events.stream
+        self.eventContinuation = events.continuation
+    }
+
+    func open() async throws {}
+    func send(pcm16: Data) async throws {}
+
+    /// Simulate a Wi-Fi blip: optionally commit a segment, then the socket
+    /// error path yields `.closed(.networkLost)` and finishes the stream.
+    func dropConnection(after segment: LiveTranscriptSegment?) {
+        if let segment {
+            eventContinuation.yield(.committed(segment))
+        }
+        eventContinuation.yield(.closed(reason: .networkLost))
+        eventContinuation.finish()
+    }
+
+    func endTurn() async throws {
+        throw ProviderError.transcriberInternal(message: "socket is dead")
+    }
+
+    func close(timeout: Duration) async throws -> [LiveTranscriptSegment] {
+        throw ProviderError.transcriberInternal(message: "socket is dead")
+    }
+
+    func cancel() async {}
+}
+
 final class DictationSessionCommitTests: XCTestCase {
+    func testCommitSalvagesCommittedSegmentsAfterNetworkLoss() async throws {
+        let provider = NetworkLostDictationProvider()
+        let session = try makeSession(provider: provider)
+        try await session.arm()
+
+        await provider.dropConnection(after: LiveTranscriptSegment(
+            text: "два предложения уже сказаны",
+            speaker: nil,
+            isFinal: true,
+            startMs: 0,
+            endMs: 2_000,
+            confidence: 0.9
+        ))
+        // Let the event loop deliver the committed + closed events.
+        try await Task.sleep(for: .milliseconds(150))
+
+        let outcome = try await session.commit(timeout: .seconds(1))
+        XCTAssertEqual(outcome.transcript, "два предложения уже сказаны")
+        XCTAssertEqual(outcome.segments.map(\.text), ["два предложения уже сказаны"])
+    }
+
+    func testCommitStillFailsAfterNetworkLossWithNothingCaptured() async throws {
+        let provider = NetworkLostDictationProvider()
+        let session = try makeSession(provider: provider)
+        try await session.arm()
+
+        await provider.dropConnection(after: nil)
+        try await Task.sleep(for: .milliseconds(150))
+
+        do {
+            _ = try await session.commit(timeout: .milliseconds(200))
+            XCTFail("commit must fail loudly when the network died before any text was captured")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("networkLost"))
+        }
+    }
+
     func testCommitDuringArmingReturnsDeferredCommitOutcome() async throws {
         let gate = DictationCommitGate()
         let finalSegment = LiveTranscriptSegment(
