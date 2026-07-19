@@ -184,13 +184,16 @@ def _item_error(item: Item) -> ItemError | None:
     )
 
 
-def _derive_status(item: Item, has_summary: bool) -> str:
+def _derive_status(item: Item, has_summary: bool, *, has_body: bool | None = None) -> str:
     """Derive a client-facing processing status from the item's state + data.
 
     Honest statuses only: ``needs_input`` (a recoverable fetch error the user
     can resolve), ``failed`` (processing could not start), ``ready`` (summary
     present), ``fetching`` (URL awaiting its background fetch), ``summarizing``
     (body present, summary pending).
+
+    ``has_body`` lets list queries pass a SQL-computed flag so the full body
+    text (whole articles/PDFs) never leaves the database for feed pages.
     """
     if item.state == "needs_input":
         return "needs_input"
@@ -199,7 +202,10 @@ def _derive_status(item: Item, has_summary: bool) -> str:
         return "failed"
     if has_summary:
         return "ready"
-    if not (item.body or "").strip() and (item.url or "").strip():
+    body_present = (
+        has_body if has_body is not None else bool((item.body or "").strip())
+    )
+    if not body_present and (item.url or "").strip():
         return "fetching"
     return "summarizing"
 
@@ -537,7 +543,18 @@ async def list_items(
     offset: int = Query(0, ge=0),
 ) -> ItemListResponse:
     """List the user's items newest-first (the item half of the unified feed)."""
-    base = select(Item).where(Item.user_id == user.id, Item.deleted_at.is_(None))
+    from sqlalchemy import func
+    from sqlalchemy.orm import defer
+
+    # The feed never renders body text or embeddings; deferring them keeps a
+    # 50-row page from dragging 50 full articles + 6 KB vectors off disk. The
+    # status logic only needs "is there a body", computed in SQL instead.
+    has_body_expr = (func.coalesce(func.btrim(Item.body), "") != "").label("has_body")
+    base = (
+        select(Item, has_body_expr)
+        .options(defer(Item.body), defer(Item.embedding))
+        .where(Item.user_id == user.id, Item.deleted_at.is_(None))
+    )
     if source:
         base = base.where(Item.source == source)
     if kind:
@@ -546,11 +563,13 @@ async def list_items(
         folder = await _require_folder(folder_id, user.id, db)
         base = base.where(Item.folder_id == folder.id)
 
-    rows = (
+    result_rows = (
         await db.execute(
             base.order_by(Item.created_at.desc()).offset(offset).limit(limit)
         )
-    ).scalars().all()
+    ).all()
+    rows = [row[0] for row in result_rows]
+    has_body_by_id = {row[0].id: bool(row[1]) for row in result_rows}
 
     summarized_ids = set(
         (
@@ -561,8 +580,6 @@ async def list_items(
             )
         ).scalars().all()
     ) if rows else set()
-
-    from sqlalchemy import func
 
     count_q = select(func.count()).select_from(
         base.order_by(None).subquery()
@@ -578,7 +595,11 @@ async def list_items(
                 kind=r.kind,
                 title=r.title,
                 state=r.state,
-                status=_derive_status(r, r.id in summarized_ids),
+                status=_derive_status(
+                    r,
+                    r.id in summarized_ids,
+                    has_body=has_body_by_id.get(r.id, False),
+                ),
                 error=_item_error(r),
                 folder_id=str(r.folder_id) if r.folder_id else None,
                 occurred_at=r.occurred_at.isoformat() if r.occurred_at else None,

@@ -23,7 +23,7 @@ from fastapi import (
     status,
 )
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, exists, func, or_, select, text, update
+from sqlalchemy import case, delete, exists, func, or_, select, text, update
 from sqlalchemy.orm import defer, selectinload
 
 from app.api.deps import CurrentUser, Database
@@ -1470,51 +1470,63 @@ async def get_recording_analytics(
     user: CurrentUser,
     db: Database,
 ) -> AnalyticsResponse:
-    """Return aggregate statistics about the user's recordings."""
-    result = await db.execute(
-        select(Recording)
-        .where(
-            Recording.user_id == user.id,
-            Recording.deleted_at.is_(None),
-        )
-        .options(selectinload(Recording.segments))
-    )
-    recordings = list(result.scalars().all())
+    """Return aggregate statistics about the user's recordings.
 
-    total_recordings = len(recordings)
-    total_duration = sum(r.duration_seconds or 0 for r in recordings)
+    Everything aggregates in SQL: hydrating every segment ORM row here used to
+    drag the full transcript text plus 1536-dim embeddings (~6 KB/row) into the
+    worker, which froze the API for users with long histories.
+    """
+    scope = (
+        Recording.user_id == user.id,
+        Recording.deleted_at.is_(None),
+    )
+
+    totals = (
+        await db.execute(
+            select(
+                func.count(Recording.id),
+                func.coalesce(func.sum(Recording.duration_seconds), 0),
+            ).where(*scope)
+        )
+    ).one()
+    total_recordings = int(totals[0])
+    total_duration = int(totals[1])
     avg_duration = total_duration // total_recordings if total_recordings > 0 else 0
 
-    # Count words across all segments
-    total_words = 0
-    for r in recordings:
-        for s in r.segments:
-            total_words += len(s.content.split())
+    type_rows = await db.execute(
+        select(Recording.type, func.count()).where(*scope).group_by(Recording.type)
+    )
+    type_counts = {row[0]: int(row[1]) for row in type_rows}
 
-    # Type breakdown
-    type_counts: dict[str, int] = defaultdict(int)
-    for r in recordings:
-        type_counts[r.type] += 1
+    week_expr = func.to_char(Recording.created_at, 'IYYY-"W"IW')
+    week_rows = await db.execute(
+        select(week_expr, func.count()).where(*scope).group_by(week_expr).order_by(week_expr)
+    )
+    by_week = [WeekCount(week=row[0], count=int(row[1])) for row in week_rows]
 
-    # Weekly breakdown
-    week_counts: dict[str, int] = defaultdict(int)
-    for r in recordings:
-        # ISO year-week format
-        iso_year, iso_week, _ = r.created_at.isocalendar()
-        week_key = f"{iso_year}-W{iso_week:02d}"
-        week_counts[week_key] += 1
-
-    by_week = [
-        WeekCount(week=w, count=c)
-        for w, c in sorted(week_counts.items())
-    ]
+    # Whitespace-token count per segment, mirroring str.split() semantics
+    # (runs of whitespace collapse; blank content counts zero words).
+    words_per_segment = case(
+        (func.btrim(Segment.content) == "", 0),
+        else_=func.cardinality(
+            func.regexp_split_to_array(func.btrim(Segment.content), r"\s+")
+        ),
+    )
+    total_words = (
+        await db.execute(
+            select(func.coalesce(func.sum(words_per_segment), 0))
+            .select_from(Segment)
+            .join(Recording, Segment.recording_id == Recording.id)
+            .where(*scope)
+        )
+    ).scalar_one()
 
     return AnalyticsResponse(
         total_recordings=total_recordings,
         total_duration_seconds=total_duration,
         average_duration_seconds=avg_duration,
-        total_words=total_words,
-        by_type=dict(type_counts),
+        total_words=int(total_words),
+        by_type=type_counts,
         by_week=by_week,
     )
 

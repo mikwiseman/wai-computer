@@ -22,6 +22,10 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/waicomputer"
+    # Server-side ceiling for any single API-tier query. One runaway query
+    # otherwise holds a pooled connection + uvicorn worker for minutes and the
+    # whole API "freezes" for every user. Celery is exempt (NullPool branch).
+    db_statement_timeout_ms: int = 30_000
 
     # Auth - JWT_SECRET is REQUIRED, no default for security
     jwt_secret: str  # Must be set via environment variable

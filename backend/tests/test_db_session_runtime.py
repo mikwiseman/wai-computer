@@ -51,6 +51,45 @@ print("redacting-filter:" + ("yes" if has_filter else "no"))
     assert result.stdout.strip() == "redacting-filter:yes"
 
 
+def test_pooled_engine_sets_statement_timeout_and_pool_sizing(monkeypatch):
+    """The API (pooled) engine must bound every query with a server-side
+    statement_timeout so one runaway query can't hold a worker + pooled
+    connection indefinitely, and the pool must fit async concurrency."""
+    captured: dict = {}
+
+    def fake_create_async_engine(url, **kwargs):
+        captured.update(kwargs)
+        return DummyEngine(1)
+
+    monkeypatch.setattr(session_module, "create_async_engine", fake_create_async_engine)
+    monkeypatch.setattr(session_module, "_use_nullpool", False)
+
+    session_module._create_engine()
+
+    server_settings = captured["connect_args"]["server_settings"]
+    assert int(server_settings["statement_timeout"]) >= 10_000
+    assert captured["pool_size"] >= 10
+    assert captured["max_overflow"] >= 5
+    assert captured["pool_pre_ping"] is True
+
+
+def test_nullpool_engine_keeps_unbounded_statements_for_celery(monkeypatch):
+    """Celery tasks legitimately run long batch statements (backfills,
+    recovery sweeps); the NullPool branch must not inherit the API timeout."""
+    captured: dict = {}
+
+    def fake_create_async_engine(url, **kwargs):
+        captured.update(kwargs)
+        return DummyEngine(1)
+
+    monkeypatch.setattr(session_module, "create_async_engine", fake_create_async_engine)
+    monkeypatch.setattr(session_module, "_use_nullpool", True)
+
+    session_module._create_engine()
+
+    assert "connect_args" not in captured
+
+
 def test_reset_db_runtime_recreates_engine(monkeypatch):
     counter = {"value": 0}
 

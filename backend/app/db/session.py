@@ -54,14 +54,23 @@ def _create_engine():
             poolclass=NullPool,
             json_serializer=_json_serializer,
         )
+    # API tier: real pooling plus a server-side statement_timeout so a single
+    # runaway query can never pin a worker + pooled connection for minutes.
+    # Celery keeps the unbounded NullPool branch above — batch tasks (embedding
+    # backfill, recovery sweeps) may legitimately run longer statements.
     return create_async_engine(
         settings.database_url,
         echo=settings.debug,
         pool_pre_ping=True,
-        pool_size=4,
-        max_overflow=2,
+        pool_size=10,
+        max_overflow=5,
         pool_recycle=1800,
         json_serializer=_json_serializer,
+        connect_args={
+            "server_settings": {
+                "statement_timeout": str(settings.db_statement_timeout_ms),
+            }
+        },
     )
 
 
