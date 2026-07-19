@@ -18,6 +18,10 @@ interface Copy {
   micDenied: string;
   noSpeech: string;
   recordingError: string;
+  unsavedTitle: string;
+  restoredNote: string;
+  retrySave: string;
+  discardUnsaved: string;
 }
 
 const COPY: Record<Locale, Copy> = {
@@ -31,6 +35,10 @@ const COPY: Record<Locale, Copy> = {
     micDenied: "Microphone access is required to record.",
     noSpeech: "No speech was captured — nothing to save.",
     recordingError: "Recording stopped unexpectedly. Start again to keep going.",
+    unsavedTitle: "This recording isn't saved yet — it's kept in this browser.",
+    restoredNote: "An unsaved recording from a previous session was restored.",
+    retrySave: "Retry save",
+    discardUnsaved: "Discard recording",
   },
   ru: {
     start: "Запись в браузере",
@@ -42,8 +50,50 @@ const COPY: Record<Locale, Copy> = {
     micDenied: "Для записи нужен доступ к микрофону.",
     noSpeech: "Речь не распознана — сохранять нечего.",
     recordingError: "Запись неожиданно остановилась. Начните заново, чтобы продолжить.",
+    unsavedTitle: "Запись ещё не сохранена — она хранится в этом браузере.",
+    restoredNote: "Восстановлена несохранённая запись из прошлой сессии.",
+    retrySave: "Сохранить ещё раз",
+    discardUnsaved: "Удалить запись",
   },
 };
+
+/** Unsaved stop-result persisted to localStorage so a failed save (network
+ *  blip, backend error, tab crash mid-save) never loses captured speech. */
+interface PendingLiveRecording {
+  title: string;
+  folderId: string | null;
+  segments: TranscriptSegmentInput[];
+  /** Set once createRecording succeeded, so retries reuse the recording
+   *  instead of creating duplicates. */
+  recordingId?: string;
+}
+
+const PENDING_STORAGE_KEY = "wai:live-recorder:pending";
+
+function readPendingFromStorage(): PendingLiveRecording | null {
+  try {
+    const raw = localStorage.getItem(PENDING_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingLiveRecording;
+    if (!Array.isArray(parsed.segments) || parsed.segments.length === 0) return null;
+    if (typeof parsed.title !== "string") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writePendingToStorage(payload: PendingLiveRecording | null): void {
+  try {
+    if (payload) {
+      localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(payload));
+    } else {
+      localStorage.removeItem(PENDING_STORAGE_KEY);
+    }
+  } catch {
+    // Storage full/blocked — the in-memory retry UI still protects this tab.
+  }
+}
 
 function formatTimer(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
@@ -91,6 +141,8 @@ export function LiveRecorder({
   const [includeSystem, setIncludeSystem] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [pendingSave, setPendingSave] = useState<PendingLiveRecording | null>(null);
+  const [savingPending, setSavingPending] = useState(false);
   const supportsSystemAudio =
     typeof navigator !== "undefined"
     && typeof navigator.mediaDevices?.getDisplayMedia === "function";
@@ -120,6 +172,52 @@ export function LiveRecorder({
       teardownTranscriber();
     };
   }, [teardownTranscriber]);
+
+  // Restore an unsaved recording from a previous session (tab closed or
+  // crashed between stop and a successful save).
+  useEffect(() => {
+    const restored = readPendingFromStorage();
+    if (!restored) return;
+    setPendingSave(restored);
+    setNote(copy.restoredNote);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const performPendingSave = useCallback(
+    async (payload: PendingLiveRecording): Promise<boolean> => {
+      setSavingPending(true);
+      try {
+        let recordingId = payload.recordingId;
+        if (!recordingId) {
+          const recording = await createRecording({
+            title: payload.title,
+            type: "note",
+            ...(payload.folderId ? { folder_id: payload.folderId } : {}),
+          });
+          recordingId = recording.id;
+          // Remember the created recording immediately so a retry after a
+          // failed transcript save reuses it instead of duplicating.
+          const claimed = { ...payload, recordingId };
+          setPendingSave(claimed);
+          writePendingToStorage(claimed);
+        }
+        const detail = await saveTranscript(recordingId, payload.segments);
+        setPendingSave(null);
+        writePendingToStorage(null);
+        if (mountedRef.current) setNote(null);
+        onRecordingComplete(detail);
+        return true;
+      } catch (error) {
+        if (mountedRef.current) {
+          onError(error instanceof Error ? error.message : "Could not save the recording.");
+        }
+        return false;
+      } finally {
+        if (mountedRef.current) setSavingPending(false);
+      }
+    },
+    [onError, onRecordingComplete],
+  );
 
   const start = useCallback(async () => {
     setCommitted("");
@@ -234,23 +332,25 @@ export function LiveRecorder({
       setNote(copy.noSpeech);
       return;
     }
-    try {
-      const recording = await createRecording({
-        title: copy.defaultTitle(),
-        type: "note",
-        ...(folderId ? { folder_id: folderId } : {}),
-      });
-      const detail = await saveTranscript(recording.id, segments);
-      onRecordingComplete(detail);
-    } catch (error) {
-      onError(error instanceof Error ? error.message : "Could not save the recording.");
-    } finally {
-      setState("idle");
-      setSeconds(0);
+    // Persist BEFORE attempting the save: a network blip or crash mid-save
+    // must never lose captured speech (the browser has no other backup).
+    const payload: PendingLiveRecording = {
+      title: copy.defaultTitle(),
+      folderId,
+      segments,
+    };
+    setPendingSave(payload);
+    writePendingToStorage(payload);
+    const saved = await performPendingSave(payload);
+    if (!mountedRef.current) return;
+    setState("idle");
+    setSeconds(0);
+    setInterim("");
+    if (saved) {
       setCommitted("");
-      setInterim("");
     }
-  }, [clearTimer, copy, folderId, onError, onRecordingComplete]);
+    // On failure the transcript stays visible next to the retry button.
+  }, [clearTimer, copy, folderId, onError, performPendingSave]);
 
   const isActive = state === "connecting" || state === "recording" || state === "stopping";
 
@@ -267,6 +367,43 @@ export function LiveRecorder({
           <button type="button" className="live-recorder__start" onClick={() => void start()}>
             {copy.start}
           </button>
+        </div>
+      ) : pendingSave && !isActive ? (
+        <div className="live-recorder__active" data-testid="live-recorder-unsaved">
+          <p className="inline-alert" role="alert">
+            {copy.unsavedTitle}
+          </p>
+          <div className="live-recorder__transcript">
+            <p>
+              {committed || pendingSave.segments.map((segment) => segment.text).join(" ")}
+            </p>
+          </div>
+          <div className="button-row">
+            <button
+              type="button"
+              className="live-recorder__start"
+              data-testid="live-recorder-retry-save"
+              disabled={savingPending}
+              onClick={() => void performPendingSave(pendingSave)}
+            >
+              {savingPending ? copy.saving : copy.retrySave}
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              data-testid="live-recorder-discard-unsaved"
+              disabled={savingPending}
+              onClick={() => {
+                setPendingSave(null);
+                writePendingToStorage(null);
+                setCommitted("");
+                setNote(null);
+              }}
+            >
+              {copy.discardUnsaved}
+            </button>
+          </div>
+          {note ? <p className="settings-note" role="status">{note}</p> : null}
         </div>
       ) : !isActive ? (
         <div className="live-recorder__idle">

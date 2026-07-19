@@ -204,6 +204,26 @@ describe("applyDictionary", () => {
     expect(text).toBe("rewaiwaiable");
   });
 
+  it("substitutes Cyrillic entries on word boundaries (\\b is ASCII-only)", () => {
+    const { text } = applyDictionary("Позвони насте завтра", [word("насте", "Насте")]);
+    expect(text).toBe("Позвони Насте завтра");
+  });
+
+  it("does not substitute inside larger Cyrillic words", () => {
+    const { text } = applyDictionary("перенастенный", [word("насте", "X")]);
+    expect(text).toBe("перенастенный");
+  });
+
+  it("treats $ in replacements literally instead of as a regex pattern", () => {
+    const { text } = applyDictionary("price is high", [word("high", "$100 & up")]);
+    expect(text).toBe("price is $100 & up");
+  });
+
+  it("substitutes repeated adjacent occurrences", () => {
+    const { text } = applyDictionary("wai wai wai", [word("wai", "X")]);
+    expect(text).toBe("X X X");
+  });
+
   it("collects BIAS words and replacements as preserve-vocabulary", () => {
     const { vocabulary } = applyDictionary("hello", [
       word("Deepgram", null),

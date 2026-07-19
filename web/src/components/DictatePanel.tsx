@@ -106,7 +106,13 @@ function escapeRegExp(value: string): string {
 
 /** Apply the custom dictionary: REPLACE entries (word → replacement) substitute
  *  whole words case-insensitively; BIAS entries are carried by native clients
- *  as Deepgram keyterm hints before recognition. */
+ *  as Deepgram keyterm hints before recognition.
+ *
+ *  Word boundaries use Unicode letter/digit classes because JS `\b` is
+ *  ASCII-only and never matches around Cyrillic words (mirrors the native
+ *  SnippetExpander). A leading capture group stands in for lookbehind, which
+ *  is a parse-time SyntaxError on Safari < 16.4; the replacement goes through
+ *  a function so user text containing `$` is inserted literally. */
 export function applyDictionary(
   text: string,
   words: DictationDictionaryWord[],
@@ -115,8 +121,13 @@ export function applyDictionary(
   const vocabulary: string[] = [];
   for (const entry of words) {
     if (entry.replacement) {
-      out = out.replace(new RegExp(`\\b${escapeRegExp(entry.word)}\\b`, "gi"), entry.replacement);
-      vocabulary.push(entry.replacement);
+      const replacement = entry.replacement;
+      const pattern = new RegExp(
+        `(^|[^\\p{L}\\p{N}])${escapeRegExp(entry.word)}(?![\\p{L}\\p{N}])`,
+        "giu",
+      );
+      out = out.replace(pattern, (_match, prefix: string) => `${prefix}${replacement}`);
+      vocabulary.push(replacement);
     } else {
       vocabulary.push(entry.word);
     }

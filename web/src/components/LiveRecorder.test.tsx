@@ -128,6 +128,7 @@ describe("LiveRecorder", () => {
     FakeTranscriber.startState = "recording";
     FakeTranscriber.stopSegments = [];
     FakeTranscriber.stopError = null;
+    localStorage.clear();
     vi.stubGlobal("MediaStream", FakeMediaStream);
     // Default: mic-only environment with no system-audio support.
     setMediaDevices({
@@ -395,7 +396,7 @@ describe("LiveRecorder", () => {
       expect(mockSaveTranscript).not.toHaveBeenCalled();
     });
 
-    it("reports an error message when saving the transcript fails", async () => {
+    it("keeps the transcript and offers a retry when saving fails", async () => {
       FakeTranscriber.stopSegments = [segment("oops")];
       mockCreateRecording.mockResolvedValueOnce({ id: "rec-err" });
       mockSaveTranscript.mockRejectedValueOnce(new Error("network down"));
@@ -404,7 +405,44 @@ describe("LiveRecorder", () => {
       await user.click(screen.getByRole("button", { name: "Stop & save" }));
 
       await waitFor(() => expect(onError).toHaveBeenCalledWith("network down"));
-      // Always resets to idle in the finally block, even on failure.
+      // The captured speech stays on screen with a retry — not silently lost.
+      const panel = screen.getByTestId("live-recorder-unsaved");
+      expect(panel).toHaveTextContent("oops");
+      expect(localStorage.getItem("wai:live-recorder:pending")).toContain("oops");
+
+      // Retry reuses the already-created recording instead of duplicating it.
+      const savedDetail = { id: "rec-err", title: "Recording" };
+      mockSaveTranscript.mockResolvedValueOnce(savedDetail);
+      await user.click(screen.getByTestId("live-recorder-retry-save"));
+
+      await waitFor(() => {
+        expect(mockSaveTranscript).toHaveBeenLastCalledWith("rec-err", [segment("oops")]);
+      });
+      expect(mockCreateRecording).toHaveBeenCalledTimes(1);
+      expect(localStorage.getItem("wai:live-recorder:pending")).toBeNull();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Record in browser" })).toBeInTheDocument(),
+      );
+    });
+
+    it("restores an unsaved recording from a previous session and can discard it", async () => {
+      localStorage.setItem(
+        "wai:live-recorder:pending",
+        JSON.stringify({
+          title: "Recording from yesterday",
+          folderId: null,
+          segments: [segment("restored words")],
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(<LiveRecorder onRecordingComplete={vi.fn()} onError={vi.fn()} />);
+
+      const panel = screen.getByTestId("live-recorder-unsaved");
+      expect(panel).toHaveTextContent("restored words");
+
+      await user.click(screen.getByTestId("live-recorder-discard-unsaved"));
+      expect(localStorage.getItem("wai:live-recorder:pending")).toBeNull();
       expect(screen.getByRole("button", { name: "Record in browser" })).toBeInTheDocument();
     });
 
