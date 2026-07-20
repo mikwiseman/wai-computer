@@ -2,14 +2,16 @@
 
 Fixed model slots:
 
-- **Dictation realtime** favours low latency, turn detection, and short
-  push-to-talk sessions.
+- **Dictation realtime** favours transcription accuracy on natural
+  code-switched speech plus streaming live preview: OpenAI
+  ``gpt-realtime-whisper`` through the realtime proxy, finalized by manual
+  commit on hotkey release.
 - **Recording realtime** favours stable long-running streaming, live captions,
-  and diarization.
+  and diarization (Deepgram Nova-3).
 - **Batch** populates ``file_stt`` for uploaded audio.
-- **Dictation post-filter** is intentionally not advertised. Live dictation
-  uses Deepgram-native punctuation, numerals, keyterms, and find/replace hints
-  during recognition instead of a second LLM cleanup pass.
+- **Dictation post-filter** is the server-side smart cleanup pass (fillers,
+  self-corrections/backtracking, spoken formatting commands); levels live on
+  the user (``dictation_cleanup_level``), not in this registry.
 """
 
 from __future__ import annotations
@@ -25,8 +27,8 @@ TranscriptionOptionGroup = Literal[
 ]
 
 
-DEFAULT_DICTATION_LIVE_STT_PROVIDER = "deepgram"
-DEFAULT_DICTATION_LIVE_STT_MODEL = "nova-3"
+DEFAULT_DICTATION_LIVE_STT_PROVIDER = "openai"
+DEFAULT_DICTATION_LIVE_STT_MODEL = "gpt-realtime-whisper"
 DEFAULT_RECORDING_LIVE_STT_PROVIDER = "deepgram"
 DEFAULT_RECORDING_LIVE_STT_MODEL = "nova-3"
 DEFAULT_FILE_STT_PROVIDER = "elevenlabs"
@@ -53,10 +55,14 @@ class ModelOption:
 
 _DICTATION_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
     ModelOption(
-        provider="deepgram",
-        model="nova-3",
-        label="Deepgram Nova-3",
-        description="Fixed low-latency streaming speech-to-text model for live dictation.",
+        provider="openai",
+        model="gpt-realtime-whisper",
+        label="OpenAI gpt-realtime-whisper",
+        description=(
+            "Natively streaming OpenAI speech-to-text tuned for dictation: "
+            "live word-by-word preview, strong multilingual and mixed-language "
+            "accuracy."
+        ),
     ),
 )
 

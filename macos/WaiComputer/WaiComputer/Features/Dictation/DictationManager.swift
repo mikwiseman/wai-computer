@@ -100,11 +100,12 @@ final class DictationManager: ObservableObject {
     static let handsFreeHotkeyDefaultsKey = "dictationHandsFreeHotkey"
     static let legacyAICleanupDefaultsKey = "dictationAICleanup"
     static let cleanupLevelDefaultsKey = "dictationCleanupLevel"
+    static let cleanupSmartMigrationDefaultsKey = "dictationCleanupSmartMigration2026_07"
     static let contextAwareFormattingDefaultsKey = "dictationContextAwareFormatting"
     static let enabledDefaultsKey = "dictationEnabled"
-    private static let liveSTTProvider = "deepgram"
-    private static let liveSTTModel = "nova-3"
-    private static let liveSTTSampleRate = 16_000
+    private static let liveSTTProvider = "openai"
+    private static let liveSTTModel = "gpt-realtime-whisper"
+    private static let liveSTTSampleRate = 24_000
     private static let startupAudioMaxBufferedBytes = liveSTTSampleRate * 2 * 30
 
     @Published var hotkeyChoice: String {
@@ -252,10 +253,19 @@ final class DictationManager: ObservableObject {
         let defaults = UserDefaults.standard
         self.hotkeyChoice = defaults.string(forKey: Self.hotkeyDefaultsKey) ?? DictationHotkey.defaultPushToTalk.rawValue
         self.handsFreeHotkeyChoice = defaults.string(forKey: Self.handsFreeHotkeyDefaultsKey) ?? ""
-        // AI cleanup is opt-in, controlled ONLY by this Mac's Settings.
-        // Default off: Deepgram handles punctuation, numerals, and dictionary
-        // hints during recognition. Server-side settings never re-enable it.
-        self.cleanupLevel = defaults.string(forKey: Self.cleanupLevelDefaultsKey) ?? "none"
+        // Smart cleanup ships ON: fillers, spoken self-corrections ("scratch
+        // that", "забудь"), and formatting commands are the marquee dictation
+        // behavior. Stored "none" from the June-2026 force-disable era is not
+        // a user choice — migrate it to "medium" exactly once; a "none" the
+        // user picks AFTER this migration is respected forever.
+        let storedCleanupLevel = defaults.string(forKey: Self.cleanupLevelDefaultsKey)
+        if !defaults.bool(forKey: Self.cleanupSmartMigrationDefaultsKey), storedCleanupLevel == "none" {
+            self.cleanupLevel = "medium"
+            defaults.set("medium", forKey: Self.cleanupLevelDefaultsKey)
+        } else {
+            self.cleanupLevel = storedCleanupLevel ?? "medium"
+        }
+        defaults.set(true, forKey: Self.cleanupSmartMigrationDefaultsKey)
         defaults.removeObject(forKey: Self.legacyAICleanupDefaultsKey)
         if defaults.object(forKey: Self.contextAwareFormattingDefaultsKey) == nil {
             self.contextAwareFormattingEnabled = true

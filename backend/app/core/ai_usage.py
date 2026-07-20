@@ -53,6 +53,9 @@ _PRICE_BY_PROVIDER_MODEL: dict[tuple[str, str], dict[str, float]] = {
         "output_per_1m": 30.00,
     },
     (OPENAI_PROVIDER, "text-embedding-3-large"): {"input_per_1m": 0.13},
+    # Live dictation STT via the realtime proxy; duration-priced per audio
+    # minute (developers.openai.com/api/docs/pricing, July 2026).
+    (OPENAI_PROVIDER, "gpt-realtime-whisper"): {"audio_per_min": 0.017},
     (CEREBRAS_PROVIDER, "gpt-oss-120b"): {
         "input_per_1m": 0.25,
         "output_per_1m": 0.69,

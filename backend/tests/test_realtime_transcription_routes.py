@@ -95,7 +95,7 @@ async def test_realtime_transcription_session_mints_local_proxy_token(
     mock_authenticated_user,
 ):
     with patch(
-        "app.core.realtime_transcription.require_deepgram_api_key",
+        "app.core.realtime_transcription.require_openai_api_key",
         return_value="provider_key",
     ):
         async with AsyncClient(
@@ -115,8 +115,13 @@ async def test_realtime_transcription_session_mints_local_proxy_token(
     payload = response.json()
     assert payload["websocket_url"] == "wss://wai.computer/api/transcription/stream"
     assert payload["auth_scheme"] == "bearer"
-    assert payload["model"] == "nova-3"
+    assert payload["model"] == "gpt-realtime-whisper"
+    assert payload["provider"] == "openai"
+    assert payload["sample_rate"] == 24_000
+    assert payload["keep_alive_interval_seconds"] is None
+    assert payload["commit_strategy"] == "manual"
     claims = decode_realtime_proxy_token(payload["token"])
+    assert claims.provider == "openai"
     assert claims.language == "ru"
     assert claims.purpose == "dictation"
     assert "WaiComputer" in claims.keyterms
@@ -1129,11 +1134,29 @@ async def test_realtime_session_503_when_transcription_halted(mock_authenticated
 
 @pytest.mark.asyncio
 async def test_realtime_session_503_when_circuit_breaker_open(mock_authenticated_user):
+    """The Deepgram breaker gates Deepgram-backed mints (recording)."""
     from app.core import transcription_guard as guard
 
     await guard.record_provider_result(success=False, status_code=402)
-    response = await _post_session()
+    response = await _post_session(
+        {"language": "multi", "channels": 1, "purpose": "recording"}
+    )
     assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_realtime_dictation_mint_ignores_deepgram_breaker(mock_authenticated_user):
+    """Dictation rides OpenAI; a Deepgram outage must not block it."""
+    from app.core import transcription_guard as guard
+
+    await guard.record_provider_result(success=False, status_code=402)
+    with patch(
+        "app.core.realtime_transcription.require_openai_api_key",
+        return_value="provider_key",
+    ):
+        response = await _post_session()
+    assert response.status_code == 200
+    assert response.json()["provider"] == "openai"
 
 
 @pytest.mark.asyncio
@@ -1274,3 +1297,258 @@ async def test_realtime_stream_force_closes_at_max_duration(monkeypatch):
         await route.stream_realtime_transcription(websocket)
     assert route.PROXY_ERROR_SESSION_EXPIRED in websocket.json_payloads
     assert websocket.closed_codes == [1000]
+
+
+# --- OpenAI realtime bridge (dictation) --------------------------------------
+
+import base64  # noqa: E402
+import json as _json  # noqa: E402
+
+
+def _openai_claims(
+    replacements: list[tuple[str, str]] | None = None,
+) -> RealtimeTranscriptionProxyClaims:
+    return RealtimeTranscriptionProxyClaims(
+        subject="user-transcription",
+        language="ru",
+        channels=1,
+        model="gpt-realtime-whisper",
+        purpose="dictation",
+        provider="openai",
+        replacements=replacements or [],
+    )
+
+
+class OpenAIScriptedProvider:
+    """Interactive OpenAI realtime fake: replies to session.update and commit."""
+
+    _END = object()
+
+    def __init__(
+        self,
+        *,
+        reject_session: bool = False,
+        error_on_append: dict | None = None,
+    ) -> None:
+        self.sent: list[str] = []
+        self.closed = False
+        self.reject_session = reject_session
+        self.error_on_append = error_on_append
+        self._queue: asyncio.Queue = asyncio.Queue()
+
+    def script(self, event: dict) -> None:
+        self._queue.put_nowait(_json.dumps(event))
+
+    async def send(self, payload: str) -> None:
+        self.sent.append(payload)
+        message = _json.loads(payload)
+        message_type = message.get("type")
+        if message_type == "session.update":
+            if self.reject_session:
+                self.script(
+                    {
+                        "type": "error",
+                        "error": {"code": "invalid_value", "message": "bad config"},
+                    }
+                )
+                return
+            self.script({"type": "session.created"})
+            self.script({"type": "session.updated"})
+        elif message_type == "input_audio_buffer.append":
+            if self.error_on_append is not None:
+                self.script({"type": "error", "error": self.error_on_append})
+                self.error_on_append = None
+        elif message_type == "input_audio_buffer.commit":
+            self.script(
+                {
+                    "type": "conversation.item.input_audio_transcription.delta",
+                    "item_id": "item_1",
+                    "delta": "привет мир",
+                }
+            )
+            self.script(
+                {
+                    "type": "conversation.item.input_audio_transcription.completed",
+                    "item_id": "item_1",
+                    "transcript": "Привет, мир!",
+                }
+            )
+
+    async def recv(self) -> str:
+        item = await self._queue.get()
+        if item is self._END:
+            raise StopAsyncIteration
+        return item
+
+    async def close(self) -> None:
+        self.closed = True
+        self._queue.put_nowait(self._END)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> str:
+        item = await self._queue.get()
+        if item is self._END:
+            raise StopAsyncIteration
+        return item
+
+
+def _patched_openai_stream(provider: OpenAIScriptedProvider, claims=None):
+    return (
+        patch(
+            "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+            return_value=claims or _openai_claims(),
+        ),
+        patch(
+            "app.api.routes.realtime_transcription.require_openai_api_key",
+            return_value="server-openai-key",
+        ),
+        patch(
+            "app.api.routes.realtime_transcription.websockets.connect",
+            new=lambda url, **kwargs: FakeProviderConnection(provider),
+        ),
+        patch(
+            "app.api.routes.realtime_transcription._websockets_header_kwarg",
+            return_value="additional_headers",
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_openai_stream_translates_audio_finalize_and_close():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    provider = OpenAIScriptedProvider()
+    pcm = b"\x01\x02" * (24_000 // 2)  # 500 ms of 24 kHz PCM16
+    websocket.queue_receive({"type": "websocket.receive", "bytes": pcm})
+    websocket.queue_receive({"type": "websocket.receive", "text": '{"type":"KeepAlive"}'})
+    websocket.queue_receive({"type": "websocket.receive", "text": '{"type":"Finalize"}'})
+    websocket.queue_receive({"type": "websocket.receive", "text": '{"type":"CloseStream"}'})
+
+    claims = _openai_claims(replacements=[("мир", "world")])
+    patches = _patched_openai_stream(provider, claims)
+    with patches[0], patches[1], patches[2], patches[3]:
+        await route.stream_realtime_transcription(websocket)
+
+    sent_types = [_json.loads(item).get("type") for item in provider.sent]
+    assert sent_types[0] == "session.update"
+    session_config = _json.loads(provider.sent[0])["session"]
+    assert session_config["type"] == "transcription"
+    assert session_config["audio"]["input"]["turn_detection"] is None
+    assert session_config["audio"]["input"]["transcription"]["model"] == "gpt-realtime-whisper"
+
+    appends = [
+        _json.loads(item)
+        for item in provider.sent
+        if _json.loads(item).get("type") == "input_audio_buffer.append"
+    ]
+    assert base64.b64decode(appends[0]["audio"]) == pcm
+    assert "input_audio_buffer.commit" in sent_types
+
+    results = [p for p in websocket.json_payloads if p.get("type") == "Results"]
+    assert results, websocket.json_payloads
+    interim = results[0]
+    assert interim["is_final"] is False
+    assert interim["channel"]["alternatives"][0]["transcript"] == "привет world"
+    final = results[-1]
+    assert final["is_final"] is True
+    assert final["from_finalize"] is True
+    assert final["channel"]["alternatives"][0]["transcript"] == "Привет, world!"
+
+    assert provider.closed is True
+    assert websocket.closed_codes == [1000]
+
+
+@pytest.mark.asyncio
+async def test_openai_stream_marks_empty_finalize_without_commit():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    provider = OpenAIScriptedProvider()
+    # 50 ms of audio — below the 120 ms commit floor.
+    websocket.queue_receive({"type": "websocket.receive", "bytes": b"\x00" * 2_400})
+    websocket.queue_receive({"type": "websocket.receive", "text": '{"type":"Finalize"}'})
+    websocket.queue_receive({"type": "websocket.receive", "text": '{"type":"CloseStream"}'})
+
+    patches = _patched_openai_stream(provider)
+    with patches[0], patches[1], patches[2], patches[3]:
+        await route.stream_realtime_transcription(websocket)
+
+    sent_types = [_json.loads(item).get("type") for item in provider.sent]
+    assert "input_audio_buffer.commit" not in sent_types
+    metadata_frames = [p for p in websocket.json_payloads if p.get("type") == "Metadata"]
+    assert metadata_frames, websocket.json_payloads
+    assert websocket.closed_codes == [1000]
+
+
+@pytest.mark.asyncio
+async def test_openai_stream_rejected_session_config_fails_loudly():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    provider = OpenAIScriptedProvider(reject_session=True)
+
+    patches = _patched_openai_stream(provider)
+    with patches[0], patches[1], patches[2], patches[3]:
+        await route.stream_realtime_transcription(websocket)
+
+    assert route.PROXY_ERROR_PAYLOAD in websocket.json_payloads
+    assert websocket.closed_codes == [1011]
+
+
+@pytest.mark.asyncio
+async def test_openai_stream_reports_missing_api_key():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_openai_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_openai_api_key",
+        side_effect=ValueError("OPENAI_API_KEY is not configured"),
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert websocket.json_payloads == [route.PROXY_ERROR_MISSING_API_KEY]
+    assert websocket.closed_codes == [1011]
+
+
+@pytest.mark.asyncio
+async def test_openai_stream_client_disconnect_closes_provider():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    provider = OpenAIScriptedProvider()
+    websocket.queue_receive({"type": "websocket.receive", "bytes": b"\x00" * 9_600})
+    websocket.queue_receive({"type": "websocket.disconnect"})
+
+    patches = _patched_openai_stream(provider)
+    with patches[0], patches[1], patches[2], patches[3]:
+        await route.stream_realtime_transcription(websocket)
+
+    assert provider.closed is True
+    # Client is gone: no close frame is owed to it.
+    assert websocket.closed_codes == []
+
+
+@pytest.mark.asyncio
+async def test_openai_stream_maps_upstream_error_frames():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    provider = OpenAIScriptedProvider(
+        error_on_append={"code": "insufficient_quota", "message": "Quota exceeded"},
+    )
+    websocket.queue_receive({"type": "websocket.receive", "bytes": b"\x00" * 9_600})
+    websocket.queue_receive({"type": "websocket.receive", "text": '{"type":"CloseStream"}'})
+
+    patches = _patched_openai_stream(provider)
+    with patches[0], patches[1], patches[2], patches[3]:
+        await route.stream_realtime_transcription(websocket)
+
+    error_frames = [p for p in websocket.json_payloads if p.get("type") == "Error"]
+    assert error_frames and error_frames[0]["err_code"] == "insufficient_quota"

@@ -119,15 +119,15 @@ function segment(text: string): TranscriptSegmentInput {
 
 function sessionResponse(over: Partial<RealtimeSessionResponse> = {}): RealtimeSessionResponse {
   return {
-    provider: "deepgram",
+    provider: "openai",
     token: "prefetched token",
     expires_in_seconds: 60,
-    sample_rate: 16000,
+    sample_rate: 24000,
     audio_format: "linear16",
     language: "multi",
     channels: 1,
-    model: "nova-3",
-    keep_alive_interval_seconds: 8,
+    model: "gpt-realtime-whisper",
+    keep_alive_interval_seconds: null,
     commit_strategy: null,
     no_verbatim: false,
     websocket_url: "wss://wai.computer/api/transcription/stream",

@@ -107,8 +107,8 @@ class User(Base, UUIDMixin, TimestampMixin):
     )
     dictation_cleanup_level: Mapped[str] = mapped_column(
         String(20),
-        default="none",
-        server_default="none",
+        default="medium",
+        server_default="medium",
         nullable=False,
     )
     dictation_post_filter_provider: Mapped[str] = mapped_column(

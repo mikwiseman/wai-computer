@@ -123,9 +123,9 @@ async def test_create_realtime_transcription_session_ignores_user_recording_choi
 
 
 @pytest.mark.asyncio
-async def test_create_dictation_session_adds_english_dictation_params():
+async def test_create_dictation_session_uses_openai_realtime():
     with patch(
-        "app.core.realtime_transcription.require_deepgram_api_key",
+        "app.core.realtime_transcription.require_openai_api_key",
         return_value="provider_key",
     ):
         session = await create_realtime_transcription_session(
@@ -134,21 +134,17 @@ async def test_create_dictation_session_adds_english_dictation_params():
             purpose="dictation",
         )
 
-    assert session.provider == "deepgram"
-    assert session.model == DEEPGRAM_REALTIME_MODEL
+    assert session.provider == "openai"
+    assert session.model == "gpt-realtime-whisper"
+    assert session.sample_rate == 24_000
+    assert session.channels == 1
+    assert session.keep_alive_interval_seconds is None
+    assert session.commit_strategy == "manual"
     claims = decode_realtime_proxy_token(session.token)
-    provider_url = build_realtime_websocket_url(
-        language=claims.language,
-        channels=claims.channels,
-        purpose=claims.purpose,
-        model=claims.model,
-    )
-    assert "dictation=true" in provider_url
-    assert "punctuate=true" in provider_url
-    assert "numerals=true" in provider_url
-    assert "smart_format=true" not in provider_url
-    assert "utterances=true" not in provider_url
-    assert "endpointing=10" in provider_url
+    assert claims.provider == "openai"
+    assert claims.purpose == "dictation"
+    assert claims.language == "en-us"
+    assert claims.model == "gpt-realtime-whisper"
 
 
 @pytest.mark.asyncio

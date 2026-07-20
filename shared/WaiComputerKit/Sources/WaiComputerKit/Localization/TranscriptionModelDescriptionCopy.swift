@@ -57,8 +57,12 @@ public enum TranscriptionModelDescriptionCopy {
     }
 
     private static let russianCopy: [CopyKey: String] = [
+        CopyKey(context: .dictationLiveSTT, provider: "openai", model: "gpt-realtime-whisper"):
+            "По умолчанию для диктовки. OpenAI gpt-realtime-whisper: потоковое распознавание "
+            + "с высокой точностью, включая смешанную русско-английскую речь.",
+
         CopyKey(context: .dictationLiveSTT, provider: "deepgram", model: "nova-3"):
-            "По умолчанию для диктовки. Deepgram Nova-3 для быстрого потокового распознавания речи.",
+            "Deepgram Nova-3 для быстрого потокового распознавания речи.",
 
         CopyKey(context: .recordingLiveSTT, provider: "deepgram", model: "nova-3"):
             "По умолчанию для живой записи. Deepgram Nova-3 для быстрого потокового распознавания речи.",

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTranscriptionSession } from "@/lib/api";
-import { downsampleTo16kInt16 } from "@/lib/audio/pcm";
+import { downsamplePcmInt16 } from "@/lib/audio/pcm";
 import type { RealtimeSessionResponse } from "@/lib/types";
 
 import {
@@ -14,12 +14,13 @@ vi.mock("@/lib/api", () => ({
   createTranscriptionSession: vi.fn(),
 }));
 
-vi.mock("@/lib/audio/pcm", () => ({
-  downsampleTo16kInt16: vi.fn(),
+vi.mock("@/lib/audio/pcm", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/audio/pcm")>()),
+  downsamplePcmInt16: vi.fn(),
 }));
 
 const mockedCreateSession = vi.mocked(createTranscriptionSession);
-const mockedDownsample = vi.mocked(downsampleTo16kInt16);
+const mockedDownsample = vi.mocked(downsamplePcmInt16);
 
 // ---------------------------------------------------------------------------
 // Controllable browser-API fakes (jsdom ships none of these).
@@ -150,6 +151,20 @@ function sessionResponse(over: Partial<RealtimeSessionResponse> = {}): RealtimeS
     auth_scheme: "query",
     ...over,
   };
+}
+
+/** Dictation sessions ride OpenAI realtime through the proxy: 24 kHz, no keepalive. */
+function dictationSessionResponse(
+  over: Partial<RealtimeSessionResponse> = {},
+): RealtimeSessionResponse {
+  return sessionResponse({
+    provider: "openai",
+    model: "gpt-realtime-whisper",
+    sample_rate: 24000,
+    keep_alive_interval_seconds: null,
+    commit_strategy: "manual",
+    ...over,
+  });
 }
 
 let lastAudioWorkletNode: FakeAudioWorkletNode | null = null;
@@ -295,7 +310,7 @@ describe("RealtimeTranscriber.start", () => {
       purpose: "dictation",
       onState: (s) => states.push(s),
     });
-    mockedCreateSession.mockResolvedValue(sessionResponse());
+    mockedCreateSession.mockResolvedValue(dictationSessionResponse());
     const a = fakeStream();
     const b = fakeStream();
 
@@ -403,7 +418,7 @@ describe("RealtimeTranscriber socket URL building", () => {
       keyterms: ["WaiComputer"],
       replacements: [{ find: "wai computer", replace: "WaiComputer" }],
     });
-    mockedCreateSession.mockResolvedValue(sessionResponse());
+    mockedCreateSession.mockResolvedValue(dictationSessionResponse());
 
     await startRecording(transcriber, fakeStream().mediaStream);
 
@@ -426,7 +441,7 @@ describe("RealtimeTranscriber socket URL building", () => {
     const ws = await startRecording(transcriber, fakeStream().mediaStream, {
       prefetchedSession: {
         request,
-        session: sessionResponse({
+        session: dictationSessionResponse({
           token: "warm token",
           websocket_url: "wss://wai.computer/api/transcription/stream",
         }),
@@ -442,7 +457,7 @@ describe("RealtimeTranscriber socket URL building", () => {
       purpose: "dictation",
       keyterms: ["Current"],
     });
-    mockedCreateSession.mockResolvedValue(sessionResponse({ token: "fresh token" }));
+    mockedCreateSession.mockResolvedValue(dictationSessionResponse({ token: "fresh token" }));
 
     const ws = await startRecording(transcriber, fakeStream().mediaStream, {
       prefetchedSession: {
@@ -450,7 +465,7 @@ describe("RealtimeTranscriber socket URL building", () => {
           purpose: "dictation",
           keyterms: ["Stale"],
         },
-        session: sessionResponse({ token: "stale token" }),
+        session: dictationSessionResponse({ token: "stale token" }),
       },
     });
 
@@ -502,15 +517,15 @@ describe("RealtimeTranscriber keep-alive", () => {
     expect(ws.sent.length).toBe(before);
   });
 
-  it("defaults the keep-alive interval to the provider-safe 4s when null", async () => {
+  it("sends no keep-alive frames when the mint explicitly returns null", async () => {
+    // Null is a provider contract (OpenAI realtime needs no app-level
+    // keepalives), not a missing value to default away.
     const transcriber = new RealtimeTranscriber();
     mockedCreateSession.mockResolvedValue(sessionResponse({ keep_alive_interval_seconds: null }));
     const ws = await startRecording(transcriber, fakeStream().mediaStream);
 
-    vi.advanceTimersByTime(3999);
+    vi.advanceTimersByTime(60_000);
     expect(ws.sent).not.toContainEqual(JSON.stringify({ type: "KeepAlive" }));
-    vi.advanceTimersByTime(1);
-    expect(ws.sent).toContainEqual(JSON.stringify({ type: "KeepAlive" }));
   });
 });
 
@@ -535,7 +550,7 @@ describe("RealtimeTranscriber audio streaming", () => {
     ws.onopen?.();
     await startPromise;
 
-    expect(mockedDownsample).toHaveBeenCalledWith(startupFloat, 48000);
+    expect(mockedDownsample).toHaveBeenCalledWith(startupFloat, 48000, 16000);
     expect(ws.sent[0]).toBe(startupInt16.buffer);
 
     const liveFloat = new Float32Array([0.3, 0.4]);
@@ -557,7 +572,7 @@ describe("RealtimeTranscriber audio streaming", () => {
 
     lastAudioWorkletNode?.port.onmessage?.({ data: float } as MessageEvent);
 
-    expect(mockedDownsample).toHaveBeenCalledWith(float, 48000);
+    expect(mockedDownsample).toHaveBeenCalledWith(float, 48000, 16000);
     expect(ws.sent).toContainEqual(int16.buffer);
   });
 

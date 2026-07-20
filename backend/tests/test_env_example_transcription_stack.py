@@ -32,6 +32,8 @@ def test_active_code_exposes_only_current_speech_to_text_stack():
     ignored_subpaths = {
         ("backend", "app", "db", "migrations", "versions"),
     }
+    # gpt-realtime-whisper is the CURRENT dictation live-STT model (July 2026)
+    # and is intentionally absent from this retired-token list.
     removed_stt_tokens = (
         "ELEVENLABS_" + "REALTIME_SPEECH_TO_TEXT_MODEL",
         "IN" + "WORLD_API_KEY",
@@ -39,7 +41,6 @@ def test_active_code_exposes_only_current_speech_to_text_stack():
         "scribe_v2" + "_realtime",
         "realtime_" + "scribe",
         "gpt-realtime-" + "2",
-        "gpt-realtime-" + "whisper",
         "son" + "iox",
         "in" + "world",
         "whisper-" + "1",

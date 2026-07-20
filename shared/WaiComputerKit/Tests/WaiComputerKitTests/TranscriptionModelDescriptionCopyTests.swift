@@ -4,10 +4,10 @@ import XCTest
 final class TranscriptionModelDescriptionCopyTests: XCTestCase {
     func testRussianDescriptionUsesClientCopyForKnownOptions() {
         let option = TranscriptionModelOption(
-            provider: "deepgram",
-            model: "nova-3",
-            label: "Deepgram Nova-3",
-            description: "Default for dictation. Deepgram Nova-3 for streaming speech recognition."
+            provider: "openai",
+            model: "gpt-realtime-whisper",
+            label: "OpenAI gpt-realtime-whisper",
+            description: "Natively streaming OpenAI speech-to-text tuned for dictation."
         )
 
         let description = TranscriptionModelDescriptionCopy.description(
@@ -18,9 +18,10 @@ final class TranscriptionModelDescriptionCopyTests: XCTestCase {
 
         XCTAssertEqual(
             description,
-            "По умолчанию для диктовки. Deepgram Nova-3 для быстрого потокового распознавания речи."
+            "По умолчанию для диктовки. OpenAI gpt-realtime-whisper: потоковое распознавание "
+                + "с высокой точностью, включая смешанную русско-английскую речь."
         )
-        XCTAssertFalse(description.contains("Default for dictation"))
+        XCTAssertFalse(description.contains("Natively streaming"))
     }
 
     func testEnglishDescriptionPreservesServerCopy() {

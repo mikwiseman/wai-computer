@@ -1,6 +1,7 @@
 """Realtime transcription session routes and backend provider proxy."""
 
 import asyncio
+import base64
 import inspect
 import json
 import logging
@@ -14,6 +15,12 @@ from websockets.exceptions import ConnectionClosed
 
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
+from app.core.ai_usage import (
+    FEATURE_DICTATION,
+    FEATURE_RECORDING,
+    OPENAI_PROVIDER,
+    record_ai_usage_event_standalone,
+)
 from app.core.deepgram import require_deepgram_api_key
 from app.core.deepgram_usage import (
     effective_billable_seconds,
@@ -25,8 +32,20 @@ from app.core.observability import (
     capture_sentry_anomaly,
     capture_sentry_exception,
 )
+from app.core.openai_realtime import (
+    OPENAI_REALTIME_WEBSOCKET_URL,
+    build_transcription_session_update,
+    require_openai_api_key,
+)
+from app.core.openai_realtime_bridge import (
+    FINALIZE_MARKER_FRAME,
+    FinalizeAction,
+    OpenAIRealtimeBridgeState,
+    compile_replacements,
+)
 from app.core.personalization import load_user_realtime_hints
 from app.core.realtime_transcription import (
+    RealtimeTranscriptionProxyClaims,
     UnsupportedRealtimeLanguageError,
     build_deepgram_realtime_url_from_proxy_claims,
     create_realtime_transcription_session,
@@ -130,6 +149,21 @@ class RealtimeTranscriptionSessionResponse(BaseModel):
     auth_scheme: str = "bearer"
 
 
+def _expected_live_stt_provider(purpose: str) -> str:
+    from app.core.transcription_options import (
+        DEFAULT_DICTATION_LIVE_STT_PROVIDER,
+        DEFAULT_RECORDING_LIVE_STT_PROVIDER,
+    )
+
+    if purpose == "dictation":
+        return DEFAULT_DICTATION_LIVE_STT_PROVIDER
+    return DEFAULT_RECORDING_LIVE_STT_PROVIDER
+
+
+def _ai_usage_feature(purpose: str) -> str:
+    return FEATURE_DICTATION if purpose == "dictation" else FEATURE_RECORDING
+
+
 async def _record_realtime_mint_event(
     db: Database,
     *,
@@ -144,6 +178,24 @@ async def _record_realtime_mint_event(
     error_type: str | None = None,
     keyterms: list[str] | None = None,
 ) -> None:
+    if _expected_live_stt_provider(purpose) == "openai":
+        await record_ai_usage_event_standalone(
+            provider=OPENAI_PROVIDER,
+            feature=_ai_usage_feature(purpose),
+            operation="realtime_session_mint",
+            status=status,
+            user_id=user_id,
+            model=model,
+            audio_seconds=0,
+            billable_seconds=0,
+            channel_count=channels,
+            latency_ms=latency_ms,
+            guard_code=guard_code,
+            error_type=error_type,
+            billing_mode="streaming",
+            details={"purpose": purpose, "language": language},
+        )
+        return
     await record_deepgram_usage_event(
         db,
         user_id=user_id,
@@ -239,7 +291,7 @@ async def create_session(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=UNAVAILABLE_DETAIL,
         )
-    if await provider_breaker_open():
+    if _expected_live_stt_provider(request.purpose) == "deepgram" and await provider_breaker_open():
         latency_ms = round((perf_counter() - started_at) * 1000)
         await _record_realtime_mint_event(
             db,
@@ -551,71 +603,59 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         )
         return
 
-    target_url = build_deepgram_realtime_url_from_proxy_claims(claims)
-    try:
-        deepgram_api_key = require_deepgram_api_key()
-    except ValueError:
-        await record_deepgram_usage_event_standalone(
-            user_id=claims.subject,
-            operation="realtime_stream",
-            purpose=claims.purpose,
-            status="refused",
-            model=claims.model,
-            language=claims.language,
-            audio_seconds=0,
-            billable_seconds=0,
-            channel_count=claims.channels,
-            guard_code="missing_api_key",
-            billing_mode="streaming",
-            language_mode="multilingual",
-            addons=_realtime_deepgram_addons(
-                purpose=claims.purpose,
-                keyterms=claims.keyterms,
-            ),
-        )
-        await websocket.accept()
-        await _send_error_payload(websocket, PROXY_ERROR_MISSING_API_KEY)
-        await _close_websocket_with_telemetry(
-            websocket,
-            code=1011,
-            err_code="PROVIDER_UNAVAILABLE",
-            extras={
-                "stage": "api_key",
-                "provider": "deepgram",
-                "model": claims.model,
-                "language": claims.language,
-                "purpose": claims.purpose,
-            },
-        )
-        return
+    if claims.provider == "openai":
+        target_url = OPENAI_REALTIME_WEBSOCKET_URL
+        try:
+            provider_api_key = require_openai_api_key()
+        except ValueError:
+            await _record_stream_refusal(claims, guard_code="missing_api_key")
+            await websocket.accept()
+            await _send_error_payload(websocket, PROXY_ERROR_MISSING_API_KEY)
+            await _close_websocket_with_telemetry(
+                websocket,
+                code=1011,
+                err_code="PROVIDER_UNAVAILABLE",
+                extras={
+                    "stage": "api_key",
+                    "provider": claims.provider,
+                    "model": claims.model,
+                    "language": claims.language,
+                    "purpose": claims.purpose,
+                },
+            )
+            return
+    else:
+        target_url = build_deepgram_realtime_url_from_proxy_claims(claims)
+        try:
+            provider_api_key = require_deepgram_api_key()
+        except ValueError:
+            await _record_stream_refusal(claims, guard_code="missing_api_key")
+            await websocket.accept()
+            await _send_error_payload(websocket, PROXY_ERROR_MISSING_API_KEY)
+            await _close_websocket_with_telemetry(
+                websocket,
+                code=1011,
+                err_code="PROVIDER_UNAVAILABLE",
+                extras={
+                    "stage": "api_key",
+                    "provider": claims.provider,
+                    "model": claims.model,
+                    "language": claims.language,
+                    "purpose": claims.purpose,
+                },
+            )
+            return
 
     await websocket.accept()
 
     if await transcription_halted():
-        await record_deepgram_usage_event_standalone(
-            user_id=claims.subject,
-            operation="realtime_stream",
-            purpose=claims.purpose,
-            status="refused",
-            model=claims.model,
-            language=claims.language,
-            audio_seconds=0,
-            billable_seconds=0,
-            channel_count=claims.channels,
-            guard_code="transcription_halted",
-            billing_mode="streaming",
-            language_mode="multilingual",
-            addons=_realtime_deepgram_addons(
-                purpose=claims.purpose,
-                keyterms=claims.keyterms,
-            ),
-        )
+        await _record_stream_refusal(claims, guard_code="transcription_halted")
         await _send_error_payload(websocket, PROXY_ERROR_HALTED)
         await _close_websocket_with_telemetry(
             websocket,
             code=1011,
             err_code="TRANSCRIPTION_HALTED",
-            extras={"stage": "killswitch", "provider": "deepgram", "purpose": claims.purpose},
+            extras={"stage": "killswitch", "provider": claims.provider, "purpose": claims.purpose},
         )
         return
 
@@ -630,24 +670,7 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
     lease_ttl_seconds = (max_stream_seconds if max_stream_seconds > 0 else 21600) + 300
     stream_token = await acquire_stream_slot(claims.subject, lease_ttl_seconds=lease_ttl_seconds)
     if stream_token is None:
-        await record_deepgram_usage_event_standalone(
-            user_id=claims.subject,
-            operation="realtime_stream",
-            purpose=claims.purpose,
-            status="refused",
-            model=claims.model,
-            language=claims.language,
-            audio_seconds=0,
-            billable_seconds=0,
-            channel_count=claims.channels,
-            guard_code="too_many_streams",
-            billing_mode="streaming",
-            language_mode="multilingual",
-            addons=_realtime_deepgram_addons(
-                purpose=claims.purpose,
-                keyterms=claims.keyterms,
-            ),
-        )
+        await _record_stream_refusal(claims, guard_code="too_many_streams")
         capture_sentry_anomaly(
             "realtime.stream.too_many_concurrent",
             "Realtime stream refused: per-user/global concurrent-stream cap reached",
@@ -660,10 +683,21 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
             websocket,
             code=1008,
             err_code="TOO_MANY_STREAMS",
-            extras={"stage": "concurrency", "provider": "deepgram", "purpose": claims.purpose},
+            extras={"stage": "concurrency", "provider": claims.provider, "purpose": claims.purpose},
         )
         return
 
+    if claims.provider == "openai":
+        await _stream_openai_after_slot(
+            websocket,
+            claims,
+            stream_token=stream_token,
+            api_key=provider_api_key,
+            max_stream_seconds=max_stream_seconds,
+        )
+        return
+
+    deepgram_api_key = provider_api_key
     stream_started = perf_counter()
     provider_opened = False
     stream_status = "succeeded"
@@ -978,6 +1012,468 @@ async def _provider_to_client(
             return CLIENT_DISCONNECTED
         raise
     return PROVIDER_COMPLETED
+
+
+async def _record_stream_refusal(
+    claims: RealtimeTranscriptionProxyClaims,
+    *,
+    guard_code: str,
+) -> None:
+    if claims.provider == "openai":
+        await _record_openai_stream_usage(
+            claims,
+            status="refused",
+            guard_code=guard_code,
+        )
+        return
+    await record_deepgram_usage_event_standalone(
+        user_id=claims.subject,
+        operation="realtime_stream",
+        purpose=claims.purpose,
+        status="refused",
+        model=claims.model,
+        language=claims.language,
+        audio_seconds=0,
+        billable_seconds=0,
+        channel_count=claims.channels,
+        guard_code=guard_code,
+        billing_mode="streaming",
+        language_mode="multilingual",
+        addons=_realtime_deepgram_addons(
+            purpose=claims.purpose,
+            keyterms=claims.keyterms,
+        ),
+    )
+
+
+async def _record_openai_stream_usage(
+    claims: RealtimeTranscriptionProxyClaims,
+    *,
+    status: str,
+    audio_seconds: float = 0.0,
+    billable_seconds: float | None = None,
+    latency_ms: int | None = None,
+    guard_code: str | None = None,
+    error_type: str | None = None,
+    provider_status_code: int | None = None,
+    details: dict[str, object] | None = None,
+) -> None:
+    await record_ai_usage_event_standalone(
+        provider=OPENAI_PROVIDER,
+        feature=_ai_usage_feature(claims.purpose),
+        operation="realtime_stream",
+        status=status,
+        user_id=claims.subject,
+        model=claims.model,
+        audio_seconds=audio_seconds,
+        billable_seconds=billable_seconds if billable_seconds is not None else audio_seconds,
+        channel_count=claims.channels,
+        latency_ms=latency_ms,
+        guard_code=guard_code,
+        error_type=error_type,
+        provider_status_code=provider_status_code,
+        billing_mode="streaming",
+        details={"purpose": claims.purpose, "language": claims.language, **(details or {})},
+    )
+
+
+OPENAI_SESSION_READY_TIMEOUT_SECONDS = 10.0
+OPENAI_CLOSE_DRAIN_TIMEOUT_SECONDS = 5.0
+_OPENAI_STREAM_ENDED = "provider_stream_ended"
+_OPENAI_CLOSE_STREAM = "close_stream"
+_OPENAI_DURATION_CAP = "duration_cap"
+
+
+class OpenAISessionRejectedError(RuntimeError):
+    """The OpenAI realtime session refused our session.update config."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"OpenAI realtime session rejected: {code}: {message}")
+        self.code = code
+
+
+async def _await_openai_session_ready(provider, timeout: float) -> None:
+    """Wait for ``session.updated`` before bridging audio.
+
+    Audio appended before the session config lands would be transcribed with
+    the default (model-less) session and silently produce no text — the exact
+    class of quiet failure this product forbids.
+    """
+    deadline = perf_counter() + timeout
+    while True:
+        remaining = deadline - perf_counter()
+        if remaining <= 0:
+            raise TimeoutError("Timed out waiting for OpenAI realtime session.updated")
+        raw = await asyncio.wait_for(provider.recv(), timeout=remaining)
+        event = json.loads(raw)
+        event_type = event.get("type")
+        if event_type == "session.updated":
+            return
+        if event_type == "error":
+            error = event.get("error")
+            error = error if isinstance(error, dict) else {}
+            raise OpenAISessionRejectedError(
+                str(error.get("code") or "unknown"),
+                str(error.get("message") or "no message"),
+            )
+
+
+async def _openai_reader(
+    provider,
+    state: OpenAIRealtimeBridgeState,
+    outbound: asyncio.Queue,
+    drained_event: asyncio.Event,
+) -> None:
+    """Pump OpenAI server events into downstream frames on the outbound queue."""
+    try:
+        async for raw in provider:
+            if isinstance(raw, (bytes, bytearray)):
+                raw = raw.decode("utf-8", errors="replace")
+            try:
+                event = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            for frame in state.handle_upstream_event(event):
+                outbound.put_nowait(frame)
+            if state.drained:
+                drained_event.set()
+    except ConnectionClosed:
+        if not (state.close_requested or state.client_gone):
+            raise
+    finally:
+        outbound.put_nowait(None)
+
+
+async def _openai_writer(websocket: WebSocket, outbound: asyncio.Queue) -> str:
+    """Send translated frames to the client; ends on provider-stream end."""
+    while True:
+        frame = await outbound.get()
+        if frame is None:
+            return _OPENAI_STREAM_ENDED
+        try:
+            await websocket.send_json(frame)
+        except (RuntimeError, WebSocketDisconnect):
+            add_sentry_breadcrumb(
+                category="transcription.stream",
+                message="client send closed",
+                data={"provider": "openai"},
+            )
+            return CLIENT_DISCONNECTED
+
+
+async def _openai_client_loop(
+    websocket: WebSocket,
+    provider,
+    state: OpenAIRealtimeBridgeState,
+    outbound: asyncio.Queue,
+    drained_event: asyncio.Event,
+) -> str:
+    """Pump client audio/control messages into OpenAI events."""
+    while True:
+        message = await websocket.receive()
+        message_type = message.get("type")
+        if message_type == "websocket.disconnect":
+            state.client_gone = True
+            return CLIENT_DISCONNECTED
+        if message_type != "websocket.receive":
+            continue
+        data = message.get("bytes")
+        text = message.get("text")
+        if data is not None:
+            state.note_audio(len(data))
+            await provider.send(
+                json.dumps(
+                    {
+                        "type": "input_audio_buffer.append",
+                        "audio": base64.b64encode(data).decode("ascii"),
+                    }
+                )
+            )
+            continue
+        if text is None:
+            continue
+        try:
+            control = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        control_type = control.get("type") if isinstance(control, dict) else None
+        if control_type == "KeepAlive":
+            continue
+        if control_type == "Finalize":
+            if state.finalize_action() == FinalizeAction.COMMIT:
+                drained_event.clear()
+                await provider.send(json.dumps({"type": "input_audio_buffer.commit"}))
+            else:
+                outbound.put_nowait(dict(FINALIZE_MARKER_FRAME))
+            continue
+        if control_type == "CloseStream":
+            if state.close_flush_needs_commit():
+                drained_event.clear()
+                await provider.send(json.dumps({"type": "input_audio_buffer.commit"}))
+            if not state.drained:
+                # Bounded wait so a lost `completed` cannot wedge the close;
+                # whatever arrived is already flushed downstream by the writer.
+                try:
+                    await asyncio.wait_for(
+                        drained_event.wait(),
+                        timeout=OPENAI_CLOSE_DRAIN_TIMEOUT_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    add_sentry_breadcrumb(
+                        category="transcription.stream",
+                        message="openai close drain timed out",
+                        data={"provider": "openai"},
+                    )
+            return _OPENAI_CLOSE_STREAM
+
+
+async def _bridge_openai_realtime(
+    websocket: WebSocket,
+    provider,
+    claims: RealtimeTranscriptionProxyClaims,
+    *,
+    max_stream_seconds: float,
+) -> str:
+    """Run the translated bridge; returns the exit reason."""
+    state = OpenAIRealtimeBridgeState(
+        replacements=compile_replacements(claims.replacements),
+    )
+    outbound: asyncio.Queue = asyncio.Queue()
+    drained_event = asyncio.Event()
+    drained_event.set()
+
+    reader_task = asyncio.create_task(
+        _openai_reader(provider, state, outbound, drained_event)
+    )
+    writer_task = asyncio.create_task(_openai_writer(websocket, outbound))
+    client_task = asyncio.create_task(
+        _openai_client_loop(websocket, provider, state, outbound, drained_event)
+    )
+    tasks: set[asyncio.Task] = {reader_task, writer_task, client_task}
+
+    try:
+        done, pending = await asyncio.wait(
+            {client_task, writer_task},
+            timeout=max_stream_seconds if max_stream_seconds > 0 else None,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if not done:
+            return _OPENAI_DURATION_CAP
+
+        if client_task in done:
+            exit_reason = client_task.result()
+            if exit_reason == _OPENAI_CLOSE_STREAM:
+                # Everything committed is drained (bounded). Close upstream so
+                # the reader finishes and the writer flushes its sentinel.
+                await provider.close()
+                await asyncio.wait({writer_task}, timeout=OPENAI_CLOSE_DRAIN_TIMEOUT_SECONDS)
+                return PROVIDER_CLOSED_AFTER_CLOSE_STREAM
+            await provider.close()
+            return CLIENT_DISCONNECTED
+
+        # Writer finished first: either the client socket rejected a send or
+        # the provider stream ended on its own (server close / session cap).
+        writer_exit = writer_task.result()
+        if writer_exit == CLIENT_DISCONNECTED:
+            state.client_gone = True
+            await provider.close()
+            return CLIENT_DISCONNECTED
+        if reader_task.done() and (reader_error := reader_task.exception()) is not None:
+            raise reader_error
+        raise ConnectionClosed(None, None)
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def _stream_openai_after_slot(
+    websocket: WebSocket,
+    claims: RealtimeTranscriptionProxyClaims,
+    *,
+    stream_token: str,
+    api_key: str,
+    max_stream_seconds: float,
+) -> None:
+    """OpenAI-side twin of the Deepgram stream flow, past slot acquisition.
+
+    Owns connect + session config + bridge + close-out, and mirrors the
+    Deepgram path's accounting contract: the stream slot is always released,
+    streamed minutes are metered, and every exit leaves a usage event and a
+    close breadcrumb.
+    """
+    stream_started = perf_counter()
+    provider_opened = False
+    stream_status = "succeeded"
+    stream_guard_code: str | None = None
+    stream_error_type: str | None = None
+    stream_provider_status_code: int | None = None
+    try:
+        add_sentry_breadcrumb(
+            category="transcription.stream",
+            message="proxy opened",
+            data={
+                "provider": "openai",
+                "model": claims.model,
+                "language": claims.language,
+                "purpose": claims.purpose,
+            },
+        )
+        session_update = build_transcription_session_update(
+            model=claims.model,
+            language=claims.language,
+        )
+        async with websockets.connect(
+            OPENAI_REALTIME_WEBSOCKET_URL,
+            **{
+                _websockets_header_kwarg(): {
+                    "Authorization": f"Bearer {api_key}",
+                }
+            },
+            open_timeout=10,
+            ping_interval=20,
+            ping_timeout=20,
+            max_size=8 * 1024 * 1024,
+        ) as provider:
+            await provider.send(json.dumps(session_update))
+            await _await_openai_session_ready(
+                provider, timeout=OPENAI_SESSION_READY_TIMEOUT_SECONDS
+            )
+            provider_opened = True
+            exit_reason = await _bridge_openai_realtime(
+                websocket,
+                provider,
+                claims,
+                max_stream_seconds=max_stream_seconds,
+            )
+            if exit_reason == _OPENAI_DURATION_CAP:
+                stream_guard_code = "duration_cap"
+                capture_sentry_anomaly(
+                    "realtime.stream.duration_capped",
+                    "Realtime stream force-closed at maximum duration",
+                    category="transcription.stream",
+                    extras={
+                        "user_id": claims.subject,
+                        "purpose": claims.purpose,
+                        "max_seconds": max_stream_seconds,
+                    },
+                    level="warning",
+                )
+                await _send_error_payload(websocket, PROXY_ERROR_SESSION_EXPIRED)
+                await _close_websocket_with_telemetry(
+                    websocket,
+                    code=1000,
+                    err_code="SESSION_EXPIRED",
+                    extras={
+                        "stage": "duration_cap",
+                        "provider": "openai",
+                        "purpose": claims.purpose,
+                        "max_seconds": max_stream_seconds,
+                    },
+                )
+                return
+            if exit_reason == CLIENT_DISCONNECTED:
+                add_sentry_breadcrumb(
+                    category="transcription.stream",
+                    message="client disconnected",
+                    data={"provider": "openai", "purpose": claims.purpose},
+                )
+                return
+    except WebSocketDisconnect:
+        add_sentry_breadcrumb(
+            category="transcription.stream",
+            message="client disconnected",
+            data={"provider": "openai", "purpose": claims.purpose},
+        )
+        return
+    except ConnectionClosed:
+        stream_status = "failed"
+        stream_error_type = "ConnectionClosed"
+        await _close_websocket_with_telemetry(
+            websocket,
+            code=1000,
+            err_code="PROVIDER_CLOSED",
+            extras={
+                "stage": "provider_closed",
+                "provider": "openai",
+                "model": claims.model,
+                "language": claims.language,
+                "purpose": claims.purpose,
+            },
+        )
+    except Exception as exc:
+        stream_status = "failed"
+        stream_error_type = type(exc).__name__
+        stream_provider_status_code = _provider_exception_status_code(exc)
+        logger.warning(
+            "openai realtime proxy failed error_type=%s purpose=%s",
+            type(exc).__name__,
+            claims.purpose,
+        )
+        capture_sentry_exception(
+            exc,
+            extras={
+                "alert_code": "realtime.stream.failed",
+                "provider": "openai",
+                "model": claims.model,
+                "language": claims.language,
+                "purpose": claims.purpose,
+            },
+        )
+        await _send_error_payload(websocket, PROXY_ERROR_PAYLOAD)
+        await _close_websocket_with_telemetry(
+            websocket,
+            code=1011,
+            err_code="PROXY_FAILURE",
+            extras={
+                "stage": "proxy_exception",
+                "provider": "openai",
+                "model": claims.model,
+                "language": claims.language,
+                "purpose": claims.purpose,
+                "error_type": type(exc).__name__,
+            },
+        )
+    else:
+        await _close_websocket_with_telemetry(
+            websocket,
+            code=1000,
+            err_code="NORMAL",
+            extras={
+                "stage": "normal",
+                "provider": "openai",
+                "model": claims.model,
+                "language": claims.language,
+                "purpose": claims.purpose,
+            },
+        )
+    finally:
+        elapsed_seconds = perf_counter() - stream_started
+        try:
+            await release_stream_slot(claims.subject, stream_token)
+        except Exception as exc:  # noqa: BLE001 - keep minute accounting and usage logging moving
+            logger.warning("realtime stream slot release failed error_type=%s", type(exc).__name__)
+        if provider_opened:
+            try:
+                await record_minutes(claims.subject, elapsed_seconds / 60.0)
+            except Exception as exc:  # noqa: BLE001 - analytics should still record the provider usage
+                logger.warning(
+                    "realtime minute accounting failed error_type=%s",
+                    type(exc).__name__,
+                )
+        await _record_openai_stream_usage(
+            claims,
+            status=stream_status,
+            audio_seconds=elapsed_seconds,
+            billable_seconds=elapsed_seconds if provider_opened else 0.0,
+            latency_ms=round(elapsed_seconds * 1000),
+            guard_code=stream_guard_code,
+            error_type=stream_error_type,
+            provider_status_code=stream_provider_status_code,
+            details={"provider_opened": provider_opened},
+        )
 
 
 def _raise_unexpected_bridge_exceptions(tasks: set[asyncio.Task]) -> None:

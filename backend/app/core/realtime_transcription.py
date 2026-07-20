@@ -1,8 +1,15 @@
 """Realtime speech-to-text session minting.
 
-The product has one live STT runtime: Deepgram Nova-3. Native apps connect to
-the WaiComputer realtime proxy with a short-lived server-signed token, and the
-backend opens Deepgram with the long-lived provider API key.
+The product has two live STT runtimes behind one client wire protocol:
+
+- **Dictation** → OpenAI ``gpt-realtime-whisper`` (the realtime proxy
+  translates the client protocol to OpenAI realtime events).
+- **Recording** → Deepgram Nova-3 (transparent proxy bridge, diarization).
+
+Native apps connect to the WaiComputer realtime proxy with a short-lived
+server-signed token; the backend opens the upstream provider with the
+long-lived API key. The proxy token carries the provider so the stream route
+knows which upstream to dial.
 """
 
 from __future__ import annotations
@@ -22,6 +29,12 @@ from app.core.deepgram import (
     build_realtime_websocket_url,
     require_deepgram_api_key,
     validate_deepgram_language,
+)
+from app.core.openai_realtime import (
+    OPENAI_REALTIME_CHANNELS,
+    OPENAI_REALTIME_ENCODING,
+    OPENAI_REALTIME_SAMPLE_RATE,
+    require_openai_api_key,
 )
 from app.core.transcription_options import (
     DEFAULT_DICTATION_LIVE_STT_MODEL,
@@ -46,6 +59,17 @@ PRODUCT_REALTIME_REPLACEMENTS = (
     ("вайкомпьютер", "WaiComputer"),
     ("во ecomputer", "WaiComputer"),
     ("ecomputer", "WaiComputer"),
+    # gpt-realtime-whisper renderings of the spoken brand ("вай" heard as
+    # "в и"/"вои"/"вый"). Multi-word finds are safe: replacements match whole
+    # phrases with word boundaries.
+    ("в и компьютер", "WaiComputer"),
+    ("в икомпьютер", "WaiComputer"),
+    ("вай-компьютер", "WaiComputer"),
+    ("way computer", "WaiComputer"),
+    ("вои компьютер", "WaiComputer"),
+    ("вый компьютер", "WaiComputer"),
+    ("в icomputer", "WaiComputer"),
+    ("icomputer", "WaiComputer"),
 )
 
 
@@ -81,6 +105,7 @@ class RealtimeTranscriptionProxyClaims:
     channels: int
     model: str
     purpose: Literal["recording", "dictation"]
+    provider: str = "deepgram"
     keyterms: list[str] = field(default_factory=list)
     replacements: list[tuple[str, str]] = field(default_factory=list)
 
@@ -125,6 +150,7 @@ def create_realtime_proxy_token(
     channels: int,
     model: str,
     purpose: Literal["recording", "dictation"],
+    provider: str = "deepgram",
     keyterms: list[str] | None = None,
     replacements: list[tuple[str, str]] | None = None,
     ttl_seconds: int = REALTIME_PROXY_TOKEN_TTL_SECONDS,
@@ -140,6 +166,7 @@ def create_realtime_proxy_token(
         "channels": channels,
         "model": model,
         "purpose": purpose,
+        "provider": provider,
         "keyterms": list(keyterms or []),
         "replacements": [
             {"find": find, "replace": replace}
@@ -166,6 +193,7 @@ def decode_realtime_proxy_token(token: str) -> RealtimeTranscriptionProxyClaims:
     language = payload.get("language")
     model = payload.get("model")
     purpose = payload.get("purpose")
+    provider = payload.get("provider", "deepgram")
     channels = payload.get("channels")
     keyterms_payload = payload.get("keyterms")
     replacements_payload = payload.get("replacements")
@@ -178,6 +206,8 @@ def decode_realtime_proxy_token(token: str) -> RealtimeTranscriptionProxyClaims:
         raise ValueError("Invalid realtime transcription token model")
     if purpose not in {"recording", "dictation"}:
         raise ValueError("Invalid realtime transcription token purpose")
+    if provider not in {"deepgram", "openai"}:
+        raise ValueError("Invalid realtime transcription token provider")
     if not isinstance(channels, int) or channels < 1:
         raise ValueError("Invalid realtime transcription token channels")
     if keyterms_payload is None:
@@ -203,12 +233,18 @@ def decode_realtime_proxy_token(token: str) -> RealtimeTranscriptionProxyClaims:
     else:
         raise ValueError("Invalid realtime transcription token replacements")
 
+    if provider == "deepgram":
+        resolved_language = validate_deepgram_language(language)
+    else:
+        resolved_language = language.strip().lower() or "multi"
+
     return RealtimeTranscriptionProxyClaims(
         subject=subject,
-        language=validate_deepgram_language(language),
+        language=resolved_language,
         channels=channels,
         model=model,
         purpose=purpose,
+        provider=provider,
         keyterms=keyterms,
         replacements=replacements,
     )
@@ -238,6 +274,7 @@ async def _build_deepgram_realtime_session(
         channels=resolved_channels,
         purpose=purpose,
         model=model,
+        provider="deepgram",
         keyterms=_merge_realtime_keyterms(keyterms),
         replacements=_merge_realtime_replacements(replacements),
     )
@@ -252,6 +289,53 @@ async def _build_deepgram_realtime_session(
         model=model,
         keep_alive_interval_seconds=DEEPGRAM_KEEP_ALIVE_INTERVAL_SECONDS,
         commit_strategy=None,
+        no_verbatim=False,
+        websocket_url=websocket_url,
+        auth_scheme="bearer",
+    )
+
+
+async def _build_openai_realtime_session(
+    language: str,
+    *,
+    model: str,
+    purpose: Literal["recording", "dictation"],
+    subject: str,
+    websocket_url: str,
+    keyterms: list[str] | None = None,
+    replacements: list[tuple[str, str]] | None = None,
+) -> RealtimeTranscriptionSession:
+    """Mint a proxy session that the stream route bridges to OpenAI realtime.
+
+    The wire contract toward clients is unchanged (binary PCM16 frames +
+    ``Finalize``/``CloseStream`` control messages, Results frames back); only
+    the sample rate moves to OpenAI's required 24 kHz. gpt-realtime-whisper
+    has no keyterm prompting — vocabulary hints live in the cleanup pass —
+    but find/replace hints are applied by the proxy to outgoing transcripts.
+    """
+    resolved_language = language.strip().lower() or "multi"
+    require_openai_api_key()
+    token, expires_in = create_realtime_proxy_token(
+        subject=subject,
+        language=resolved_language,
+        channels=OPENAI_REALTIME_CHANNELS,
+        purpose=purpose,
+        model=model,
+        provider="openai",
+        keyterms=_merge_realtime_keyterms(keyterms),
+        replacements=_merge_realtime_replacements(replacements),
+    )
+    return RealtimeTranscriptionSession(
+        provider="openai",
+        token=token,
+        expires_in_seconds=expires_in,
+        sample_rate=OPENAI_REALTIME_SAMPLE_RATE,
+        audio_format=OPENAI_REALTIME_ENCODING,
+        language=resolved_language,
+        channels=OPENAI_REALTIME_CHANNELS,
+        model=model,
+        keep_alive_interval_seconds=None,
+        commit_strategy="manual",
         no_verbatim=False,
         websocket_url=websocket_url,
         auth_scheme="bearer",
@@ -274,12 +358,6 @@ async def create_realtime_transcription_session(
     user argument is accepted for API compatibility, but user preferences cannot
     change the selected live STT provider.
     """
-    try:
-        resolved_language = validate_deepgram_language(language)
-    except ValueError as exc:
-        raise UnsupportedRealtimeLanguageError(str(exc)) from exc
-    resolved_channels = DEEPGRAM_REALTIME_CHANNELS
-
     if purpose == "dictation":
         provider, model = validate_option(
             "dictation_live_stt",
@@ -295,15 +373,33 @@ async def create_realtime_transcription_session(
         )
         unsupported_message = f"Unsupported recording_live_stt_provider: {provider}."
 
+    subject = str(getattr(user, "id", "system"))
+
+    if provider == "openai":
+        return await _build_openai_realtime_session(
+            language,
+            model=model,
+            purpose=purpose,
+            subject=subject,
+            websocket_url=websocket_url,
+            keyterms=keyterms,
+            replacements=replacements,
+        )
+
     if provider != "deepgram":
         raise ValueError(unsupported_message)
 
+    try:
+        resolved_language = validate_deepgram_language(language)
+    except ValueError as exc:
+        raise UnsupportedRealtimeLanguageError(str(exc)) from exc
+
     return await _build_deepgram_realtime_session(
         resolved_language,
-        resolved_channels,
+        DEEPGRAM_REALTIME_CHANNELS,
         model=model,
         purpose=purpose,
-        subject=str(getattr(user, "id", "system")),
+        subject=subject,
         websocket_url=websocket_url,
         keyterms=keyterms,
         replacements=replacements,

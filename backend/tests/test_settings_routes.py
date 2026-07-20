@@ -109,14 +109,14 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert data["summary_language"] == "auto"
     assert data["summary_style"] == "medium"
     assert data["summary_instructions"] is None
-    assert data["dictation_live_stt_provider"] == "deepgram"
-    assert data["dictation_live_stt_model"] == "nova-3"
+    assert data["dictation_live_stt_provider"] == "openai"
+    assert data["dictation_live_stt_model"] == "gpt-realtime-whisper"
     assert data["recording_live_stt_provider"] == "deepgram"
     assert data["recording_live_stt_model"] == "nova-3"
     assert data["file_stt_provider"] == "elevenlabs"
     assert data["file_stt_model"] == "scribe_v2"
-    assert data["dictation_post_filter_enabled"] is False
-    assert data["dictation_cleanup_level"] == "none"
+    assert data["dictation_post_filter_enabled"] is True
+    assert data["dictation_cleanup_level"] == "medium"
     assert data["dictation_post_filter_provider"] == "disabled"
     assert data["dictation_post_filter_model"] == "none"
 
@@ -388,10 +388,14 @@ async def test_get_transcription_options_returns_curated_choices(
     data = response.json()
     assert data["dictation_live_stt"] == [
         {
-            "provider": "deepgram",
-            "model": "nova-3",
-            "label": "Deepgram Nova-3",
-            "description": "Fixed low-latency streaming speech-to-text model for live dictation.",
+            "provider": "openai",
+            "model": "gpt-realtime-whisper",
+            "label": "OpenAI gpt-realtime-whisper",
+            "description": (
+                "Natively streaming OpenAI speech-to-text tuned for dictation: "
+                "live word-by-word preview, strong multilingual and mixed-language "
+                "accuracy."
+            ),
         }
     ]
     assert data["recording_live_stt"] == [

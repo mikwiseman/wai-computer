@@ -5,7 +5,7 @@
 // return the collected segments for finalization.
 
 import { createTranscriptionSession } from "@/lib/api";
-import { downsampleTo16kInt16 } from "@/lib/audio/pcm";
+import { DICTATION_SAMPLE_RATE, TARGET_SAMPLE_RATE, downsamplePcmInt16 } from "@/lib/audio/pcm";
 import type {
   RealtimeSessionResponse,
   RealtimeTranscriptionReplacement,
@@ -262,6 +262,14 @@ export class RealtimeTranscriber {
       return;
     }
     if (!this.isConnecting()) return;
+    if (session.sample_rate !== this.targetSampleRate()) {
+      this.fail(
+        new Error(
+          `Realtime session returned unsupported sample_rate=${session.sample_rate}; expected ${this.targetSampleRate()}`,
+        ),
+      );
+      return;
+    }
     try {
       await this.openSocket(session);
       if (!this.isConnecting()) return;
@@ -270,6 +278,15 @@ export class RealtimeTranscriber {
       if (!this.isConnecting()) return;
       this.fail(error);
     }
+  }
+
+  /// Audio is captured (and buffered) before the session mint returns, so the
+  /// resample target is pinned by purpose — the same client-side contract the
+  /// native apps use — and the minted session must match it exactly.
+  private targetSampleRate(): number {
+    return (this.opts.purpose ?? "recording") === "dictation"
+      ? DICTATION_SAMPLE_RATE
+      : TARGET_SAMPLE_RATE;
   }
 
   private sessionRequest(): RealtimeSessionRequest {
@@ -320,13 +337,20 @@ export class RealtimeTranscriber {
           return;
         }
         try {
-          const intervalMs =
-            (session.keep_alive_interval_seconds ?? DEFAULT_KEEP_ALIVE_INTERVAL_SECONDS) * 1000;
-          this.keepAlive = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) {
-              this.sendSocketPayload(ws, JSON.stringify({ type: "KeepAlive" }));
-            }
-          }, intervalMs);
+          // Explicit null from the mint means the provider needs no app-level
+          // keepalives (OpenAI realtime); missing field falls back for older
+          // backends (Deepgram cadence).
+          const keepAliveSeconds =
+            session.keep_alive_interval_seconds === null
+              ? 0
+              : (session.keep_alive_interval_seconds ?? DEFAULT_KEEP_ALIVE_INTERVAL_SECONDS);
+          if (keepAliveSeconds > 0) {
+            this.keepAlive = setInterval(() => {
+              if (ws.readyState === WebSocket.OPEN) {
+                this.sendSocketPayload(ws, JSON.stringify({ type: "KeepAlive" }));
+              }
+            }, keepAliveSeconds * 1000);
+          }
           const flushError = this.flushPendingAudio();
           if (flushError) {
             reject(flushError);
@@ -371,7 +395,7 @@ export class RealtimeTranscriber {
     this.node = node;
     node.port.onmessage = (event) => {
       const float = event.data as Float32Array;
-      const int16 = downsampleTo16kInt16(float, ctx.sampleRate);
+      const int16 = downsamplePcmInt16(float, ctx.sampleRate, this.targetSampleRate());
       this.sendOrBufferAudio(int16.buffer);
     };
     // Connect every input stream (mic + optional system audio) to the worklet;

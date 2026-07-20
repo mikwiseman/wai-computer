@@ -90,13 +90,13 @@ def test_gate_summary_fails_on_latency_or_error_regression() -> None:
     module = _load_module()
     summary = {
         "mode": "prefetched",
-        "provider": "deepgram",
-        "model": "nova-3",
+        "provider": "openai",
+        "model": "gpt-realtime-whisper",
         "runs": 20,
         "ok_runs": 19,
         "error_runs": 1,
-        "p95_first_text_ms": 1_200,
-        "p95_final_ms": 2_000,
+        "p95_first_text_ms": 4_200,
+        "p95_final_ms": 9_000,
         "p95_wer": 0.05,
         "p95_cer": 0.02,
     }
@@ -104,8 +104,8 @@ def test_gate_summary_fails_on_latency_or_error_regression() -> None:
     failures = module.gate_summary(summary)
 
     assert failures == [
-        "prefetched deepgram:nova-3 had 1 error runs",
-        "prefetched deepgram:nova-3 p95_first_text_ms=1200ms > 1000ms",
+        "prefetched openai:gpt-realtime-whisper had 1 error runs",
+        "prefetched openai:gpt-realtime-whisper p95_first_text_ms=4200ms > 3600ms",
     ]
 
 

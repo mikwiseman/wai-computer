@@ -8,8 +8,6 @@ import openai
 import pytest
 from httpx import AsyncClient
 
-from app.api.routes import dictation as dictation_routes
-
 
 def _make_response(text: str, *, model: str = "gpt-oss-120b", finish_reason: str = "stop"):
     """Build a mock Chat Completions result."""
@@ -722,15 +720,21 @@ async def test_cleanup_dictation_stream_maps_non_stop_finish_reason_to_sse_error
 
 
 @pytest.mark.asyncio
-async def test_cleanup_dictation_rejects_output_that_changes_protected_terms(
+async def test_cleanup_accepts_model_reshaped_output(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """The prompt is the contract: reshaped output is accepted, not vetoed.
+
+    Word-preservation vetoes are gone — spoken self-corrections, false starts,
+    and formatting commands legitimately delete and restructure text, and the
+    old veto → raw-fallback loop is what made cleanup unusable.
+    """
     _patch_settings(monkeypatch)
     _patch_client(
         monkeypatch,
-        _make_mock_client(response_text="Ship Way Computer for MFC 123 on the website."),
+        _make_mock_client(response_text="Ship WaiComputer for MFC-123.\nSee the website."),
     )
     await _enable_post_filter(client, auth_headers)
 
@@ -743,12 +747,35 @@ async def test_cleanup_dictation_rejects_output_that_changes_protected_terms(
         },
     )
 
+    assert response.status_code == 200
+    assert response.json()["text"] == "Ship WaiComputer for MFC-123.\nSee the website."
+
+
+@pytest.mark.asyncio
+async def test_cleanup_rejects_runaway_output(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _patch_settings(monkeypatch)
+    _patch_client(
+        monkeypatch,
+        _make_mock_client(response_text="runaway " * 600),
+    )
+    await _enable_post_filter(client, auth_headers)
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "short dictated sentence for cleanup"},
+    )
+
     assert response.status_code == 502
     assert response.json()["detail"] == "AI service returned an incomplete cleanup response."
 
 
 @pytest.mark.asyncio
-async def test_cleanup_dictation_stream_rejects_output_that_changes_protected_terms(
+async def test_cleanup_stream_rejects_runaway_output(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
@@ -756,7 +783,7 @@ async def test_cleanup_dictation_stream_rejects_output_that_changes_protected_te
     async def _create(**_: object):
         return _AsyncStream(
             [
-                _make_stream_chunk(delta="Ship Way Computer for MFC 123."),
+                _make_stream_chunk(delta="runaway " * 600),
                 _make_stream_chunk(finish_reason="stop"),
             ]
         )
@@ -769,10 +796,7 @@ async def test_cleanup_dictation_stream_rejects_output_that_changes_protected_te
     response = await client.post(
         "/api/dictation/cleanup/stream",
         headers=auth_headers,
-        json={
-            "text": "ship WaiComputer for MFC-123 at https://wai.computer/api",
-            "vocabulary": ["WaiComputer"],
-        },
+        json={"text": "short dictated sentence for cleanup"},
     )
 
     assert response.status_code == 200
@@ -781,31 +805,8 @@ async def test_cleanup_dictation_stream_rejects_output_that_changes_protected_te
 
 
 @pytest.mark.asyncio
-async def test_cleanup_light_rejects_output_that_rewrites_content_words(
-    client: AsyncClient,
-    auth_headers: dict,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    _patch_settings(monkeypatch)
-    _patch_client(
-        monkeypatch,
-        _make_mock_client(response_text="Please ship this quickly today."),
-    )
-    await _set_cleanup_level(client, auth_headers, "light")
-
-    response = await client.post(
-        "/api/dictation/cleanup",
-        headers=auth_headers,
-        json={"text": "please ship this fast today"},
-    )
-
-    assert response.status_code == 502
-    assert response.json()["detail"] == "AI service returned an incomplete cleanup response."
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("cleanup_level", ["medium", "high"])
-async def test_cleanup_rejects_output_that_rewrites_content_words_for_stronger_levels(
+@pytest.mark.parametrize("cleanup_level", ["light", "medium", "high"])
+async def test_cleanup_trusts_model_output_at_every_level(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
@@ -824,8 +825,8 @@ async def test_cleanup_rejects_output_that_rewrites_content_words_for_stronger_l
         json={"text": "please ship this fast today"},
     )
 
-    assert response.status_code == 502
-    assert response.json()["detail"] == "AI service returned an incomplete cleanup response."
+    assert response.status_code == 200
+    assert response.json() == {"text": "Please ship this quickly today."}
 
 
 @pytest.mark.asyncio
@@ -851,34 +852,8 @@ async def test_cleanup_light_allows_filler_removal_and_inflection_fix(
     assert response.json() == {"text": "It sometimes changes words."}
 
 
-def test_cleanup_validator_matches_large_reordered_text_without_fuzzy_scan(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    words = [f"project{i}alpha" for i in range(120)]
-    similarity_calls = 0
-
-    def _count_similarity(left: str, right: str) -> float:
-        nonlocal similarity_calls
-        similarity_calls += 1
-        return 0.0
-
-    monkeypatch.setattr(
-        dictation_routes,
-        "_cleanup_token_similarity",
-        _count_similarity,
-    )
-
-    dictation_routes._validate_cleanup_preserves_content_words(
-        raw_text=" ".join(words),
-        cleaned=" ".join(reversed(words)),
-        protected_terms=(),
-    )
-
-    assert similarity_calls == 0
-
-
 @pytest.mark.asyncio
-async def test_cleanup_light_stream_rejects_output_that_rewrites_content_words(
+async def test_cleanup_stream_trusts_model_output(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
@@ -903,8 +878,8 @@ async def test_cleanup_light_stream_rejects_output_that_rewrites_content_words(
     )
 
     assert response.status_code == 200
-    assert 'event: error\ndata: {"code": "incomplete_response"' in response.text
-    assert "event: done" not in response.text
+    assert "event: done" in response.text
+    assert "Please ship this quickly today." in response.text
 
 
 @pytest.mark.asyncio
@@ -936,7 +911,9 @@ async def test_cleanup_dictation_prompt_targets_russian_fillers_and_false_starts
     assert "а-а-а" in instructions
     assert "мы х-- мы предлагаем" in instructions
     assert "Do not summarize" in instructions
-    assert "Do not replace, normalize, or guess content words" in instructions
+    assert "Do not replace, normalize, translate, or guess content words" in instructions
+    assert "scratch that" in instructions
+    assert "забудь" in instructions.lower()
     assert "<dictated_text>" in captured["messages"][1]["content"]
 
 
@@ -965,8 +942,9 @@ async def test_cleanup_dictation_medium_level_targets_clarity_and_conciseness(
 
     assert response.status_code == 200
     instructions = captured["messages"][0]["content"]
-    assert "clarity and conciseness" in instructions
-    assert "Do not substitute, add, or drop content words" in instructions
+    assert "what the speaker intended to write" in instructions
+    assert "format it as a list" in instructions
+    assert "not from paraphrasing" in instructions
     assert "Do not summarize" in instructions
 
 
@@ -995,8 +973,8 @@ async def test_cleanup_dictation_high_level_targets_brevity_and_polish(
 
     assert response.status_code == 200
     instructions = captured["messages"][0]["content"]
-    assert "brevity and polish" in instructions
-    assert "Do not substitute, add, or drop content words" in instructions
+    assert "cleanest written form" in instructions
+    assert "Tighten redundant filler phrasing" in instructions
     assert "Do not summarize away details" in instructions
 
 
@@ -1490,3 +1468,60 @@ async def test_cleanup_dictation_omits_preserve_block_when_vocabulary_empty(
 
         assert response.status_code == 200
         assert "<preserve_exact>" not in captured["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_applies_spoken_corrections_without_preservation_veto(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Backtrack: when the speaker edits by voice, deletions are the feature.
+
+    The raw text cancels an email address and a number; the model output drops
+    them. Protected-term and content-word validators must stand down instead of
+    rejecting the cleanup.
+    """
+    _patch_settings(monkeypatch)
+    _patch_client(
+        monkeypatch,
+        _make_mock_client(response_text="Use c@d.com for the invite."),
+    )
+    await _enable_post_filter(client, auth_headers)
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={
+            "text": (
+                "my email is a@b.com for invoice 4711, actually no, "
+                "scratch that, use c@d.com for the invite"
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "Use c@d.com for the invite."
+
+
+@pytest.mark.asyncio
+async def test_cleanup_applies_russian_spoken_corrections(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _patch_settings(monkeypatch)
+    _patch_client(
+        monkeypatch,
+        _make_mock_client(response_text="Созвон в среду в 15:00."),
+    )
+    await _enable_post_filter(client, auth_headers)
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "созвон во вторник в 14:00, точнее в среду в 15:00"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "Созвон в среду в 15:00."

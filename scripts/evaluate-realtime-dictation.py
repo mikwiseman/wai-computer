@@ -35,7 +35,8 @@ FIXTURE_TEXT_RU = (
 )
 FIXTURE_VOICE_RU = "Milena"
 EXPECTED_TAIL = "последнюю фразу"
-SAMPLE_RATE = 16_000
+# Dictation streams to OpenAI realtime through the proxy: 24 kHz mono PCM16.
+SAMPLE_RATE = 24_000
 BYTES_PER_SAMPLE = 2
 CHUNK_MS = 100
 FINAL_SILENCE_MS = 240
@@ -61,16 +62,21 @@ class ProviderMessage:
 
 
 DEFAULT_CANDIDATES = (
-    ModelCandidate("deepgram", "nova-3"),
+    ModelCandidate("openai", "gpt-realtime-whisper"),
 )
+# Latency gates reflect the gpt-realtime-whisper contract at delay="high":
+# the model buffers ~2-3 s of speech context before its first delta (preview
+# text appears mid-utterance, not instantly), while the finalize tail — last
+# audio to final transcript, what the user feels on hotkey release — stays
+# well under a second. Quality gates stay strict.
 GATE_THRESHOLDS = {
     "prefetched": {
-        "p95_first_text_ms": 1_000,
+        "p95_first_text_ms": 3_600,
         "p95_wer": 0.08,
         "p95_cer": 0.04,
     },
     "cold": {
-        "p95_first_text_ms": 1_300,
+        "p95_first_text_ms": 4_000,
         "p95_wer": 0.08,
         "p95_cer": 0.04,
     },
@@ -115,7 +121,7 @@ def ensure_fixture(path: Path) -> bytes:
 def wav_pcm(path: Path) -> bytes:
     with wave.open(str(path), "rb") as wav:
         if wav.getframerate() != SAMPLE_RATE or wav.getnchannels() != 1 or wav.getsampwidth() != 2:
-            raise RuntimeError(f"Fixture must be 16 kHz mono int16 WAV: {path}")
+            raise RuntimeError(f"Fixture must be {SAMPLE_RATE} Hz mono int16 WAV: {path}")
         return wav.readframes(wav.getnframes())
 
 
@@ -246,7 +252,7 @@ def elapsed_ms(start: float) -> int:
 
 def websocket_target(config: dict[str, Any]) -> tuple[str, dict[str, str]]:
     provider = config["provider"]
-    if provider != "deepgram":
+    if provider not in {"deepgram", "openai"}:
         raise RuntimeError(f"Unsupported realtime provider from backend: {provider}")
     url = config.get("websocket_url")
     if not url:
@@ -267,7 +273,9 @@ def parse_message(provider: str, raw: str | bytes) -> ProviderMessage:
     except json.JSONDecodeError:
         return ProviderMessage(None, False, False)
 
-    if provider == "deepgram":
+    # The proxy speaks one wire protocol for both upstreams (Deepgram
+    # passthrough, OpenAI translated): Deepgram-shaped frames.
+    if provider in {"deepgram", "openai"}:
         message_type = payload.get("type")
         if message_type == "Results":
             alternatives = payload.get("channel", {}).get("alternatives", [])
@@ -326,9 +334,11 @@ async def stream_provider(
         )
 
         async def keep_alive_loop() -> None:
-            interval = int(config.get("keep_alive_interval_seconds") or 4)
+            interval = int(config.get("keep_alive_interval_seconds") or 0)
+            if interval <= 0:
+                return
             while True:
-                await asyncio.sleep(max(interval, 1))
+                await asyncio.sleep(interval)
                 await ws.send(json.dumps({"type": "KeepAlive"}))
 
         async def send_loop() -> None:
@@ -590,7 +600,7 @@ async def async_main() -> None:
         "--output",
         default=str(ROOT / "artifacts/benchmarks/realtime-dictation-eval.json"),
     )
-    parser.add_argument("--fixture", default=str(ROOT / ".tmp/dictation-eval/ru-startup.wav"))
+    parser.add_argument("--fixture", default=str(ROOT / ".tmp/dictation-eval/ru-startup-24k.wav"))
     parser.add_argument("--enforce-gates", action="store_true")
     args = parser.parse_args()
 

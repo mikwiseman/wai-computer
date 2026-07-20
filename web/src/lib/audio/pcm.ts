@@ -1,8 +1,11 @@
-// PCM helpers for realtime transcription. The proxy (Deepgram) expects raw
-// 16 kHz mono LINEAR16 (signed 16-bit little-endian) audio, so we downsample
-// the mic's native Float32 stream (typically 44.1/48 kHz) and convert to Int16.
+// PCM helpers for realtime transcription. The proxy expects raw mono LINEAR16
+// (signed 16-bit little-endian) audio at the session's declared sample rate —
+// 16 kHz for recording (Deepgram) and 24 kHz for dictation (OpenAI realtime) —
+// so we resample the mic's native Float32 stream (typically 44.1/48 kHz) and
+// convert to Int16.
 
 export const TARGET_SAMPLE_RATE = 16000;
+export const DICTATION_SAMPLE_RATE = 24000;
 
 function clampToInt16(sample: number): number {
   const s = Math.max(-1, Math.min(1, sample));
@@ -18,15 +21,19 @@ function floatToInt16(input: Float32Array): Int16Array {
 }
 
 /**
- * Downsample mono Float32 PCM at `srcRate` to 16 kHz Int16. Uses simple block
- * averaging (cheap anti-aliasing) when decimating. Mics are >= 16 kHz in
- * practice; if `srcRate` is already 16 kHz (or lower) we just convert.
+ * Downsample mono Float32 PCM at `srcRate` to `targetRate` Int16. Uses simple
+ * block averaging (cheap anti-aliasing) when decimating. Mics are >= 16 kHz in
+ * practice; if `srcRate` is at or below the target we just convert.
  */
-export function downsampleTo16kInt16(input: Float32Array, srcRate: number): Int16Array {
-  if (!Number.isFinite(srcRate) || srcRate <= TARGET_SAMPLE_RATE) {
+export function downsamplePcmInt16(
+  input: Float32Array,
+  srcRate: number,
+  targetRate: number,
+): Int16Array {
+  if (!Number.isFinite(srcRate) || srcRate <= targetRate) {
     return floatToInt16(input);
   }
-  const ratio = srcRate / TARGET_SAMPLE_RATE;
+  const ratio = srcRate / targetRate;
   const outLength = Math.floor(input.length / ratio);
   const out = new Int16Array(outLength);
   for (let i = 0; i < outLength; i += 1) {
@@ -41,6 +48,10 @@ export function downsampleTo16kInt16(input: Float32Array, srcRate: number): Int1
     out[i] = clampToInt16(count > 0 ? sum / count : input[start] ?? 0);
   }
   return out;
+}
+
+export function downsampleTo16kInt16(input: Float32Array, srcRate: number): Int16Array {
+  return downsamplePcmInt16(input, srcRate, TARGET_SAMPLE_RATE);
 }
 
 /** Merge multiple mono Float32 buffers (e.g. mic + system audio) by summing

@@ -49,9 +49,14 @@ class Settings(BaseSettings):
     # Voice provider
     realtime_voice_provider: str = "elevenlabs"
 
-    # OpenAI — Companion, OCR, comparisons, memory tasks, and embeddings.
+    # OpenAI — Companion, OCR, comparisons, memory tasks, embeddings, and live
+    # dictation STT (gpt-realtime-whisper through the realtime proxy).
     openai_api_key: str = ""
     openai_llm_model: str = "gpt-5.5"
+    # Transcription delay for gpt-realtime-whisper dictation sessions:
+    # minimal|low|medium|high|xhigh. Higher = more context = better accuracy;
+    # deltas still stream live. "high" measured ≈0.6 s commit→final.
+    openai_realtime_transcription_delay: str = "high"
     openai_embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 1536
     # Scanned-PDF OCR via the vision LLM (gpt-5.5 reads PDFs natively — no

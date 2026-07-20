@@ -61,7 +61,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
 
         if !keyTerms.isEmpty {
             providerRealtimeLog.info(
-                "[Deepgram] key terms require a server-minted URL; ignored count=\(keyTerms.count, privacy: .public)"
+                "[\(config.provider)] key terms require a server-minted URL; ignored count=\(keyTerms.count, privacy: .public)"
             )
         }
     }
@@ -87,7 +87,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
 
         if !keyTerms.isEmpty {
             providerRealtimeLog.info(
-                "[Deepgram] key terms require a server-minted URL; ignored count=\(keyTerms.count, privacy: .public)"
+                "[\(config.provider)] key terms require a server-minted URL; ignored count=\(keyTerms.count, privacy: .public)"
             )
         }
     }
@@ -121,7 +121,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
 
         startReceiveLoop(for: task)
         startKeepAlive(intervalSeconds: config.keepAliveIntervalSeconds)
-        eventContinuation.yield(.opened(sessionId: "deepgram"))
+        eventContinuation.yield(.opened(sessionId: config.provider))
     }
 
     private static func awaitHandshake(
@@ -153,7 +153,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
 
     public func send(pcm16: Data) async throws {
         guard let webSocket else {
-            throw ProviderError.transcriberInternal(message: "Deepgram realtime socket is not open")
+            throw ProviderError.transcriberInternal(message: "\(config.provider) realtime socket is not open")
         }
         for chunk in Self.pcmAudioChunks(
             pending: &pendingAudio,
@@ -282,21 +282,26 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         return request
     }
 
+    /// Providers the WaiComputer realtime proxy speaks on this wire protocol.
+    /// The proxy translates upstream (OpenAI realtime events, Deepgram
+    /// passthrough); the client wire contract is identical for both.
+    private static let supportedProxyProviders: Set<String> = ["deepgram", "openai"]
+
     private func validateServerMintedRouting() throws {
         let token = config.token.trimmingCharacters(in: .whitespacesAndNewlines)
         let websocketURL = config.websocketURL?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard config.provider == "deepgram" else {
+        guard Self.supportedProxyProviders.contains(config.provider) else {
             throw ProviderError.unsupportedModel(config.provider)
         }
         guard websocketURL?.isEmpty == false else {
-            throw ProviderError.transcriberInternal(message: "Deepgram realtime session is missing server-minted websocket URL")
+            throw ProviderError.transcriberInternal(message: "\(config.provider) realtime session is missing server-minted websocket URL")
         }
         guard !token.isEmpty else {
-            throw ProviderError.transcriberInternal(message: "Deepgram realtime session is missing server-minted token")
+            throw ProviderError.transcriberInternal(message: "\(config.provider) realtime session is missing server-minted token")
         }
         guard config.authScheme == "bearer" else {
-            throw ProviderError.transcriberInternal(message: "Deepgram realtime session has unsupported auth scheme: \(config.authScheme ?? "nil")")
+            throw ProviderError.transcriberInternal(message: "\(config.provider) realtime session has unsupported auth scheme: \(config.authScheme ?? "nil")")
         }
     }
 
