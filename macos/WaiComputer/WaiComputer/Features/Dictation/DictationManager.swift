@@ -2197,6 +2197,10 @@ final class DictationManager: ObservableObject {
     // MARK: - Overlay
 
     private func showOverlay() {
+        // A lingering soft notice would overlap the live overlay (same
+        // top-center slot) — retire it the moment a new dictation starts.
+        noticeDismissTask?.cancel()
+        noticePanel?.hideAnimated()
         if overlayPanel == nil {
             overlayPanel = DictationOverlayPanel()
         }
