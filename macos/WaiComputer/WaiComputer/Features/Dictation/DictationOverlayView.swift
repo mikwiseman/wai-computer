@@ -139,3 +139,29 @@ struct DictationOverlayView: View {
         MacDateFormatting.duration(seconds: Int(manager.dictationDuration))
     }
 }
+
+/// Transient, non-activating notice shown after a dictation that degraded
+/// softly (e.g. cleanup fell back to raw words). The text WAS inserted — a
+/// modal alert here would interrupt typing flow for something already done.
+struct DictationNoticeView: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(.yellow)
+            Text(text)
+                .font(Typography.caption)
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(Color.black.opacity(0.85))
+        )
+        .frame(maxWidth: 360)
+    }
+}

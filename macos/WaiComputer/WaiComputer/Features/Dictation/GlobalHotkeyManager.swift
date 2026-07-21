@@ -477,6 +477,12 @@ struct DictationCleanupTimeoutError: LocalizedError, Equatable {
 }
 
 enum DictationCleanupDeadlinePolicy {
+    /// Watchdog against a hung cleanup request — NOT a latency budget.
+    /// Server-side cleanup completes in well under a second (p95 ~0.8 s
+    /// measured in production); the deadline exists only so a stalled
+    /// connection cannot wedge the insert forever. Keep it generous: firing
+    /// it degrades to raw text with a notice, so a false positive is worse
+    /// than a couple of extra seconds of genuine waiting.
     static func timeoutSeconds(
         cleanupLevel: String,
         rawTextCharacterCount: Int
@@ -484,13 +490,13 @@ enum DictationCleanupDeadlinePolicy {
         let baseSeconds: Int
         switch cleanupLevel {
         case "medium":
-            baseSeconds = 6
+            baseSeconds = 12
         case "high":
-            baseSeconds = 10
+            baseSeconds = 16
         default:
-            baseSeconds = 4
+            baseSeconds = 10
         }
-        let extraSeconds = min(6, max(0, rawTextCharacterCount) / 1_500)
+        let extraSeconds = min(12, max(0, rawTextCharacterCount) / 800)
         return baseSeconds + extraSeconds
     }
 }

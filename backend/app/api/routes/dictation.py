@@ -56,7 +56,7 @@ MAX_TRANSLATION_LANGUAGE_CODE_CHARS = 16
 MAX_TRANSLATION_LANGUAGE_NAME_CHARS = 80
 MIN_CLEANUP_OUTPUT_TOKENS = 512
 MAX_CLEANUP_OUTPUT_TOKENS = 65_536
-CLEANUP_REASONING_TOKEN_RESERVE = 384
+CLEANUP_REASONING_TOKEN_RESERVE = 512
 CLEANUP_OUTPUT_TOKEN_QUANTUM = 256
 CEREBRAS_RATE_LIMIT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
 
@@ -437,9 +437,15 @@ def _build_context_block(context: DictationCleanupContext | None) -> str:
 
 
 def _cleanup_output_token_cap(text: str) -> int:
-    """Bound cleanup spend while allowing near-input output plus reasoning tokens."""
+    """Bound cleanup spend while allowing near-input output plus reasoning tokens.
+
+    len // 2, not // 3: Cyrillic tokenizes at ~2.5 chars/token (measured on
+    production traffic), so a // 3 budget could truncate a long Russian
+    dictation that cleanup keeps mostly verbatim — finish_reason=length would
+    fail the whole cleanup for the crime of being long.
+    """
     estimated_tokens = (
-        (len(text) // 3)
+        (len(text) // 2)
         + CLEANUP_REASONING_TOKEN_RESERVE
     )
     rounded_tokens = (

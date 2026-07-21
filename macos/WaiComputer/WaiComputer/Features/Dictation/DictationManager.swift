@@ -197,6 +197,8 @@ final class DictationManager: ObservableObject {
     // MARK: - Overlay
 
     private var overlayPanel: DictationOverlayPanel?
+    private var noticePanel: DictationOverlayPanel?
+    private var noticeDismissTask: Task<Void, Never>?
     private var askAnythingPanel: AskAnythingPanel?
     private var nextAskAnythingAnswerChunkID = 0
 
@@ -1280,7 +1282,31 @@ final class DictationManager: ObservableObject {
             }
         }
         if let notice = resolution.cleanupFallbackNotice {
-            self.error = notice
+            // The user's words were inserted — this is a soft degradation.
+            // A transient HUD keeps them informed without a modal alert
+            // interrupting the typing flow they just returned to.
+            showTransientNotice(
+                DictationCopy.cleanupFallbackNotice(
+                    notice,
+                    language: LanguageManager.shared.current
+                )
+            )
+        }
+    }
+
+    /// Show a short-lived, non-activating notice near the dictation overlay
+    /// position. Used for soft degradations where the dictation itself
+    /// succeeded; hard failures keep using `error` (modal alert).
+    private func showTransientNotice(_ text: String) {
+        noticeDismissTask?.cancel()
+        let panel = noticePanel ?? DictationOverlayPanel()
+        noticePanel = panel
+        panel.setContent(DictationNoticeView(text: text))
+        panel.showAnimated()
+        noticeDismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            self?.noticePanel?.hideAnimated()
         }
     }
 

@@ -131,13 +131,13 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
         )
     }
 
-    func testCleanupDeadlineKeepsLightCleanupFast() {
+    func testCleanupDeadlineIsAGenerousWatchdogForLightCleanup() {
         XCTAssertEqual(
             DictationCleanupDeadlinePolicy.timeoutSeconds(
                 cleanupLevel: "light",
                 rawTextCharacterCount: 240
             ),
-            4
+            10
         )
     }
 
@@ -147,7 +147,7 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
                 cleanupLevel: "high",
                 rawTextCharacterCount: 240
             ),
-            10
+            16
         )
     }
 
@@ -157,7 +157,7 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
                 cleanupLevel: "medium",
                 rawTextCharacterCount: 30_000
             ),
-            12
+            24
         )
     }
 
@@ -167,7 +167,7 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
                 cleanupLevel: "unexpected",
                 rawTextCharacterCount: -1
             ),
-            4
+            10
         )
     }
 

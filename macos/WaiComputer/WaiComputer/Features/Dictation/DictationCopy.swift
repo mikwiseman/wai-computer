@@ -52,6 +52,31 @@ enum DictationCopy {
         )
     }
 
+    /// Localized text for a soft cleanup-fallback notice. These accompany a
+    /// SUCCESSFUL insert (the raw words landed) — they ride the transient
+    /// overlay, never a modal alert.
+    static func cleanupFallbackNotice(
+        _ notice: String,
+        language: LanguageManager.SupportedLanguage
+    ) -> String {
+        switch notice {
+        case DictationCleanupPolicy.timeoutNotice:
+            return text(
+                "Smart cleanup took too long — inserted your raw words.",
+                "Умная очистка не успела — вставили текст как есть.",
+                language: language
+            )
+        case DictationCleanupPolicy.fallbackNotice:
+            return text(
+                "Smart cleanup was unavailable — inserted your raw words.",
+                "Умная очистка недоступна — вставили текст как есть.",
+                language: language
+            )
+        default:
+            return notice
+        }
+    }
+
     static func recoveryCopyKept(
         insertionError: String,
         language: LanguageManager.SupportedLanguage

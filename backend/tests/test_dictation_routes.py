@@ -169,7 +169,7 @@ async def test_translate_dictation_translates_to_selected_target_language(
     assert response.json() == {"text": "Привет, команда."}
     assert captured["model"] == "gpt-oss-120b"
     assert captured["reasoning_effort"] == "low"
-    assert captured["max_completion_tokens"] == 512
+    assert captured["max_completion_tokens"] == 768
     instructions = captured["messages"][0]["content"]
     assert "Translate the dictated text into Russian (ru)." in instructions
     assert "Output only the translated text" in instructions
@@ -430,7 +430,7 @@ async def test_cleanup_dictation_uses_fixed_post_filter_model(
 
     assert response.status_code == 200
     assert captured["model"] == "gpt-oss-120b"
-    assert captured["max_completion_tokens"] == 512
+    assert captured["max_completion_tokens"] == 768
     assert captured["reasoning_effort"] == "low"
     assert captured["messages"][1]["content"] == (
         "<dictated_text>\nplease clean up this dictated sentence\n</dictated_text>"
@@ -1110,7 +1110,7 @@ async def test_cleanup_dictation_caps_large_output_token_budget(
     )
 
     assert response.status_code == 200
-    assert captured["max_completion_tokens"] == 33792
+    assert captured["max_completion_tokens"] == 50688
 
 
 @pytest.mark.asyncio
@@ -1138,7 +1138,7 @@ async def test_cleanup_dictation_reserves_tokens_for_reasoning(
     )
 
     assert response.status_code == 200
-    assert captured["max_completion_tokens"] == 1280
+    assert captured["max_completion_tokens"] == 1536
 
 
 @pytest.mark.asyncio
