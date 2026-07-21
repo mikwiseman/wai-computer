@@ -269,15 +269,18 @@ describe("app pages", () => {
     });
   });
 
-  it("renders landing with hero, platform grid, features, screenshots, benchmark teaser, pricing teaser, and FAQ", () => {
+  it("renders the focused English memory journey", () => {
     render(<Home />);
 
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: /Private AI memory for what you choose to record/i,
+        name: "Build a second memory.",
       }),
     ).toBeInTheDocument();
+
+    expect(screen.getByTestId("primary-cta")).toHaveAttribute("href", "/register");
+    expect(screen.getByTestId("download-web")).toHaveAttribute("href", "/dashboard");
 
     const macLink = screen.getByTestId("download-mac");
     expect(macLink).toHaveAttribute(
@@ -285,7 +288,7 @@ describe("app pages", () => {
       "/releases/macos/WaiComputer-latest.dmg",
     );
     expect(macLink).toHaveAttribute("download");
-    expect(macLink).toHaveTextContent("macOS 14+");
+    expect(macLink).toHaveTextContent("Mac");
 
     const iosLink = screen.getByTestId("download-ios");
     expect(iosLink).toHaveAttribute(
@@ -293,55 +296,37 @@ describe("app pages", () => {
       "https://testflight.apple.com/join/rtnJQzwk",
     );
     expect(iosLink).toHaveTextContent("iPhone");
-    expect(iosLink).toHaveTextContent("TestFlight");
     expect(iosLink).not.toHaveAttribute("target");
 
-    expect(screen.getByRole("link", { name: "Benchmark" })).toHaveAttribute(
-      "href",
-      "/benchmarks/dictation",
-    );
-
-    // Feature trio.
+    expect(screen.getByRole("heading", { level: 3, name: "Said" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Understood" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Found" })).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 3, name: /Record when you press start/i }),
+      screen.getByRole("heading", { level: 2, name: "Every memory, in one Inbox." }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", {
-        level: 3,
-        name: /Search saved transcripts/i,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { level: 3, name: /Ask Wai anything/i }),
-    ).toBeInTheDocument();
-
-    // Benchmark teaser + pricing teaser links.
-    expect(screen.getByTestId("benchmark-cta")).toHaveAttribute(
-      "href",
-      "/benchmarks/dictation",
-    );
-    expect(screen.getByTestId("pricing-link")).toHaveAttribute(
-      "href",
-      "/pricing",
-    );
-    expect(screen.getByText("3,000 transcribed words per week")).toBeInTheDocument();
-    expect(screen.queryByText("10 recordings per week")).not.toBeInTheDocument();
-
-    // FAQ — at least one well-known question.
-    expect(
-      screen.getByText(/What does WaiComputer record\?/i),
-    ).toBeInTheDocument();
+    expect(screen.getByAltText("WaiComputer recording summary and transcript")).toBeInTheDocument();
+    expect(screen.getByAltText("WaiComputer memory library")).toBeInTheDocument();
+    expect(screen.getByText("Recording starts only when you tell it to.")).toBeInTheDocument();
+    expect(screen.queryByText(/What does WaiComputer record\?/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("3,000 transcribed words per week")).not.toBeInTheDocument();
   });
 
-  it("renders Russian landing with full marketing sections", () => {
+  it("renders the focused Russian memory journey and payment details", () => {
     render(<RuHome />);
 
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: /Приватная ИИ-память для того, что вы сами записали/i,
+        name: "Не держите всё в голове.",
       }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Записывайте встречи и голосовые заметки. WaiComputer расшифрует речь, выделит главное и поможет быстро найти нужное.",
+      ),
+    ).toBeInTheDocument();
+
+    expect(screen.getByTestId("primary-cta-ru")).toHaveAttribute("href", "/register");
 
     const macLink = screen.getByTestId("download-mac-ru");
     expect(macLink).toHaveAttribute(
@@ -349,12 +334,11 @@ describe("app pages", () => {
       "/releases/macos/WaiComputer-ru-latest.dmg",
     );
     expect(macLink).toHaveAttribute("download");
-    expect(macLink).toHaveTextContent("Скачать для Mac");
+    expect(macLink).toHaveTextContent("Mac");
 
     const webLink = screen.getByTestId("download-web-ru");
     expect(webLink).toHaveAttribute("href", "/dashboard");
-    expect(webLink).toHaveTextContent("Открыть Web");
-    expect(webLink).toHaveTextContent("Браузер");
+    expect(webLink).toHaveTextContent("Открыть в браузере");
 
     const iosLink = screen.getByTestId("download-ios-ru");
     expect(iosLink).toHaveAttribute(
@@ -362,12 +346,9 @@ describe("app pages", () => {
       "https://testflight.apple.com/join/rtnJQzwk",
     );
     expect(iosLink).toHaveTextContent("iPhone");
-    expect(iosLink).toHaveTextContent("TestFlight");
 
-    expect(screen.getByTestId("platform-web-ru")).toHaveAttribute(
-      "href",
-      "/dashboard",
-    );
+    expect(screen.getByTestId("platform-web-ru")).toHaveAttribute("href", "/dashboard");
+    expect(screen.getByTestId("platform-web-ru")).toHaveTextContent("Браузер");
 
     expect(screen.getByRole("link", { name: /войти/i })).toHaveAttribute(
       "href",
@@ -376,40 +357,34 @@ describe("app pages", () => {
     expect(
       screen.getByRole("link", { name: "Конфиденциальность" }),
     ).toHaveAttribute("href", "/ru/privacy");
-    expect(screen.getByRole("link", { name: "Бенчмарк" })).toHaveAttribute(
-      "href",
-      "/ru/benchmarks/dictation",
-    );
-
-    // Feature trio (RU).
+    expect(screen.getByRole("group", { name: "Язык" })).toBeInTheDocument();
+    expect(screen.getByText("Как работает WaiComputer")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 3, name: /Записывайте после нажатия старт/i }),
+      screen.getByRole("heading", { level: 2, name: "Запишите один раз. Найдите в любой момент." }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Запись" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Главное" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Поиск" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Получите расшифровку, краткий итог и список задач."),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", {
-        level: 3,
-        name: /Ищите по сохранённым расшифровкам/i,
-      }),
+      screen.getByRole("heading", { level: 2, name: "Откройте запись — сразу увидите главное." }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", {
-        level: 3,
-        name: /Спрашивайте Wai о чём угодно/i,
-      }),
+      screen.getByText(
+        "Запись, расшифровка, краткий итог и задачи — в одном окне. Все записи собраны в общей библиотеке.",
+      ),
     ).toBeInTheDocument();
-
-    // Benchmark teaser + pricing teaser links localized.
-    expect(screen.getByTestId("benchmark-cta")).toHaveAttribute(
-      "href",
-      "/ru/benchmarks/dictation",
-    );
-    expect(screen.getByTestId("pricing-link")).toHaveAttribute(
-      "href",
-      "/ru/pricing",
-    );
-    expect(screen.getByText(/3 000 слов в неделю/i)).toBeInTheDocument();
-    expect(screen.getByText(/999 ₽/i)).toBeInTheDocument();
-    expect(screen.queryByText(/1290 ₽/i)).not.toBeInTheDocument();
+    expect(screen.getByAltText("Краткий итог и расшифровка в WaiComputer")).toBeInTheDocument();
+    expect(screen.getByAltText("Библиотека записей WaiComputer")).toBeInTheDocument();
+    expect(
+      screen.getByText("Без фоновой записи — вы сами решаете, когда начать."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Начните с первой записи." }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/саммари|Инбокс|Нативно|Бенчмарк/i)).not.toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 2, name: "Оплата и документы" }),
     ).toBeInTheDocument();
@@ -418,18 +393,20 @@ describe("app pages", () => {
     expect(screen.getByAltText("Mastercard")).toBeInTheDocument();
     expect(screen.getByAltText("Т-Банк T-Pay")).toBeInTheDocument();
     expect(screen.getByText("tbank.ru")).toBeInTheDocument();
+    expect(screen.getByText(/Оплатить Pro в рублях можно через Т-Банк/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Правила оплаты, отмены подписки, возврата и рассмотрения претензий/i),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Т-Банк/i })).toHaveAttribute(
       "href",
       "https://www.tbank.ru/",
     );
     expect(screen.getByText(/ООО "ВАЙВАЙ"/i)).toBeInTheDocument();
-    expect(screen.getByText(/ИНН: 9714075304/i)).toBeInTheDocument();
+    expect(screen.getByText("9714075304")).toBeInTheDocument();
     expect(screen.getByText(/ул\. Большая Садовая, 5\/1/i)).toBeInTheDocument();
 
-    // FAQ — at least one well-known question.
-    expect(
-      screen.getByText(/Что WaiComputer записывает\?/i),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/Что WaiComputer записывает\?/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/3 000 слов в неделю/i)).not.toBeInTheDocument();
   });
 
   it("renders Russian pricing with T-Bank payment compliance details", () => {
@@ -441,7 +418,7 @@ describe("app pages", () => {
       screen.getByRole("heading", { level: 2, name: "Оплата в рублях" }),
     ).toBeInTheDocument();
     expect(screen.getAllByText(/цифровая услуга/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/доступ предоставляется после успешной оплаты/i)).toBeInTheDocument();
+    expect(screen.getByText(/доступ к Pro открывается сразу после оплаты/i)).toBeInTheDocument();
     expect(screen.getAllByText(/возврат/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole("link", { name: /tbank\.ru/i })).toHaveAttribute(
       "href",

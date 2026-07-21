@@ -19,7 +19,11 @@ export function LocaleSwitcher({
   const toRu = addRuPrefix(pathname);
 
   return (
-    <div className="locale-switcher" role="group" aria-label="Language">
+    <div
+      className="locale-switcher"
+      role="group"
+      aria-label={current === "ru" ? "Язык" : "Language"}
+    >
       <Link
         href={toEn}
         className={`locale-switcher__item${current === "en" ? " is-active" : ""}`}

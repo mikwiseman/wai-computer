@@ -2243,6 +2243,39 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.38rem;
 }
 
+.settings-form .settings-switch-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.65rem;
+  padding: 0.75rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+  cursor: pointer;
+}
+
+.settings-form .settings-switch-row input {
+  margin: 0.15rem 0 0;
+  accent-color: var(--accent);
+}
+
+.settings-form .settings-switch-row span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.settings-form .settings-switch-row strong {
+  color: var(--ink);
+}
+
+.settings-form .settings-switch-row small {
+  color: var(--ink-soft);
+  font-size: var(--font-label-size);
+  font-weight: 400;
+  line-height: 1.4;
+}
+
 .settings-model-list {
   display: grid;
   gap: 0.4rem;

@@ -453,19 +453,21 @@ test.describe("Auth flow", () => {
     );
   });
 
-  test("Russian home page shows Web CTA and current RUB pricing", async ({ page }) => {
+  test("Russian home page shows Web CTA and pricing route", async ({ page }) => {
     await page.goto("/ru");
 
     const webLink = page.getByTestId("download-web-ru");
     await expect(webLink).toHaveAttribute("href", "/dashboard");
-    await expect(webLink).toContainText("Открыть Web");
+    await expect(webLink).toContainText("Открыть в браузере");
 
     await expect(page.getByTestId("platform-web-ru")).toHaveAttribute(
       "href",
       "/dashboard",
     );
-    await expect(page.getByText("999 ₽")).toBeVisible();
-    await expect(page.getByText("1290 ₽")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Цены" })).toHaveAttribute(
+      "href",
+      "/ru/pricing",
+    );
   });
 
   test("magic link verification with valid token redirects new users to onboarding", async ({ page }) => {

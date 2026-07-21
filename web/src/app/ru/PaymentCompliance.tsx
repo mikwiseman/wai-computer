@@ -68,26 +68,27 @@ export function PaymentComplianceSection({ title, eyebrow }: PaymentComplianceSe
           <h3>Способы оплаты</h3>
           <PaymentMarks />
           <p>
-            Рублевая оплата Pro проходит через Т-Банк: принимаются карты МИР,
-            Visa и Mastercard, а также T-Pay, если он доступен на стороне банка.
+            Оплатить Pro в рублях можно через Т-Банк. Принимаются карты «Мир»,
+            Visa и Mastercard, а также T-Pay, если он доступен в вашем банке.
           </p>
         </article>
 
         <article className={styles.complianceCard}>
           <h3>Цифровая услуга</h3>
           <p>
-            WaiComputer — цифровая услуга и программное обеспечение WaiWai.
-            Страна разработки и предоставления услуги: Россия. Физической
-            доставки нет; доступ предоставляется после успешной оплаты.
+            WaiComputer — цифровой сервис WaiWai. Доступ к Pro открывается сразу
+            после оплаты. Сервис разработан в России и предоставляется онлайн,
+            без физической доставки.
           </p>
         </article>
 
         <article className={styles.complianceCard}>
           <h3>Возврат и поддержка</h3>
           <p>
-            Отмена подписки, возврат, порядок оплаты и претензии описаны в{" "}
-            <Link href="/ru/terms">публичной оферте</Link>. Поддержка:{" "}
-            <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>,{" "}
+            Правила оплаты, отмены подписки, возврата и рассмотрения претензий
+            описаны в <Link href="/ru/terms">публичной оферте</Link>. Если нужна
+            помощь, напишите на <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>{" "}
+            или позвоните по номеру{" "}
             <a href={`tel:${SUPPORT_PHONE.replace(/[^\d+]/g, "")}`}>{SUPPORT_PHONE}</a>.
           </p>
         </article>
@@ -96,7 +97,7 @@ export function PaymentComplianceSection({ title, eyebrow }: PaymentComplianceSe
           <h3>Продавец</h3>
           <dl className={styles.sellerDetails}>
             <div>
-              <dt>Организация</dt>
+              <dt>Юридическое лицо</dt>
               <dd>{SELLER_NAME}</dd>
             </div>
             <div>
@@ -105,7 +106,7 @@ export function PaymentComplianceSection({ title, eyebrow }: PaymentComplianceSe
             </div>
             <div>
               <dt>ИНН</dt>
-              <dd>ИНН: {SELLER_INN}</dd>
+              <dd>{SELLER_INN}</dd>
             </div>
             <div>
               <dt>Адрес</dt>
