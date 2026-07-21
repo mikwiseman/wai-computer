@@ -4,6 +4,7 @@ import { formatDurationClock } from "@/lib/format";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  cleanupDictation,
   createDictationEntry,
   createTranscriptionSession,
   listDictionaryWords,
@@ -46,6 +47,7 @@ interface Copy {
   tips: string[];
   dictionaryFailed: string;
   historyFailed: string;
+  cleanupFailed: string;
   empty: string;
 }
 
@@ -72,6 +74,7 @@ const COPY: Record<Locale, Copy> = {
     ],
     dictionaryFailed: "Dictionary could not load — copied transcript without custom replacements.",
     historyFailed: "Copied transcript, but dictation history could not be saved.",
+    cleanupFailed: "Smart cleanup failed — copied the raw transcript instead.",
     empty: "Didn't catch anything — try again.",
   },
   ru: {
@@ -96,6 +99,7 @@ const COPY: Record<Locale, Copy> = {
     ],
     dictionaryFailed: "Не удалось загрузить словарь — скопирована расшифровка без ваших замен.",
     historyFailed: "Расшифровка скопирована, но история диктовки не сохранилась.",
+    cleanupFailed: "Умная очистка не сработала — скопирована необработанная расшифровка.",
     empty: "Ничего не распознал — попробуйте ещё раз.",
   },
 };
@@ -408,19 +412,39 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     }
     const { text: replaced } = applyDictionary(raw, words);
 
-    setResult(replaced);
+    // Smart cleanup (same server pass the Mac app uses): fillers, spoken
+    // self-corrections ("scratch that", "забудь"), and formatting commands.
+    // On failure the raw words still land — degradation is visible, not silent.
+    let cleaned = replaced;
+    try {
+      const vocabulary = Array.from(
+        new Set(
+          words
+            .flatMap((w) => [w.word, w.replacement])
+            .filter((v): v is string => Boolean(v && v.trim())),
+        ),
+      );
+      const response = await cleanupDictation(replaced, vocabulary);
+      if (response.text.trim()) {
+        cleaned = response.text;
+      }
+    } catch {
+      setNotice(copy.cleanupFailed);
+    }
+
+    setResult(cleaned);
     setPhase("ready");
     setState("idle");
-    await copyText(replaced);
+    await copyText(cleaned);
 
     // Keep the paste flow available, but do not hide a history/quota sync failure.
     try {
       await createDictationEntry({
         client_entry_id: crypto.randomUUID(),
         raw_text: raw,
-        cleaned_text: replaced,
+        cleaned_text: cleaned,
         duration_seconds: elapsed,
-        word_count: countWords(replaced),
+        word_count: countWords(cleaned),
         occurred_at: new Date().toISOString(),
       });
     } catch {
@@ -428,6 +452,7 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     }
   }, [
     clearTimer,
+    copy.cleanupFailed,
     copy.dictionaryFailed,
     copy.empty,
     copy.historyFailed,

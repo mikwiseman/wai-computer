@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 
 import { DictatePanel, applyDictionary, dictionaryRealtimeHints } from "./DictatePanel";
 import {
+  cleanupDictation,
   createDictationEntry,
   createTranscriptionSession,
   listDictionaryWords,
@@ -15,6 +16,7 @@ import type {
 } from "@/lib/types";
 
 vi.mock("@/lib/api", () => ({
+  cleanupDictation: vi.fn(),
   createDictationEntry: vi.fn(),
   createTranscriptionSession: vi.fn(),
   listDictionaryWords: vi.fn(),
@@ -86,6 +88,7 @@ vi.mock("@/lib/realtime", () => {
   return { RealtimeTranscriber: FakeTranscriber, realtimeSessionRequestKey };
 });
 
+const mockedCleanup = vi.mocked(cleanupDictation);
 const mockedCreateEntry = vi.mocked(createDictationEntry);
 const mockedCreateSession = vi.mocked(createTranscriptionSession);
 const mockedListWords = vi.mocked(listDictionaryWords);
@@ -173,6 +176,9 @@ beforeEach(() => {
   mockedListWords.mockResolvedValue([]);
   mockedCreateSession.mockResolvedValue(sessionResponse());
   mockedCreateEntry.mockResolvedValue(undefined as never);
+  // Default smart cleanup: echo the input back (per-test overrides prove
+  // the panel actually uses the cleaned text).
+  mockedCleanup.mockImplementation(async (text: string) => ({ text }));
 });
 
 afterEach(() => {
@@ -479,6 +485,37 @@ describe("DictatePanel stop + cleanup", () => {
     expect(entry.word_count).toBe(5);
     expect(typeof entry.client_entry_id).toBe("string");
     expect(typeof entry.occurred_at).toBe("string");
+  });
+
+  it("shows, copies, and stores the smart-cleaned text (spoken corrections applied)", async () => {
+    mockedCleanup.mockResolvedValue({ text: "Напиши: отчёт готов." });
+    await getToRecording();
+    lastTranscriber().stopResult = [
+      segment("напиши длинное письмо, забудь всё это, напиши: отчёт готов"),
+    ];
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+
+    expect(await screen.findByTestId("dictate-result")).toHaveTextContent(
+      "Напиши: отчёт готов.",
+    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Напиши: отчёт готов."));
+    await waitFor(() => expect(mockedCreateEntry).toHaveBeenCalledTimes(1));
+    const entry = mockedCreateEntry.mock.calls[0][0];
+    expect(entry.raw_text).toBe("напиши длинное письмо, забудь всё это, напиши: отчёт готов");
+    expect(entry.cleaned_text).toBe("Напиши: отчёт готов.");
+  });
+
+  it("surfaces cleanup failure and copies the dictionary-replaced transcript", async () => {
+    mockedCleanup.mockRejectedValue(new Error("cleanup down"));
+    await getToRecording();
+    lastTranscriber().stopResult = [segment("raw words survive")];
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Smart cleanup failed");
+    expect(screen.getByTestId("dictate-result")).toHaveTextContent("raw words survive");
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("raw words survive"));
   });
 
   it("copies raw transcript without a notice when no dictionary entries exist", async () => {
