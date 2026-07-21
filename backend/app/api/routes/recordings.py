@@ -314,6 +314,7 @@ class RecordingResponse(BaseModel):
 
     id: str
     title: str | None
+    automatic_title_pending: bool
     type: str
     audio_url: str | None
     status: str
@@ -369,6 +370,7 @@ class CreateRecordingRequest(BaseModel):
     """Request to create a recording."""
 
     title: str | None = None
+    title_mode: Literal["preserve", "automatic"] | None = None
     type: Literal["meeting", "note", "reflection"] = "note"
     language: str | None = None
     folder_id: UUID | None = None
@@ -401,29 +403,28 @@ async def _fresh_reusable_pending_recording(
     """Return a just-created native recording row for duplicate start requests."""
     if app_settings.recording_create_duplicate_window_seconds <= 0:
         return None
-    if request.title and request.title.strip():
+    if request.title and request.title.strip() and request.title_mode != "automatic":
         return None
 
     cutoff = datetime.now(timezone.utc) - timedelta(
         seconds=app_settings.recording_create_duplicate_window_seconds
     )
+    filters = [
+        Recording.user_id == user_id,
+        Recording.type == request.type,
+        Recording.language == language,
+        Recording.folder_id == folder_id,
+        Recording.status == RecordingStatus.PENDING_UPLOAD.value,
+        Recording.deleted_at.is_(None),
+        Recording.uploaded_at.is_(None),
+        Recording.audio_url.is_(None),
+        Recording.created_at >= cutoff,
+        ~exists().where(Segment.recording_id == Recording.id),
+    ]
+    if request.title_mode != "automatic":
+        filters.append(or_(Recording.title.is_(None), Recording.title == ""))
     result = await db.execute(
-        select(Recording)
-        .where(
-            Recording.user_id == user_id,
-            Recording.type == request.type,
-            Recording.language == language,
-            Recording.folder_id == folder_id,
-            Recording.status == RecordingStatus.PENDING_UPLOAD.value,
-            Recording.deleted_at.is_(None),
-            Recording.uploaded_at.is_(None),
-            Recording.audio_url.is_(None),
-            or_(Recording.title.is_(None), Recording.title == ""),
-            Recording.created_at >= cutoff,
-            ~exists().where(Segment.recording_id == Recording.id),
-        )
-        .order_by(Recording.created_at.desc())
-        .limit(1)
+        select(Recording).where(*filters).order_by(Recording.created_at.desc()).limit(1)
     )
     return result.scalar_one_or_none()
 
@@ -431,7 +432,7 @@ async def _fresh_reusable_pending_recording(
 def _is_fresh_pending_start_reusable(request: CreateRecordingRequest) -> bool:
     if app_settings.recording_create_duplicate_window_seconds <= 0:
         return False
-    return not bool(request.title and request.title.strip())
+    return request.title_mode == "automatic" or not bool(request.title and request.title.strip())
 
 
 def _fresh_pending_start_lock_key(
@@ -723,6 +724,7 @@ def _serialize_recording(recording: Recording) -> RecordingResponse:
     return RecordingResponse(
         id=str(recording.id),
         title=recording.title,
+        automatic_title_pending=recording.title_auto_generated,
         type=recording.type,
         audio_url=recording.audio_url,
         status=recording.status,
@@ -773,8 +775,7 @@ def _serialize_recording_detail(recording: Recording) -> RecordingDetailResponse
     return RecordingDetailResponse(
         **_serialize_recording(recording).model_dump(),
         segments=[
-            _serialize_segment(s)
-            for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
+            _serialize_segment(s) for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
         ],
         summary=_serialize_summary(recording.summary, names),
         summary_generation=_serialize_summary_generation(
@@ -832,8 +833,7 @@ def _serialize_shared_recording(
         created_at=recording.created_at,
         shared_at=share.created_at,
         segments=[
-            _serialize_segment(s)
-            for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
+            _serialize_segment(s) for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
         ],
         summary=_serialize_summary(recording.summary, _assigned_speaker_names(recording)),
         action_items=[_serialize_action_item(a) for a in recording.action_items],
@@ -907,9 +907,7 @@ async def _load_recording_detail(
     if not include_deleted:
         query = query.where(Recording.deleted_at.is_(None))
 
-    result = await db.execute(
-        query
-    )
+    result = await db.execute(query)
     return result.scalar_one_or_none()
 
 
@@ -1028,6 +1026,7 @@ async def _mark_recording_failed(
     if recording.status not in ACTIVE_RECORDING_STATUSES:
         return
     recording.status = RecordingStatus.FAILED.value
+    recording.title_auto_generated = False
     recording.failure_code = failure_code
     recording.failure_message = sanitize_failure_message(failure_message)
     await db.commit()
@@ -1097,11 +1096,10 @@ async def _persist_client_segments(
 ) -> str:
     nonempty_segments = [segment for segment in segments if segment.text.strip()]
     normalized_segments = [
-        segment
-        for segment in nonempty_segments
-        if not is_no_speech_placeholder(segment.text)
+        segment for segment in nonempty_segments if not is_no_speech_placeholder(segment.text)
     ]
     if not normalized_segments:
+        recording.title_auto_generated = False
         if duration_seconds is not None:
             recording.duration_seconds = duration_seconds
         elif nonempty_segments:
@@ -1170,7 +1168,7 @@ async def _persist_client_segments(
         recording.duration_seconds = segment_duration_seconds
 
     transcript_text = " ".join(transcript_chunks)
-    if not recording.title and transcript_text:
+    if recording.title_auto_generated and transcript_text:
         try:
             recording.title = await generate_title(
                 transcript_text,
@@ -1178,6 +1176,7 @@ async def _persist_client_segments(
             )
         except Exception as error:
             logger.warning("Title generation failed: %s", error)
+        recording.title_auto_generated = False
 
     recording.status = RecordingStatus.READY.value
     recording.failure_code = None
@@ -1508,9 +1507,7 @@ async def get_recording_analytics(
     # (runs of whitespace collapse; blank content counts zero words).
     words_per_segment = case(
         (func.btrim(Segment.content) == "", 0),
-        else_=func.cardinality(
-            func.regexp_split_to_array(func.btrim(Segment.content), r"\s+")
-        ),
+        else_=func.cardinality(func.regexp_split_to_array(func.btrim(Segment.content), r"\s+")),
     )
     total_words = (
         await db.execute(
@@ -1628,12 +1625,19 @@ async def create_recording(
         )
         return _serialize_recording(reusable_recording)
 
+    if request.title_mode == "automatic":
+        title_auto_generated = user.automatic_recording_titles
+    elif request.title_mode == "preserve":
+        title_auto_generated = False
+    else:
+        # Backward compatibility: older clients used a blank title to request
+        # automatic naming and a non-empty title to preserve user input.
+        title_auto_generated = not bool(request.title and request.title.strip())
+
     recording = Recording(
         user_id=user.id,
         title=request.title,
-        # A user-provided title is theirs to keep; an empty one will be
-        # auto-generated and may be replaced by the summary title.
-        title_auto_generated=not bool(request.title and request.title.strip()),
+        title_auto_generated=title_auto_generated,
         type=request.type,
         language=language,
         folder_id=folder_id,
@@ -2106,10 +2110,7 @@ def _content_disposition(filename: str) -> str:
     # unreserved characters per RFC 3986)
     utf8_name = quote(filename, safe="")
 
-    return (
-        f'attachment; filename="{ascii_name}"; '
-        f"filename*=UTF-8''{utf8_name}"
-    )
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{utf8_name}"
 
 
 @router.get("/{recording_id}/export")
@@ -2198,14 +2199,18 @@ async def _delete_recording_entity_mentions(
     recording_id: UUID,
 ) -> None:
     entity_ids = (
-        await db.execute(
-            select(EntityMention.entity_id).where(
-                EntityMention.user_id == user_id,
-                EntityMention.source_kind == "recording",
-                EntityMention.source_id == recording_id,
+        (
+            await db.execute(
+                select(EntityMention.entity_id).where(
+                    EntityMention.user_id == user_id,
+                    EntityMention.source_kind == "recording",
+                    EntityMention.source_id == recording_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not entity_ids:
         return
     now = datetime.now(timezone.utc)
@@ -2332,8 +2337,7 @@ async def get_transcript(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
     return [
-        _serialize_segment(s)
-        for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
+        _serialize_segment(s) for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
     ]
 
 
@@ -3108,9 +3112,7 @@ async def assign_speaker(
         )
 
     recording_result = await db.execute(
-        select(Recording).where(
-            Recording.id == recording_id, Recording.user_id == user.id
-        )
+        select(Recording).where(Recording.id == recording_id, Recording.user_id == user.id)
     )
     recording = recording_result.scalar_one_or_none()
     if recording is None:
@@ -3118,19 +3120,13 @@ async def assign_speaker(
 
     if request.person_id is not None:
         person_result = await db.execute(
-            select(Person).where(
-                Person.id == request.person_id, Person.user_id == user.id
-            )
+            select(Person).where(Person.id == request.person_id, Person.user_id == user.id)
         )
         person = person_result.scalar_one_or_none()
         if person is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Person not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
     else:
-        person = Person(
-            user_id=user.id, display_name=request.new_display_name or ""
-        )
+        person = Person(user_id=user.id, display_name=request.new_display_name or "")
         db.add(person)
         await db.flush()
 
@@ -3423,10 +3419,7 @@ async def upload_audio_file(
             recording_id=recording_id,
             ext=ext,
         )
-        if (
-            client_file_size_bytes is not None
-            and client_file_size_bytes != staged_size_bytes
-        ):
+        if client_file_size_bytes is not None and client_file_size_bytes != staged_size_bytes:
             delete_staged_file(staged_path)
             detail = "Uploaded file size did not match the recorded file size."
             await _mark_recording_failed(recording, db, "upload_size_mismatch", detail)

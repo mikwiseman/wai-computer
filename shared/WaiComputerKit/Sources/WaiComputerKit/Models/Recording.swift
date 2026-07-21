@@ -7,6 +7,13 @@ public enum RecordingType: String, Codable, Sendable, CaseIterable {
     case reflection
 }
 
+/// Whether the initial title is authoritative or a temporary live-recording
+/// label that may be replaced once by an AI-generated title.
+public enum RecordingTitleMode: String, Codable, Sendable {
+    case preserve
+    case automatic
+}
+
 /// Recording upload / processing lifecycle.
 public enum RecordingStatus: String, Codable, Sendable, CaseIterable {
     case pendingUpload = "pending_upload"
@@ -104,6 +111,7 @@ public struct RecordingShareLink: Codable, Sendable {
 public struct Recording: Codable, Identifiable, Sendable, Equatable {
     public let id: String
     public var title: String?
+    public let automaticTitlePending: Bool
     public let type: RecordingType
     public let audioUrl: String?
     public let status: RecordingStatus
@@ -120,6 +128,7 @@ public struct Recording: Codable, Identifiable, Sendable, Equatable {
     public init(
         id: String,
         title: String? = nil,
+        automaticTitlePending: Bool = false,
         type: RecordingType,
         audioUrl: String? = nil,
         status: RecordingStatus = .pendingUpload,
@@ -135,6 +144,7 @@ public struct Recording: Codable, Identifiable, Sendable, Equatable {
     ) {
         self.id = id
         self.title = title
+        self.automaticTitlePending = automaticTitlePending
         self.type = type
         self.audioUrl = audioUrl
         self.status = status
@@ -152,6 +162,7 @@ public struct Recording: Codable, Identifiable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id
         case title
+        case automaticTitlePending = "automatic_title_pending"
         case type
         case audioUrl = "audio_url"
         case status
@@ -170,6 +181,10 @@ public struct Recording: Codable, Identifiable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         title = try container.decodeIfPresent(String.self, forKey: .title)
+        automaticTitlePending = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .automaticTitlePending
+        ) ?? false
         type = try container.decode(RecordingType.self, forKey: .type)
         audioUrl = try container.decodeIfPresent(String.self, forKey: .audioUrl)
         let decodedStatus = try container.decodeIfPresent(RecordingStatus.self, forKey: .status)
@@ -387,6 +402,7 @@ public struct SummaryAudioState: Codable, Sendable, Equatable {
 public struct RecordingDetail: Codable, Identifiable, Sendable {
     public let id: String
     public var title: String?
+    public let automaticTitlePending: Bool
     public let type: RecordingType
     public let audioUrl: String?
     public let status: RecordingStatus
@@ -409,6 +425,7 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
     public init(
         id: String,
         title: String? = nil,
+        automaticTitlePending: Bool = false,
         type: RecordingType,
         audioUrl: String? = nil,
         status: RecordingStatus = .pendingUpload,
@@ -430,6 +447,7 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
     ) {
         self.id = id
         self.title = title
+        self.automaticTitlePending = automaticTitlePending
         self.type = type
         self.audioUrl = audioUrl
         self.status = status
@@ -453,6 +471,7 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id
         case title
+        case automaticTitlePending = "automatic_title_pending"
         case type
         case audioUrl = "audio_url"
         case status
@@ -477,6 +496,10 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         title = try container.decodeIfPresent(String.self, forKey: .title)
+        automaticTitlePending = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .automaticTitlePending
+        ) ?? false
         type = try container.decode(RecordingType.self, forKey: .type)
         audioUrl = try container.decodeIfPresent(String.self, forKey: .audioUrl)
         let decodedStatus = try container.decodeIfPresent(RecordingStatus.self, forKey: .status)
@@ -505,6 +528,7 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         RecordingDetail(
             id: id,
             title: title,
+            automaticTitlePending: automaticTitlePending,
             type: type,
             audioUrl: audioUrl,
             status: status,
@@ -530,6 +554,7 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         RecordingDetail(
             id: id,
             title: title,
+            automaticTitlePending: automaticTitlePending,
             type: type,
             audioUrl: audioUrl,
             status: status,
@@ -555,6 +580,7 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         RecordingDetail(
             id: id,
             title: title,
+            automaticTitlePending: automaticTitlePending,
             type: type,
             audioUrl: audioUrl,
             status: status,
@@ -580,6 +606,7 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         RecordingDetail(
             id: id,
             title: newTitle,
+            automaticTitlePending: false,
             type: type,
             audioUrl: audioUrl,
             status: status,
@@ -607,6 +634,7 @@ public extension Recording {
         self.init(
             id: detail.id,
             title: detail.title,
+            automaticTitlePending: detail.automaticTitlePending,
             type: detail.type,
             audioUrl: detail.audioUrl,
             status: detail.status,
@@ -626,17 +654,20 @@ public extension Recording {
 /// Request to create a new recording
 public struct CreateRecordingRequest: Codable, Sendable {
     public var title: String?
+    public var titleMode: RecordingTitleMode?
     public var type: RecordingType
     public var language: String
     public var folderId: String?
 
     public init(
         title: String? = nil,
+        titleMode: RecordingTitleMode? = nil,
         type: RecordingType = .note,
         language: String = "en",
         folderId: String? = nil
     ) {
         self.title = title
+        self.titleMode = titleMode
         self.type = type
         self.language = language
         self.folderId = folderId
@@ -644,6 +675,7 @@ public struct CreateRecordingRequest: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case title
+        case titleMode = "title_mode"
         case type
         case language
         case folderId = "folder_id"

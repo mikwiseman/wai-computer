@@ -182,7 +182,9 @@ final class MacInboxViewModel: ObservableObject {
 
     private func scheduleProcessingRefreshIfNeeded() {
         processingRefreshTask?.cancel()
-        guard rows.contains(where: { $0.status == .processing }) else { return }
+        guard rows.contains(where: {
+            $0.status == .processing || $0.automaticTitlePending == true
+        }) else { return }
 
         let generation = loadGeneration
         processingRefreshTask = Task { [weak self] in

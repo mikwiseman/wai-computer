@@ -43,6 +43,8 @@ interface Copy {
   styles: Record<SummaryStyle, string>;
   summaryInstructions: string;
   instructionsPlaceholder: string;
+  automaticTitles: string;
+  automaticTitlesHelp: string;
   models: string;
   modelDictation: string;
   modelRecording: string;
@@ -61,6 +63,8 @@ const COPY: Record<Locale, Copy> = {
     styles: { brief: "Brief", medium: "Medium", detailed: "Detailed" },
     summaryInstructions: "Custom instructions",
     instructionsPlaceholder: "e.g. Always call out action items and decisions.",
+    automaticTitles: "Name recordings automatically",
+    automaticTitlesHelp: "Only recordings started in the app. File names and manual edits never change.",
     models: "Transcription models",
     modelDictation: "Dictation",
     modelRecording: "Live recording",
@@ -77,6 +81,8 @@ const COPY: Record<Locale, Copy> = {
     styles: { brief: "Кратко", medium: "Средне", detailed: "Подробно" },
     summaryInstructions: "Свои инструкции",
     instructionsPlaceholder: "напр. Всегда выделяй задачи и решения.",
+    automaticTitles: "Автоматически называть записи",
+    automaticTitlesHelp: "Только для записей, начатых в приложении. Имена файлов и ручные правки не меняются.",
     models: "Модели транскрипции",
     modelDictation: "Диктовка",
     modelRecording: "Живая запись",
@@ -152,6 +158,19 @@ export function TranscriptionSettingsPanel({
   return (
     <div className="settings-form" data-testid="transcription-settings">
       <h3>{copy.heading}</h3>
+
+      <label className="settings-switch-row">
+        <input
+          type="checkbox"
+          checked={settings.automatic_recording_titles !== false}
+          disabled={busy}
+          onChange={(event) => onUpdate({ automatic_recording_titles: event.target.checked })}
+        />
+        <span>
+          <strong>{copy.automaticTitles}</strong>
+          <small>{copy.automaticTitlesHelp}</small>
+        </span>
+      </label>
 
       <label className="settings-field">
         <span>{copy.defaultLanguage}</span>

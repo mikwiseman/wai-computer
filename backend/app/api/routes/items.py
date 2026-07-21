@@ -202,9 +202,7 @@ def _derive_status(item: Item, has_summary: bool, *, has_body: bool | None = Non
         return "failed"
     if has_summary:
         return "ready"
-    body_present = (
-        has_body if has_body is not None else bool((item.body or "").strip())
-    )
+    body_present = has_body if has_body is not None else bool((item.body or "").strip())
     if not body_present and (item.url or "").strip():
         return "fetching"
     return "summarizing"
@@ -385,9 +383,9 @@ async def _handle_media_upload(
     recording = Recording(
         user_id=user.id,
         title=display_title,
-        # A filename-derived title is a placeholder the summary may improve; a
-        # real user-provided title is authoritative and kept.
-        title_auto_generated=not bool(user_title),
+        # The filename is user-provided identity, not an AI placeholder. File
+        # imports keep it just like an explicit title or a manual rename.
+        title_auto_generated=False,
         type="note",
         status=RecordingStatus.PROCESSING.value,
         uploaded_at=datetime.now(timezone.utc),
@@ -564,26 +562,26 @@ async def list_items(
         base = base.where(Item.folder_id == folder.id)
 
     result_rows = (
-        await db.execute(
-            base.order_by(Item.created_at.desc()).offset(offset).limit(limit)
-        )
+        await db.execute(base.order_by(Item.created_at.desc()).offset(offset).limit(limit))
     ).all()
     rows = [row[0] for row in result_rows]
     has_body_by_id = {row[0].id: bool(row[1]) for row in result_rows}
 
-    summarized_ids = set(
-        (
-            await db.execute(
-                select(ItemSummary.item_id).where(
-                    ItemSummary.item_id.in_([r.id for r in rows])
+    summarized_ids = (
+        set(
+            (
+                await db.execute(
+                    select(ItemSummary.item_id).where(ItemSummary.item_id.in_([r.id for r in rows]))
                 )
             )
-        ).scalars().all()
-    ) if rows else set()
-
-    count_q = select(func.count()).select_from(
-        base.order_by(None).subquery()
+            .scalars()
+            .all()
+        )
+        if rows
+        else set()
     )
+
+    count_q = select(func.count()).select_from(base.order_by(None).subquery())
     total = (await db.execute(count_q)).scalar() or 0
 
     return ItemListResponse(
@@ -621,7 +619,8 @@ async def get_item(
     """Get one item with its summary + key-moments table."""
     item = (
         await db.execute(
-            select(Item).where(
+            select(Item)
+            .where(
                 Item.id == item_id,
                 Item.user_id == user.id,
                 Item.deleted_at.is_(None),
@@ -630,9 +629,7 @@ async def get_item(
         )
     ).scalar_one_or_none()
     if item is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     summary = (
         await db.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
     ).scalar_one_or_none()
@@ -888,14 +885,10 @@ async def delete_item(
     from datetime import datetime, timezone
 
     item = (
-        await db.execute(
-            select(Item).where(Item.id == item_id, Item.user_id == user.id)
-        )
+        await db.execute(select(Item).where(Item.id == item_id, Item.user_id == user.id))
     ).scalar_one_or_none()
     if item is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
-    )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     item.deleted_at = datetime.now(timezone.utc)
     await db.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

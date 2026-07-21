@@ -195,6 +195,8 @@ struct MacSettingsView: View {
     @State private var summaryLanguage = "auto"
     @State private var summaryStyle = "medium"
     @State private var summaryInstructions = ""
+    @State private var automaticRecordingTitles = true
+    @State private var isSavingAutomaticRecordingTitles = false
     @State private var summaryInstructionsSaveTask: Task<Void, Never>?
     @State private var dictationStyleRules = ""
     @State private var dictationStyleRulesSaveTask: Task<Void, Never>?
@@ -400,6 +402,40 @@ struct MacSettingsView: View {
 
     private var recordingAutoStopSection: some View {
         Section {
+            Toggle(isOn: $automaticRecordingTitles) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(t("Name recordings automatically", "Автоматически называть записи"))
+                    Text(t(
+                        "Only recordings started in the app. File names and manual edits never change.",
+                        "Только для записей, начатых в приложении. Имена файлов и ручные правки не меняются."
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .disabled(!settingsLoaded || isSavingAutomaticRecordingTitles)
+            .onChangeCompat(of: automaticRecordingTitles) { previous, enabled in
+                guard settingsLoaded, !isSavingAutomaticRecordingTitles else { return }
+                isSavingAutomaticRecordingTitles = true
+                Task {
+                    defer { isSavingAutomaticRecordingTitles = false }
+                    do {
+                        let settings = try await appState.getAPIClient().updateSettings(
+                            UpdateSettingsRequest(automaticRecordingTitles: enabled)
+                        )
+                        applySettings(settings)
+                        settingsError = nil
+                    } catch {
+                        automaticRecordingTitles = previous
+                        settingsError = t(
+                            "Couldn't save automatic naming: \(error.localizedDescription)",
+                            "Не удалось сохранить автоназвания: \(error.localizedDescription)"
+                        )
+                    }
+                }
+            }
+            .accessibilityIdentifier("settings-automatic-recording-titles-toggle")
+
             Toggle(isOn: $meetingDetectionEnabled) {
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(t("Suggest recording when a call starts", "Предлагать запись, когда начинается звонок"))
@@ -1929,6 +1965,7 @@ struct MacSettingsView: View {
         summaryLanguage = settings.summaryLanguage
         summaryStyle = settings.summaryStyle
         summaryInstructions = settings.summaryInstructions ?? ""
+        automaticRecordingTitles = settings.automaticRecordingTitles
         dictationStyleRules = settings.dictationStyleRules ?? ""
         dictationManager.ingestSettings(settings)
     }

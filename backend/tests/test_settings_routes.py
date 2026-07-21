@@ -119,6 +119,25 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert data["dictation_cleanup_level"] == "medium"
     assert data["dictation_post_filter_provider"] == "disabled"
     assert data["dictation_post_filter_model"] == "none"
+    assert data["automatic_recording_titles"] is True
+
+
+@pytest.mark.asyncio
+async def test_automatic_recording_titles_roundtrip(client: AsyncClient):
+    """The single naming preference is account-synced and defaults on."""
+    headers = await _register(client, "settings.recording-titles@example.com", "password-123")
+
+    patched = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"automatic_recording_titles": False},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["automatic_recording_titles"] is False
+
+    read = await client.get("/api/settings", headers=headers)
+    assert read.status_code == 200
+    assert read.json()["automatic_recording_titles"] is False
 
 
 @pytest.mark.asyncio
@@ -425,9 +444,7 @@ async def test_get_transcription_options_returns_curated_choices(
     ]
     assert data["dictation_post_filter"] == []
     assert all(
-        option["model"] != "removed-file-model"
-        for group in data.values()
-        for option in group
+        option["model"] != "removed-file-model" for group in data.values() for option in group
     )
 
 
@@ -457,9 +474,7 @@ async def test_get_transcription_options_hides_unconfigured_providers(
     assert data["recording_live_stt"] == []
     # ElevenLabs IS configured in this scenario, so Scribe stays offered while
     # the unconfigured Deepgram pair is hidden.
-    assert [(o["provider"], o["model"]) for o in data["file_stt"]] == [
-        ("elevenlabs", "scribe_v2")
-    ]
+    assert [(o["provider"], o["model"]) for o in data["file_stt"]] == [("elevenlabs", "scribe_v2")]
     assert data["dictation_post_filter"] == []
 
 

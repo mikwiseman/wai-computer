@@ -1004,11 +1004,18 @@ public actor APIClient {
 
     public func createRecording(
         title: String? = nil,
+        titleMode: RecordingTitleMode? = nil,
         type: RecordingType = .note,
         language: String = "en",
         folderId: String? = nil
     ) async throws -> Recording {
-        let request = CreateRecordingRequest(title: title, type: type, language: language, folderId: folderId)
+        let request = CreateRecordingRequest(
+            title: title,
+            titleMode: titleMode,
+            type: type,
+            language: language,
+            folderId: folderId
+        )
         return try await self.request(.POST, path: "/api/recordings", body: request)
     }
 

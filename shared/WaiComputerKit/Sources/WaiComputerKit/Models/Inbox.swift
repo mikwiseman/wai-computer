@@ -46,6 +46,7 @@ public struct InboxRow: Codable, Identifiable, Sendable, Equatable {
     public let sourceId: String
     public let detail: InboxDetailRef
     public let title: String?
+    public let automaticTitlePending: Bool?
     public let sourceLabel: String
     public let sublabel: String?
     public let activityAt: Date
@@ -86,13 +87,15 @@ public struct InboxRow: Codable, Identifiable, Sendable, Equatable {
         isStarred: Bool,
         isPinned: Bool,
         isArchived: Bool,
-        isTrashed: Bool
+        isTrashed: Bool,
+        automaticTitlePending: Bool? = nil
     ) {
         self.id = id
         self.sourceKind = sourceKind
         self.sourceId = sourceId
         self.detail = detail
         self.title = title
+        self.automaticTitlePending = automaticTitlePending
         self.sourceLabel = sourceLabel
         self.sublabel = sublabel
         self.activityAt = activityAt
@@ -118,6 +121,7 @@ public struct InboxRow: Codable, Identifiable, Sendable, Equatable {
         case sourceId = "source_id"
         case detail
         case title
+        case automaticTitlePending = "automatic_title_pending"
         case sourceLabel = "source_label"
         case sublabel
         case activityAt = "activity_at"

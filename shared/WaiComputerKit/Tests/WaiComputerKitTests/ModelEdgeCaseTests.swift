@@ -220,6 +220,7 @@ final class ModelEdgeCaseTests: XCTestCase {
     func testCreateRecordingRequestEncodesWithSnakeCaseKeys() throws {
         let request = CreateRecordingRequest(
             title: "Test Recording",
+            titleMode: .automatic,
             type: .meeting,
             language: "de",
             folderId: "folder-42"
@@ -230,12 +231,43 @@ final class ModelEdgeCaseTests: XCTestCase {
 
         // Verify snake_case keys are used
         XCTAssertEqual(jsonObject["title"] as? String, "Test Recording")
+        XCTAssertEqual(jsonObject["title_mode"] as? String, "automatic")
         XCTAssertEqual(jsonObject["type"] as? String, "meeting")
         XCTAssertEqual(jsonObject["language"] as? String, "de")
         XCTAssertEqual(jsonObject["folder_id"] as? String, "folder-42")
 
         // Verify camelCase keys are NOT present
         XCTAssertNil(jsonObject["folderId"])
+    }
+
+    func testProvisionalRecordingTitleIsImmediateAndLocalized() throws {
+        let timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let date = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2024,
+            month: 1,
+            day: 2,
+            hour: 3,
+            minute: 4
+        )))
+
+        XCTAssertEqual(
+            RecordingTitleFormatter.provisionalTitle(
+                at: date,
+                language: .russian,
+                timeZone: timeZone
+            ),
+            "Запись · 02.01.2024, 03:04"
+        )
+        XCTAssertEqual(
+            RecordingTitleFormatter.provisionalTitle(
+                at: date,
+                language: .english,
+                timeZone: timeZone
+            ),
+            "Recording · Jan 2, 2024, 3:04 AM"
+        )
     }
 
     func testCreateRecordingRequestEncodesWithNilOptionalFields() throws {

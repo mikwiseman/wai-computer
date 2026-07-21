@@ -163,7 +163,8 @@ final class UserEntityDictationModelsTests: XCTestCase {
           "dictation_post_filter_enabled":false,
           "dictation_cleanup_level":"none",
           "dictation_post_filter_provider":"disabled",
-          "dictation_post_filter_model":"none"
+          "dictation_post_filter_model":"none",
+          "automatic_recording_titles":true
         }
         """.data(using: .utf8)!
         let s = try decoder.decode(UserSettings.self, from: json)
@@ -175,6 +176,7 @@ final class UserEntityDictationModelsTests: XCTestCase {
         XCTAssertEqual(s.dictationLiveSTTModel, "nova-3")
         XCTAssertFalse(s.dictationPostFilterEnabled)
         XCTAssertEqual(s.dictationCleanupLevel, "none")
+        XCTAssertTrue(s.automaticRecordingTitles)
     }
 
     func testUserSettingsAllowsNullSummaryInstructions() throws {
@@ -209,12 +211,14 @@ final class UserEntityDictationModelsTests: XCTestCase {
     func testUpdateSettingsRequestPartial() throws {
         let req = UpdateSettingsRequest(
             defaultLanguage: "de",
+            automaticRecordingTitles: false,
             dictationPostFilterEnabled: true
         )
         let data = try encoder.encode(req)
         let json = try XCTUnwrap(String(data: data, encoding: .utf8))
         XCTAssertTrue(json.contains("\"default_language\":\"de\""))
         XCTAssertTrue(json.contains("\"dictation_post_filter_enabled\":true"))
+        XCTAssertTrue(json.contains("\"automatic_recording_titles\":false"))
     }
 
     // MARK: - TranscriptionModelOption + Options

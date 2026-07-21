@@ -103,9 +103,7 @@ async def test_create_item_rejects_unknown_or_other_user_folder_id(
 
 
 async def test_create_item_paste_and_fetch_detail(client, auth_headers) -> None:
-    with patch(
-        "app.tasks.item_summary_generation.generate_item_summary_task.delay"
-    ) as delay:
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay") as delay:
         resp = await client.post(
             "/api/items",
             json={
@@ -220,12 +218,8 @@ async def test_derive_status_covers_every_state() -> None:
     )
     assert _derive_status(Item(state="raw", body="hello"), True) == "ready"
     assert _derive_status(Item(state="promoted", body="x"), True) == "ready"
-    assert (
-        _derive_status(Item(state="raw", url="https://e.com", body=None), False) == "fetching"
-    )
-    assert (
-        _derive_status(Item(state="raw", body="has body", url=None), False) == "summarizing"
-    )
+    assert _derive_status(Item(state="raw", url="https://e.com", body=None), False) == "fetching"
+    assert _derive_status(Item(state="raw", body="has body", url=None), False) == "summarizing"
 
 
 async def test_item_error_surfaces_fetch_and_processing_errors() -> None:
@@ -258,9 +252,7 @@ async def test_create_item_exposes_summarizing_status(client, auth_headers) -> N
     assert data["error"] is None
 
 
-async def test_create_item_enqueue_failure_is_visible_not_swallowed(
-    client, auth_headers
-) -> None:
+async def test_create_item_enqueue_failure_is_visible_not_swallowed(client, auth_headers) -> None:
     with patch(
         "app.tasks.item_summary_generation.generate_item_summary_task.delay",
         side_effect=RuntimeError("broker down"),
@@ -286,9 +278,7 @@ async def test_create_item_enqueue_failure_is_visible_not_swallowed(
 # --- POST /items/upload (document upload) ---
 
 
-async def test_upload_markdown_creates_note_item_and_enqueues_summary(
-    client, auth_headers
-) -> None:
+async def test_upload_markdown_creates_note_item_and_enqueues_summary(client, auth_headers) -> None:
     with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay") as delay:
         resp = await client.post(
             "/api/items/upload",
@@ -333,9 +323,12 @@ async def test_upload_item_rejects_unknown_or_other_user_folder_id(
 
 
 async def test_upload_pdf_extracts_text(client, auth_headers) -> None:
-    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"), patch(
-        "app.core.document_extract._extract_pdf_text",
-        return_value="Extracted PDF body about GPUs and inference cost.",
+    with (
+        patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"),
+        patch(
+            "app.core.document_extract._extract_pdf_text",
+            return_value="Extracted PDF body about GPUs and inference cost.",
+        ),
     ):
         resp = await client.post(
             "/api/items/upload",
@@ -368,10 +361,11 @@ async def test_upload_scanned_pdf_ocrs_via_vision(client, auth_headers) -> None:
     # A no-text-layer PDF is OCR'd by the vision LLM instead of being rejected.
     from unittest.mock import AsyncMock
 
-    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"), patch(
-        "app.core.document_extract._extract_pdf_text", return_value=""
-    ), patch("app.core.document_extract._pdf_page_count", return_value=2), patch(
-        "app.core.ocr.ocr_pdf", new=AsyncMock(return_value="OCR'd scanned text about GPUs.")
+    with (
+        patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"),
+        patch("app.core.document_extract._extract_pdf_text", return_value=""),
+        patch("app.core.document_extract._pdf_page_count", return_value=2),
+        patch("app.core.ocr.ocr_pdf", new=AsyncMock(return_value="OCR'd scanned text about GPUs.")),
     ):
         resp = await client.post(
             "/api/items/upload",
@@ -383,8 +377,9 @@ async def test_upload_scanned_pdf_ocrs_via_vision(client, auth_headers) -> None:
 
 
 async def test_upload_scanned_pdf_too_long_is_422(client, auth_headers) -> None:
-    with patch("app.core.document_extract._extract_pdf_text", return_value=""), patch(
-        "app.core.document_extract._pdf_page_count", return_value=999
+    with (
+        patch("app.core.document_extract._extract_pdf_text", return_value=""),
+        patch("app.core.document_extract._pdf_page_count", return_value=999),
     ):
         resp = await client.post(
             "/api/items/upload",
@@ -398,9 +393,11 @@ async def test_upload_scanned_pdf_too_long_is_422(client, auth_headers) -> None:
 async def test_upload_scanned_pdf_ocr_yields_nothing_is_422(client, auth_headers) -> None:
     from unittest.mock import AsyncMock
 
-    with patch("app.core.document_extract._extract_pdf_text", return_value=""), patch(
-        "app.core.document_extract._pdf_page_count", return_value=1
-    ), patch("app.core.ocr.ocr_pdf", new=AsyncMock(return_value="")):
+    with (
+        patch("app.core.document_extract._extract_pdf_text", return_value=""),
+        patch("app.core.document_extract._pdf_page_count", return_value=1),
+        patch("app.core.ocr.ocr_pdf", new=AsyncMock(return_value="")),
+    ):
         resp = await client.post(
             "/api/items/upload",
             files={"file": ("blank.pdf", b"%PDF-1.4 scanned", "application/pdf")},
@@ -436,6 +433,7 @@ async def test_upload_video_enqueues_recording(client, auth_headers, db_session)
     ).scalar_one()
     assert recording.status == "processing"
     assert recording.title == "clip"
+    assert recording.title_auto_generated is False
 
 
 async def test_upload_media_with_valid_folder_creates_foldered_recording(
@@ -556,8 +554,11 @@ async def test_upload_resolves_type_from_content_type_and_markdown_ext(
     client, auth_headers
 ) -> None:
     # No filename extension -> resolved via content-type.
-    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"), patch(
-        "app.core.document_extract._extract_pdf_text", return_value="body from ct-detected pdf"
+    with (
+        patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"),
+        patch(
+            "app.core.document_extract._extract_pdf_text", return_value="body from ct-detected pdf"
+        ),
     ):
         ct_resp = await client.post(
             "/api/items/upload",
@@ -606,9 +607,7 @@ async def test_reprocess_with_pasted_body(client, auth_headers) -> None:
             headers=auth_headers,
         )
     iid = created.json()["id"]
-    with patch(
-        "app.tasks.item_summary_generation.generate_item_summary_task.delay"
-    ) as delay:
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay") as delay:
         r = await client.post(
             f"/api/items/{iid}/reprocess",
             json={"body": "Pasted article text the fetch missed."},
@@ -628,9 +627,7 @@ async def test_reprocess_no_body_retries_the_source(client, auth_headers) -> Non
             headers=auth_headers,
         )
     iid = created.json()["id"]
-    with patch(
-        "app.tasks.item_summary_generation.generate_item_summary_task.delay"
-    ) as delay:
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay") as delay:
         r = await client.post(f"/api/items/{iid}/reprocess", json={}, headers=auth_headers)
     assert r.status_code == 200, r.text
     delay.assert_called_once()  # re-enqueued to retry the fetch
@@ -659,9 +656,7 @@ async def test_reprocess_nothing_to_process_422(client, auth_headers, db_session
             headers=auth_headers,
         )
     iid = created.json()["id"]
-    item = (
-        await db_session.execute(select(Item).where(Item.id == UUID(iid)))
-    ).scalar_one()
+    item = (await db_session.execute(select(Item).where(Item.id == UUID(iid)))).scalar_one()
     item.body = ""
     item.url = None
     await db_session.flush()
@@ -856,9 +851,7 @@ async def test_get_item_summary_audio_requires_item_and_summary(client, auth_hea
     assert unsummarized.json()["detail"] == "Summary not generated"
 
 
-async def test_get_item_summary_audio_reports_not_started(
-    client, auth_headers, db_session
-) -> None:
+async def test_get_item_summary_audio_reports_not_started(client, auth_headers, db_session) -> None:
     item_id = await _create_item_with_summary(client, db_session, auth_headers)
 
     state = await client.get(f"/api/items/{item_id}/summary/audio", headers=auth_headers)
@@ -921,9 +914,7 @@ async def test_get_item_summary_audio_file_requires_item_summary_and_artifact(
     assert unsummarized.json()["detail"] == "Summary not generated"
 
     item_id = await _create_item_with_summary(client, db_session, auth_headers)
-    no_artifact = await client.get(
-        f"/api/items/{item_id}/summary/audio/file", headers=auth_headers
-    )
+    no_artifact = await client.get(f"/api/items/{item_id}/summary/audio/file", headers=auth_headers)
     assert no_artifact.status_code == 404
     assert no_artifact.json()["detail"] == "Summary audio has not been created."
 

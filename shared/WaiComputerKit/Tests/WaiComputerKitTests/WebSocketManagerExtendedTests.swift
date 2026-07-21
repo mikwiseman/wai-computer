@@ -348,8 +348,10 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         do {
             _ = try await session.testingRequest()
             XCTFail("Expected missing Deepgram websocket URL to throw")
+        } catch ProviderError.transcriberInternal(let message) {
+            XCTAssertEqual(message, "deepgram realtime session is missing server-minted websocket URL")
         } catch {
-            XCTAssertTrue(String(describing: error).contains("Deepgram realtime session is missing server-minted websocket URL"))
+            XCTFail("Expected transcriberInternal, got \(error)")
         }
     }
 
@@ -359,8 +361,10 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         do {
             _ = try await session.testingRequest()
             XCTFail("Expected non-bearer Deepgram auth to throw")
+        } catch ProviderError.transcriberInternal(let message) {
+            XCTAssertEqual(message, "deepgram realtime session has unsupported auth scheme: basic")
         } catch {
-            XCTAssertTrue(String(describing: error).contains("Deepgram realtime session has unsupported auth scheme: basic"))
+            XCTFail("Expected transcriberInternal, got \(error)")
         }
     }
 

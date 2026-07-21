@@ -844,6 +844,7 @@ function displayCount(rawArrayLength: number, displayedCount?: number): string {
 function recordingNeedsRefresh(recording: RecordingDetail | null): boolean {
   if (!recording) return false;
   if (["pending_upload", "uploading", "processing"].includes(recording.status)) return true;
+  if (recording.automatic_title_pending === true) return true;
   const summaryStatus = recording.summary_generation?.status;
   const audioStatus = recording.summary_audio?.status;
   return (
@@ -1242,6 +1243,7 @@ export function DashboardClient() {
               ? {
                   ...recording,
                   title: detail.title,
+                  automatic_title_pending: detail.automatic_title_pending,
                   status: detail.status,
                   duration_seconds: detail.duration_seconds,
                   uploaded_at: detail.uploaded_at,
@@ -1268,6 +1270,7 @@ export function DashboardClient() {
   }, [
     selectedRecording?.id,
     selectedRecording?.status,
+    selectedRecording?.automatic_title_pending,
     selectedRecording?.summary_generation?.status,
     selectedRecording?.summary_audio?.status,
   ]);
@@ -3537,7 +3540,9 @@ function UniversalInboxPanel({
   }, [onError, onRecordingUpdate, selectedRow]);
 
   const hasProcessing = useMemo(
-    () => rows.some((row) => row.status === "processing"),
+    () => rows.some(
+      (row) => row.status === "processing" || row.automatic_title_pending === true,
+    ),
     [rows],
   );
 

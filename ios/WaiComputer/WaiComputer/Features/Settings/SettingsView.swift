@@ -1001,6 +1001,8 @@ struct RecordingPipelineView: View {
     @State private var snapshot: RecordingPipelineSnapshot?
     @State private var isLoading = false
     @State private var loadError: String?
+    @State private var automaticRecordingTitles = true
+    @State private var isSavingAutomaticTitles = false
 
     private var captureSampleRateLabel: String {
         "\(Int(AudioCaptureConfig.default.sampleRate / 1_000)) kHz"
@@ -1035,6 +1037,7 @@ struct RecordingPipelineView: View {
 
             if let snapshot {
                 Section(t("Capture", "Запись")) {
+                    automaticTitlesToggle
                     pipelineRow(
                         title: t("Microphone input", "Вход микрофона"),
                         value: t("iOS microphone", "Микрофон iOS"),
@@ -1205,6 +1208,8 @@ struct RecordingPipelineView: View {
             identifier: "settings-recording-pipeline-regular-capture-panel"
         ) {
             VStack(alignment: .leading, spacing: Spacing.sm) {
+                automaticTitlesToggle
+                Divider()
                 pipelineRow(
                     title: t("Microphone input", "Вход микрофона"),
                     value: t("iOS microphone", "Микрофон iOS"),
@@ -1358,6 +1363,30 @@ struct RecordingPipelineView: View {
         )
     }
 
+    private var automaticTitlesToggle: some View {
+        Toggle(isOn: Binding(
+            get: { automaticRecordingTitles },
+            set: { enabled in
+                automaticRecordingTitles = enabled
+                Task { await saveAutomaticTitles(enabled) }
+            }
+        )) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text(t("Name recordings automatically", "Автоматически называть записи"))
+                    .font(Typography.body)
+                Text(t(
+                    "Only recordings started in the app. File names and manual edits never change.",
+                    "Только для записей, начатых в приложении. Имена файлов и ручные правки не меняются."
+                ))
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .disabled(snapshot == nil || isSavingAutomaticTitles)
+        .accessibilityIdentifier("settings-automatic-recording-titles-toggle")
+    }
+
     private func loadSnapshot(force: Bool = false) async {
         guard force || snapshot == nil else { return }
         isLoading = true
@@ -1365,11 +1394,31 @@ struct RecordingPipelineView: View {
 
         do {
             snapshot = try await loadRecordingPipelineSnapshot(appState: appState)
+            automaticRecordingTitles = snapshot?.settings.automaticRecordingTitles ?? true
             loadError = nil
         } catch {
             loadError = t(
                 "Couldn't load recording pipeline: \(error.userFacingMessage(context: .generic))",
                 "Не удалось загрузить пайплайн записи: \(error.userFacingMessage(context: .generic))"
+            )
+        }
+    }
+
+    private func saveAutomaticTitles(_ enabled: Bool) async {
+        isSavingAutomaticTitles = true
+        defer { isSavingAutomaticTitles = false }
+
+        do {
+            let settings = try await appState.getAPIClient().updateSettings(
+                UpdateSettingsRequest(automaticRecordingTitles: enabled)
+            )
+            automaticRecordingTitles = settings.automaticRecordingTitles
+            loadError = nil
+        } catch {
+            automaticRecordingTitles.toggle()
+            loadError = t(
+                "Couldn't save automatic naming: \(error.userFacingMessage(context: .generic))",
+                "Не удалось сохранить автоназвания: \(error.userFacingMessage(context: .generic))"
             )
         }
     }

@@ -42,6 +42,7 @@ async def _seed_mixed_inbox(db: AsyncSession, user_id) -> dict[str, object]:
         user_id=user_id,
         folder_id=folder.id,
         title="Product sync",
+        title_auto_generated=False,
         type="meeting",
         status="ready",
         duration_seconds=1840,
@@ -51,6 +52,7 @@ async def _seed_mixed_inbox(db: AsyncSession, user_id) -> dict[str, object]:
     processing_recording = Recording(
         user_id=user_id,
         title="Voice memo",
+        title_auto_generated=True,
         type="note",
         status="processing",
         created_at=now - timedelta(minutes=25),
@@ -58,6 +60,7 @@ async def _seed_mixed_inbox(db: AsyncSession, user_id) -> dict[str, object]:
     failed_recording = Recording(
         user_id=user_id,
         title="Bad import",
+        title_auto_generated=False,
         type="meeting",
         status="failed",
         failure_code="transcription_failed",
@@ -169,6 +172,8 @@ async def test_inbox_returns_mixed_newest_first_privacy_safe_rows(
     assert rows[1]["has_summary"] is True
     assert rows[2]["status"] == "failed"
     assert rows[2]["error"]["code"] == "transcription_failed"
+    assert rows[3]["automatic_title_pending"] is True
+    assert rows[4]["automatic_title_pending"] is False
     assert rows[4]["folder_id"] == str(seeded["folder"].id)
     assert f"chat:{seeded['chat'].id}" not in {row["id"] for row in rows}
     assert all("body" not in row for row in rows)

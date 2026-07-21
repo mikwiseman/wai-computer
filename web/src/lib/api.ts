@@ -455,12 +455,14 @@ export function listInbox(params?: {
 
 export function createRecording(input: {
   title?: string | null;
+  title_mode?: "preserve" | "automatic";
   type?: RecordingType;
   language?: string;
   folder_id?: string | null;
 }): Promise<Recording> {
   const body: {
     title: string | null;
+    title_mode?: "preserve" | "automatic";
     type: RecordingType;
     language: string;
     folder_id?: string | null;
@@ -469,6 +471,9 @@ export function createRecording(input: {
     type: input.type ?? "note",
     language: input.language ?? "multi",
   };
+  if (input.title_mode !== undefined) {
+    body.title_mode = input.title_mode;
+  }
   if (input.folder_id !== undefined) {
     body.folder_id = input.folder_id;
   }

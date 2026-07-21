@@ -14,6 +14,7 @@ export interface UserSettings {
   summary_language: string;
   summary_style: SummaryStyle;
   summary_instructions: string | null;
+  automatic_recording_titles?: boolean;
   dictation_live_stt_provider: string;
   dictation_live_stt_model: string;
   recording_live_stt_provider: string;
@@ -408,6 +409,7 @@ export interface User {
 export interface Recording {
   id: string;
   title: string | null;
+  automatic_title_pending?: boolean;
   type: RecordingType;
   audio_url: string | null;
   status: string;
@@ -593,6 +595,7 @@ export interface InboxRow {
   source_id: string;
   detail: InboxDetailRef;
   title: string | null;
+  automatic_title_pending?: boolean;
   source_label: string;
   sublabel: string | null;
   activity_at: string;

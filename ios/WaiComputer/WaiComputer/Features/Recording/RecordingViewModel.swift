@@ -317,7 +317,12 @@ class RecordingViewModel: ObservableObject {
             }
 
             let language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
+            let provisionalTitle = RecordingTitleFormatter.provisionalTitle(
+                language: OnboardingL10n.language(for: LanguageManager.shared.current)
+            )
             recording = try await apiClient.createRecording(
+                title: provisionalTitle,
+                titleMode: .automatic,
                 type: recordingType,
                 language: language,
                 folderId: folderId

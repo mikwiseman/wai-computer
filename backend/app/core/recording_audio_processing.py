@@ -132,6 +132,7 @@ def apply_no_speech_result(
     recording: Recording,
     fallback_language: str | None = None,
 ) -> None:
+    recording.title_auto_generated = False
     if recording.title:
         recording.failure_message = None
         return
@@ -146,6 +147,7 @@ def apply_no_speech_failure(
     recording: Recording,
     fallback_language: str | None = None,
 ) -> None:
+    recording.title_auto_generated = False
     copy = NO_SPEECH_COPY[
         copy_locale_from_recording_language(recording.language, fallback_language)
     ]
@@ -217,6 +219,7 @@ async def mark_recording_processing_failed(
         )
         return
     failed.status = RecordingStatus.FAILED.value
+    failed.title_auto_generated = False
     failed.failure_code = failure_code
     failed.failure_message = sanitize_failure_message(failure_message)
     await fail_active_summary_generation_jobs(
@@ -320,18 +323,14 @@ def _audio_duration_seconds(
     normalized_content_type = content_type.split(";", 1)[0].strip().lower()
     if normalized_content_type in {"audio/wav", "audio/x-wav"} or path.suffix.lower() == ".wav":
         return _wav_duration_seconds(path)
-    if (
-        staged_size_bytes is None
-        or staged_size_bytes <= AUDIO_DURATION_PROBE_MAX_BYTES
-    ):
+    if staged_size_bytes is None or staged_size_bytes <= AUDIO_DURATION_PROBE_MAX_BYTES:
         return _non_wav_duration_seconds(path, content_type)
     return None
 
 
 def _audio_is_too_short_for_file_stt(audio_duration_seconds: float | None) -> bool:
     return (
-        audio_duration_seconds is not None
-        and audio_duration_seconds < MIN_FILE_STT_AUDIO_SECONDS
+        audio_duration_seconds is not None and audio_duration_seconds < MIN_FILE_STT_AUDIO_SECONDS
     )
 
 
@@ -382,18 +381,10 @@ def voice_identification_enabled_for_audio(
         return False
     skip_reasons: list[str] = []
     max_seconds = settings.voice_identification_max_audio_seconds
-    if (
-        max_seconds > 0
-        and duration_seconds is not None
-        and duration_seconds > max_seconds
-    ):
+    if max_seconds > 0 and duration_seconds is not None and duration_seconds > max_seconds:
         skip_reasons.append("duration_limit")
     max_bytes = settings.voice_identification_max_audio_bytes
-    if (
-        max_bytes > 0
-        and staged_size_bytes is not None
-        and staged_size_bytes > max_bytes
-    ):
+    if max_bytes > 0 and staged_size_bytes is not None and staged_size_bytes > max_bytes:
         skip_reasons.append("size_limit")
     if not skip_reasons:
         return True
@@ -485,10 +476,7 @@ def _provider_reported_audio_too_short(exc: Exception) -> bool:
     detail = payload.get("detail")
     if not isinstance(detail, dict):
         return False
-    return any(
-        detail.get(key) == "audio_too_short"
-        for key in ("code", "type", "status")
-    )
+    return any(detail.get(key) == "audio_too_short" for key in ("code", "type", "status"))
 
 
 def _terminal_provider_failure_details(
@@ -575,10 +563,7 @@ def _duration_seconds_from_sources(
     client_duration_seconds: int | None,
     transcript_end_ms: int | None,
 ) -> int | None:
-    if (
-        audio_duration_seconds is not None
-        and audio_duration_seconds >= MIN_FILE_STT_AUDIO_SECONDS
-    ):
+    if audio_duration_seconds is not None and audio_duration_seconds >= MIN_FILE_STT_AUDIO_SECONDS:
         return max(math.ceil(audio_duration_seconds), 1)
     if client_duration_seconds is not None and client_duration_seconds > 0:
         return client_duration_seconds
@@ -685,9 +670,7 @@ async def _embed_recording_segments(
             usage_operation="embedding.segment.batch",
         )
         if len(embeddings) != len(embedding_inputs):
-            raise ValueError(
-                "Embedding batch result count did not match segment count."
-            )
+            raise ValueError("Embedding batch result count did not match segment count.")
     except Exception as exc:
         logger.warning(
             "Failed to generate segment embedding batch count=%s error_type=%s "
@@ -745,7 +728,6 @@ async def process_staged_recording_upload(
     recording.audio_url = None
     recording.duration_seconds = None
     recording_language = recording.language or "en"
-    should_generate_title = not recording.title
     try:
         audio_duration_seconds = _audio_duration_seconds(
             staged_path,
@@ -1217,6 +1199,29 @@ async def process_staged_recording_upload(
             )
             persisted_segments = list(segment_result.scalars().all())
 
+        if recording.title_auto_generated and transcript_text.strip():
+            try:
+                recording.title = await generate_title(
+                    transcript_text,
+                    language=recording.language or "auto",
+                )
+            except Exception as exc:
+                logger.warning("Title generation failed: %s", exc)
+                capture_sentry_anomaly(
+                    "recording.title_generation.degraded",
+                    "Recording completed with degraded title generation",
+                    category="recording",
+                    extras={
+                        "recording_id": str(recording_id),
+                        "error_type": type(exc).__name__,
+                        "error_fingerprint": fingerprint_text(str(exc)),
+                    },
+                )
+            # One automatic rename is enough. This also gives clients a
+            # durable completion signal so their background refresh can stop.
+            recording.title_auto_generated = False
+            await db.commit()
+
         await start_recording_summary_generation_job(
             db,
             recording_id=recording_id,
@@ -1230,9 +1235,7 @@ async def process_staged_recording_upload(
             recording_id=recording_id,
             duration_seconds=effective_duration,
             staged_size_bytes=(
-                staged_size_bytes
-                if staged_size_bytes is not None
-                else client_file_size_bytes
+                staged_size_bytes if staged_size_bytes is not None else client_file_size_bytes
             ),
         )
         speaker_assignments: dict[str, tuple[UUID, float] | None] = {}
@@ -1325,9 +1328,7 @@ async def process_staged_recording_upload(
         # get a fresh Person created from the introduction.
         try:
             raw_labels = {
-                transcript.speaker
-                for transcript in speech_transcript_results
-                if transcript.speaker
+                transcript.speaker for transcript in speech_transcript_results if transcript.speaker
             }
             extracted_names = await extract_speaker_names(
                 transcript_results=speech_transcript_results,
@@ -1353,35 +1354,13 @@ async def process_staged_recording_upload(
             )
 
         for segment in persisted_segments:
-            assignment = (
-                speaker_assignments.get(segment.raw_label) if segment.raw_label else None
-            )
+            assignment = speaker_assignments.get(segment.raw_label) if segment.raw_label else None
             if assignment is None:
                 continue
             assigned_person_id, match_confidence = assignment
             segment.person_id = assigned_person_id
             segment.auto_assigned = assigned_person_id is not None
             segment.match_confidence = match_confidence
-
-        if should_generate_title and transcript_text.strip():
-            try:
-                recording.title = await generate_title(
-                    transcript_text,
-                    language=recording.language or "auto",
-                )
-            except Exception as exc:
-                logger.warning("Title generation failed: %s", exc)
-                capture_sentry_anomaly(
-                    "recording.title_generation.degraded",
-                    "Recording completed with degraded title generation",
-                    category="recording",
-                    extras={
-                        "recording_id": str(recording_id),
-                        "error_type": type(exc).__name__,
-                        "error_fingerprint": fingerprint_text(str(exc)),
-                    },
-                )
-                recording.title = None
 
         await db.commit()
         delete_staged_file(staged_path)

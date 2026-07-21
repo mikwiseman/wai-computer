@@ -64,13 +64,16 @@ class User(Base, UUIDMixin, TimestampMixin):
     default_language: Mapped[str] = mapped_column(
         String(10), default="multi", server_default="multi"
     )
-    summary_language: Mapped[str] = mapped_column(
-        String(10), default="auto", server_default="auto"
-    )
+    summary_language: Mapped[str] = mapped_column(String(10), default="auto", server_default="auto")
     summary_style: Mapped[str] = mapped_column(
         String(20), default="medium", server_default="medium"
     )
     summary_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    automatic_recording_titles: Mapped[bool] = mapped_column(
+        default=True,
+        server_default="true",
+        nullable=False,
+    )
     dictation_live_stt_provider: Mapped[str] = mapped_column(
         String(40),
         default=DEFAULT_DICTATION_LIVE_STT_PROVIDER,

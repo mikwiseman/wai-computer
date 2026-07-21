@@ -135,10 +135,16 @@ async def _recording(db: AsyncSession, user: User, *, with_segments: bool = True
 
 async def _segments(db: AsyncSession, recording: Recording) -> list[Segment]:
     return (
-        await db.execute(
-            select(Segment).where(Segment.recording_id == recording.id).order_by(Segment.start_ms)
+        (
+            await db.execute(
+                select(Segment)
+                .where(Segment.recording_id == recording.id)
+                .order_by(Segment.start_ms)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
 
 def test_summary_generation_pure_helpers() -> None:
@@ -160,9 +166,10 @@ def test_summary_generation_pure_helpers() -> None:
 
     older = SimpleNamespace(created_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
     newer = SimpleNamespace(created_at=datetime(2026, 1, 2, tzinfo=timezone.utc))
-    assert latest_summary_generation_job(
-        SimpleNamespace(summary_generation_jobs=[older, newer])
-    ) is newer
+    assert (
+        latest_summary_generation_job(SimpleNamespace(summary_generation_jobs=[older, newer]))
+        is newer
+    )
 
 
 def test_is_orphaned_queued_summary_job_filters_fresh_and_active_jobs() -> None:
@@ -271,10 +278,14 @@ async def test_recover_missing_summary_generation_jobs_enqueues_only_never_start
     )
 
     jobs = (
-        await db_session.execute(
-            select(SummaryGenerationJob).order_by(SummaryGenerationJob.created_at.asc())
+        (
+            await db_session.execute(
+                select(SummaryGenerationJob).order_by(SummaryGenerationJob.created_at.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     missing_jobs = [job for job in jobs if job.recording_id == missing.id]
 
     assert recovered == 1
@@ -970,18 +981,24 @@ async def test_apply_and_persist_summary_result_replaces_generated_outputs(
     assert existing_summary.summary == "Generated summary."
 
     actions = (
-        await db_session.execute(
-            select(ActionItem)
-            .where(ActionItem.recording_id == recording.id)
-            .order_by(ActionItem.task)
+        (
+            await db_session.execute(
+                select(ActionItem)
+                .where(ActionItem.recording_id == recording.id)
+                .order_by(ActionItem.task)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert [action.task for action in actions] == ["Follow up", "Keep manual", "Review notes"]
     assert actions[-1].priority == "medium"
 
     highlights = (
-        await db_session.execute(select(Highlight).where(Highlight.recording_id == recording.id))
-    ).scalars().all()
+        (await db_session.execute(select(Highlight).where(Highlight.recording_id == recording.id)))
+        .scalars()
+        .all()
+    )
     assert {highlight.title for highlight in highlights} == {
         "Proceed with the plan",
         "Budget risk",
@@ -990,17 +1007,21 @@ async def test_apply_and_persist_summary_result_replaces_generated_outputs(
 
     # Phase 2: the recording's people + topics seeded graph entities + mentions.
     entities = (
-        await db_session.execute(select(Entity).where(Entity.user_id == user.id))
-    ).scalars().all()
+        (await db_session.execute(select(Entity).where(Entity.user_id == user.id))).scalars().all()
+    )
     assert {(e.type, e.name) for e in entities} == {
         ("person", "Mik"),
         ("topic", "planning"),
     }
     mentions = (
-        await db_session.execute(
-            select(EntityMention).where(EntityMention.source_id == recording.id)
+        (
+            await db_session.execute(
+                select(EntityMention).where(EntityMention.source_id == recording.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(mentions) == 2
     assert all(m.source_kind == "recording" for m in mentions)
 
@@ -1140,20 +1161,20 @@ async def test_apply_summary_result_overrides_auto_title(db_session: AsyncSessio
     """An auto-generated (or empty) title is replaced by the authoritative
     full-transcript summary title."""
     user = await _user(db_session)
-    recording = await _recording(db_session, user)  # title=None, flag defaults True
+    recording = await _recording(db_session, user)
+    recording.title_auto_generated = True
+    await db_session.flush()
     # apply_summary_result reads these relationships synchronously — eager-load
     # them so the call doesn't lazy-load under the async session.
     await db_session.refresh(recording, ["summary", "segments", "action_items", "highlights"])
     assert recording.title is None
     assert recording.title_auto_generated is True
 
-    await apply_summary_result(
-        db_session, recording=recording, summary_result=_summary_result()
-    )
+    await apply_summary_result(db_session, recording=recording, summary_result=_summary_result())
 
     assert recording.title == "Generated title"
-    # Still system-owned — a future, better summary may refine it again.
-    assert recording.title_auto_generated is True
+    # Resolved once — later jobs cannot make the title jump again.
+    assert recording.title_auto_generated is False
 
 
 @pytest.mark.asyncio
@@ -1166,9 +1187,7 @@ async def test_apply_summary_result_keeps_user_renamed_title(db_session: AsyncSe
     await db_session.flush()
     await db_session.refresh(recording, ["summary", "segments", "action_items", "highlights"])
 
-    await apply_summary_result(
-        db_session, recording=recording, summary_result=_summary_result()
-    )
+    await apply_summary_result(db_session, recording=recording, summary_result=_summary_result())
 
     assert recording.title == "Интервью о геймификации"
     assert recording.title_auto_generated is False
@@ -1189,9 +1208,12 @@ async def test_prepare_summary_generation_payload_success_and_failure_states(
     db_session.add(job)
     await db_session.flush()
 
-    assert await load_active_summary_generation_job(
-        db_session, recording_id=recording.id, user_id=user.id
-    ) is job
+    assert (
+        await load_active_summary_generation_job(
+            db_session, recording_id=recording.id, user_id=user.id
+        )
+        is job
+    )
 
     payload = await prepare_summary_generation_payload(
         db_session,
@@ -1274,16 +1296,22 @@ async def test_persist_and_fail_summary_generation_error_paths(
     db_session.add_all([stale_job, completed_job])
     await db_session.flush()
 
-    assert await persist_summary_generation_result(
-        db_session,
-        job_id=uuid4(),
-        summary_result=_summary_result(),
-    ) is None
-    assert await persist_summary_generation_result(
-        db_session,
-        job_id=completed_job.id,
-        summary_result=_summary_result(),
-    ) is completed_job
+    assert (
+        await persist_summary_generation_result(
+            db_session,
+            job_id=uuid4(),
+            summary_result=_summary_result(),
+        )
+        is None
+    )
+    assert (
+        await persist_summary_generation_result(
+            db_session,
+            job_id=completed_job.id,
+            summary_result=_summary_result(),
+        )
+        is completed_job
+    )
 
     failed = await persist_summary_generation_result(
         db_session,
@@ -1294,12 +1322,15 @@ async def test_persist_and_fail_summary_generation_error_paths(
     assert stale_job.status == SummaryGenerationStatus.FAILED.value
     assert stale_job.error_code == "stale_transcript"
 
-    assert await fail_summary_generation_job(
-        db_session,
-        job_id=uuid4(),
-        error_code="missing",
-        error_message="Missing.",
-    ) is None
+    assert (
+        await fail_summary_generation_job(
+            db_session,
+            job_id=uuid4(),
+            error_code="missing",
+            error_message="Missing.",
+        )
+        is None
+    )
     marked = await fail_summary_generation_job(
         db_session,
         job_id=completed_job.id,

@@ -166,14 +166,26 @@ async def test_extract_staged_media_audio_reduces_video_to_flac(
 
 
 def test_audio_processing_helper_edge_branches() -> None:
-    existing = SimpleNamespace(title="Existing", language="en", failure_message="old")
+    existing = SimpleNamespace(
+        title="Existing",
+        title_auto_generated=True,
+        language="en",
+        failure_message="old",
+    )
     recording_audio_processing.apply_no_speech_result(existing)
     assert existing.title == "Existing"
+    assert existing.title_auto_generated is False
     assert existing.failure_message is None
 
-    untitled = SimpleNamespace(title=None, language="ru", failure_message=None)
+    untitled = SimpleNamespace(
+        title=None,
+        title_auto_generated=True,
+        language="ru",
+        failure_message=None,
+    )
     recording_audio_processing.apply_no_speech_result(untitled)
     assert untitled.title == "Без речи"
+    assert untitled.title_auto_generated is False
     assert untitled.failure_message == "Мы не обнаружили разборчивой речи в этой записи."
 
     assert (
@@ -198,9 +210,7 @@ def test_voice_identification_size_guard_does_not_emit_ops_anomaly(
     monkeypatch.setattr(
         recording_audio_processing,
         "capture_sentry_anomaly",
-        lambda *args, **kwargs: sentry_anomalies.append(
-            {"args": args, "kwargs": kwargs}
-        ),
+        lambda *args, **kwargs: sentry_anomalies.append({"args": args, "kwargs": kwargs}),
     )
 
     enabled = recording_audio_processing.voice_identification_enabled_for_audio(
@@ -313,6 +323,7 @@ async def test_mark_recording_processing_failed_fails_waiting_summary_job(
     recording = Recording(
         user_id=user.id,
         title="Processing",
+        title_auto_generated=True,
         type="meeting",
         status=RecordingStatus.PROCESSING.value,
         uploaded_at=datetime.now(timezone.utc),
@@ -341,6 +352,7 @@ async def test_mark_recording_processing_failed_fails_waiting_summary_job(
     await db_session.refresh(recording)
     await db_session.refresh(job)
     assert recording.status == RecordingStatus.FAILED.value
+    assert recording.title_auto_generated is False
     assert recording.failure_code == "provider_rejected_audio"
     assert job.status == SummaryGenerationStatus.FAILED.value
     assert job.stage == "failed"
@@ -365,6 +377,7 @@ async def test_process_staged_recording_upload_persists_canonical_segments(
     recording = Recording(
         user_id=user.id,
         title=None,
+        title_auto_generated=True,
         type="meeting",
         status=RecordingStatus.PROCESSING.value,
         uploaded_at=datetime.now(timezone.utc),
@@ -425,6 +438,7 @@ async def test_process_staged_recording_upload_persists_canonical_segments(
     )
     assert recording.status == RecordingStatus.READY.value
     assert recording.title == "Queued Recording"
+    assert recording.title_auto_generated is False
     assert recording.duration_seconds == 1
     assert [segment.content for segment in segments] == ["Hello from queued processing."]
     usage = (
@@ -432,9 +446,7 @@ async def test_process_staged_recording_upload_persists_canonical_segments(
     ).scalar_one()
     summary_job = (
         await db_session.execute(
-            select(SummaryGenerationJob).where(
-                SummaryGenerationJob.recording_id == recording.id
-            )
+            select(SummaryGenerationJob).where(SummaryGenerationJob.recording_id == recording.id)
         )
     ).scalar_one()
     assert usage.words_used == 4
@@ -623,9 +635,7 @@ async def test_process_staged_recording_upload_skips_when_segments_already_exist
     staged_path = tmp_path / "recording.wav"
     staged_path.write_bytes(b"audio")
     transcribe = AsyncMock()
-    monkeypatch.setattr(
-        "app.core.recording_audio_processing.transcribe_audio_file", transcribe
-    )
+    monkeypatch.setattr("app.core.recording_audio_processing.transcribe_audio_file", transcribe)
 
     await process_staged_recording_upload(
         db_session,
@@ -674,9 +684,7 @@ async def test_process_staged_recording_upload_marks_failed_on_guard_rejection(
             "transcription_halted", "Transcription is temporarily disabled."
         )
 
-    monkeypatch.setattr(
-        "app.core.recording_audio_processing.transcribe_audio_file", _raise_guard
-    )
+    monkeypatch.setattr("app.core.recording_audio_processing.transcribe_audio_file", _raise_guard)
 
     await process_staged_recording_upload(
         db_session,
@@ -708,6 +716,7 @@ async def test_process_staged_recording_upload_survives_title_and_embedding_fail
     recording = Recording(
         user_id=user.id,
         title=None,  # force title generation to run (and fail)
+        title_auto_generated=True,
         type="meeting",
         status=RecordingStatus.PROCESSING.value,
         uploaded_at=datetime.now(timezone.utc),
@@ -739,12 +748,8 @@ async def test_process_staged_recording_upload_survives_title_and_embedding_fail
         "app.core.recording_audio_processing.transcribe_audio_file",
         AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[])),
     )
-    monkeypatch.setattr(
-        "app.core.recording_audio_processing.generate_embedding", _fail_embedding
-    )
-    monkeypatch.setattr(
-        "app.core.recording_audio_processing.generate_title", _fail_title
-    )
+    monkeypatch.setattr("app.core.recording_audio_processing.generate_embedding", _fail_embedding)
+    monkeypatch.setattr("app.core.recording_audio_processing.generate_title", _fail_title)
     monkeypatch.setattr(
         "app.core.recording_audio_processing.identify_speakers_for_recording",
         AsyncMock(return_value={}),
@@ -1001,6 +1006,7 @@ async def test_process_staged_recording_upload_batches_segment_embeddings(
     recording = Recording(
         user_id=user.id,
         title=None,
+        title_auto_generated=True,
         type="meeting",
         status=RecordingStatus.PROCESSING.value,
         uploaded_at=datetime.now(timezone.utc),
@@ -1128,9 +1134,7 @@ async def test_process_staged_recording_upload_marks_failed_on_non_retryable_err
     async def _hard_fail(*_args, **_kwargs):
         raise ValueError("unrecoverable provider response")  # non-retryable
 
-    monkeypatch.setattr(
-        "app.core.recording_audio_processing.transcribe_audio_file", _hard_fail
-    )
+    monkeypatch.setattr("app.core.recording_audio_processing.transcribe_audio_file", _hard_fail)
 
     with pytest.raises(ValueError):
         await process_staged_recording_upload(
@@ -1304,9 +1308,7 @@ async def test_process_staged_recording_upload_applies_extracted_speaker_names(
         "app.core.recording_audio_processing.extract_speaker_names",
         AsyncMock(return_value={"speaker_0": "Mik"}),
     )
-    monkeypatch.setattr(
-        "app.core.recording_audio_processing.apply_extracted_names", apply_mock
-    )
+    monkeypatch.setattr("app.core.recording_audio_processing.apply_extracted_names", apply_mock)
 
     await process_staged_recording_upload(
         db_session,
@@ -1626,8 +1628,7 @@ async def test_process_staged_recording_upload_preserves_client_duration(
     assert not staged_path.exists()
     warning_messages = [record.getMessage() for record in caplog.records]
     assert any(
-        "audio transcript coverage below threshold" in message
-        for message in warning_messages
+        "audio transcript coverage below threshold" in message for message in warning_messages
     )
     assert "alice@example.com" not in "\n".join(warning_messages).lower()
     assert "eyJabc" not in "\n".join(warning_messages)
@@ -1763,8 +1764,7 @@ async def test_process_staged_recording_upload_alerts_when_processing_is_slow(
         }
     ]
     assert any(
-        item.get("message") == "Recording processing completed"
-        for item in sentry_breadcrumbs
+        item.get("message") == "Recording processing completed" for item in sentry_breadcrumbs
     )
     assert "Slow processing completed" not in repr(sentry_anomalies)
 
@@ -1929,16 +1929,18 @@ async def test_process_staged_recording_upload_rejects_too_short_m4a_before_prov
 
     staged_path = tmp_path / "too-short.m4a"
     staged_path.write_bytes(b"tiny-m4a")
-    transcribe = AsyncMock(return_value=[
-        TranscriptResult(
-            text="Should not reach provider.",
-            speaker="speaker_0",
-            is_final=True,
-            start_ms=0,
-            end_ms=1000,
-            confidence=0.9,
-        )
-    ])
+    transcribe = AsyncMock(
+        return_value=[
+            TranscriptResult(
+                text="Should not reach provider.",
+                speaker="speaker_0",
+                is_final=True,
+                start_ms=0,
+                end_ms=1000,
+                confidence=0.9,
+            )
+        ]
+    )
     monkeypatch.setattr(
         "app.core.recording_audio_processing._ffprobe_duration_seconds",
         lambda *_args, **_kwargs: 0.05,
@@ -2162,6 +2164,7 @@ async def test_process_staged_recording_upload_allows_provider_minimum_wav(
     recording = Recording(
         user_id=user.id,
         title=None,
+        title_auto_generated=True,
         type="meeting",
         status=RecordingStatus.PROCESSING.value,
         uploaded_at=datetime.now(timezone.utc),
@@ -2660,9 +2663,7 @@ async def test_process_staged_recording_upload_attributes_owner_from_sidecar(
 
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
-        AsyncMock(
-            return_value=FileTranscription(segments=transcript_results, words=[])
-        ),
+        AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[])),
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.generate_embedding",
@@ -3003,11 +3004,7 @@ async def test_process_staged_recording_survives_voice_id_and_name_extraction_fa
 
     await db_session.refresh(recording)
     segments = (
-        (
-            await db_session.execute(
-                select(Segment).where(Segment.recording_id == recording.id)
-            )
-        )
+        (await db_session.execute(select(Segment).where(Segment.recording_id == recording.id)))
         .scalars()
         .all()
     )

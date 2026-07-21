@@ -186,12 +186,16 @@ async def fail_active_summary_generation_jobs(
         conditions.append(SummaryGenerationJob.stage != WAITING_FOR_TRANSCRIPT_STAGE)
 
     jobs = (
-        await db.execute(
-            select(SummaryGenerationJob)
-            .where(*conditions)
-            .order_by(SummaryGenerationJob.created_at.asc())
+        (
+            await db.execute(
+                select(SummaryGenerationJob)
+                .where(*conditions)
+                .order_by(SummaryGenerationJob.created_at.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for job in jobs:
         mark_summary_generation_failed(
             job,
@@ -239,11 +243,12 @@ async def apply_summary_result(
         db.add(summary)
         recording.summary = summary
 
-    # The full-transcript summary title is the authoritative one — it replaces the
-    # provisional title from generate_title (which sees only an excerpt). A user
-    # rename sets title_auto_generated=False, so manual titles are never clobbered.
+    # Legacy/system-owned titles may still reach summary generation without a
+    # completed title pass. Resolve them once; filenames and manual names carry
+    # title_auto_generated=False and are never clobbered.
     if recording.title_auto_generated:
         recording.title = summary_result.title
+        recording.title_auto_generated = False
 
     await db.execute(
         delete(ActionItem).where(
@@ -305,9 +310,7 @@ async def enrich_recording_entities_from_summary(
     try:
         transcript = build_summary_transcript(recording.segments)
         extracted = (
-            await extractor(transcript[:_ENTITY_EXTRACTION_TRANSCRIPT_CAP])
-            if transcript
-            else []
+            await extractor(transcript[:_ENTITY_EXTRACTION_TRANSCRIPT_CAP]) if transcript else []
         )
         await seed_entities_from_extraction(
             db,
@@ -530,18 +533,8 @@ async def recover_missing_summary_generation_jobs(
         minutes=running_stale_after_minutes
     )
 
-    has_segments = (
-        select(Segment.id)
-        .where(Segment.recording_id == Recording.id)
-        .limit(1)
-        .exists()
-    )
-    has_summary = (
-        select(Summary.id)
-        .where(Summary.recording_id == Recording.id)
-        .limit(1)
-        .exists()
-    )
+    has_segments = select(Segment.id).where(Segment.recording_id == Recording.id).limit(1).exists()
+    has_summary = select(Summary.id).where(Summary.recording_id == Recording.id).limit(1).exists()
     has_summary_job = (
         select(SummaryGenerationJob.id)
         .where(SummaryGenerationJob.recording_id == Recording.id)
@@ -561,30 +554,34 @@ async def recover_missing_summary_generation_jobs(
     recovered = 0
 
     failed_enqueue_jobs = (
-        await db.execute(
-            select(SummaryGenerationJob)
-            .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
-            .where(
-                SummaryGenerationJob.status == SummaryGenerationStatus.FAILED.value,
-                SummaryGenerationJob.error_code == "summary_enqueue_failed",
-                SummaryGenerationJob.task_id.is_(None),
-                has_segments,
-                ~has_summary,
-                ~has_active_summary_job,
+        (
+            await db.execute(
+                select(SummaryGenerationJob)
+                .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
+                .where(
+                    SummaryGenerationJob.status == SummaryGenerationStatus.FAILED.value,
+                    SummaryGenerationJob.error_code == "summary_enqueue_failed",
+                    SummaryGenerationJob.task_id.is_(None),
+                    has_segments,
+                    ~has_summary,
+                    ~has_active_summary_job,
+                )
+                .options(
+                    selectinload(SummaryGenerationJob.recording)
+                    .selectinload(Recording.segments)
+                    .options(defer(Segment.embedding))
+                )
+                .order_by(
+                    SummaryGenerationJob.failed_at.asc().nulls_last(),
+                    SummaryGenerationJob.created_at.asc(),
+                    SummaryGenerationJob.id.asc(),
+                )
+                .limit(limit)
             )
-            .options(
-                selectinload(SummaryGenerationJob.recording)
-                .selectinload(Recording.segments)
-                .options(defer(Segment.embedding))
-            )
-            .order_by(
-                SummaryGenerationJob.failed_at.asc().nulls_last(),
-                SummaryGenerationJob.created_at.asc(),
-                SummaryGenerationJob.id.asc(),
-            )
-            .limit(limit)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for job in failed_enqueue_jobs:
         transcript_hash = summary_transcript_hash(build_summary_transcript(job.recording.segments))
         if transcript_hash != job.transcript_hash:
@@ -620,25 +617,29 @@ async def recover_missing_summary_generation_jobs(
         return recovered
 
     stale_running_jobs = (
-        await db.execute(
-            select(SummaryGenerationJob)
-            .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
-            .where(
-                SummaryGenerationJob.status == SummaryGenerationStatus.RUNNING.value,
-                SummaryGenerationJob.started_at.is_not(None),
-                SummaryGenerationJob.started_at <= running_stale_cutoff,
-                has_segments,
-                ~has_summary,
+        (
+            await db.execute(
+                select(SummaryGenerationJob)
+                .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
+                .where(
+                    SummaryGenerationJob.status == SummaryGenerationStatus.RUNNING.value,
+                    SummaryGenerationJob.started_at.is_not(None),
+                    SummaryGenerationJob.started_at <= running_stale_cutoff,
+                    has_segments,
+                    ~has_summary,
+                )
+                .options(
+                    selectinload(SummaryGenerationJob.recording)
+                    .selectinload(Recording.segments)
+                    .options(defer(Segment.embedding))
+                )
+                .order_by(SummaryGenerationJob.started_at.asc(), SummaryGenerationJob.id.asc())
+                .limit(remaining_limit)
             )
-            .options(
-                selectinload(SummaryGenerationJob.recording)
-                .selectinload(Recording.segments)
-                .options(defer(Segment.embedding))
-            )
-            .order_by(SummaryGenerationJob.started_at.asc(), SummaryGenerationJob.id.asc())
-            .limit(remaining_limit)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for job in stale_running_jobs:
         transcript_hash = summary_transcript_hash(build_summary_transcript(job.recording.segments))
         if transcript_hash != job.transcript_hash:
@@ -685,25 +686,29 @@ async def recover_missing_summary_generation_jobs(
         return recovered
 
     orphaned_jobs = (
-        await db.execute(
-            select(SummaryGenerationJob)
-            .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
-            .where(
-                SummaryGenerationJob.status == SummaryGenerationStatus.QUEUED.value,
-                SummaryGenerationJob.stage != WAITING_FOR_TRANSCRIPT_STAGE,
-                SummaryGenerationJob.task_id.is_(None),
-                has_segments,
-                ~has_summary,
+        (
+            await db.execute(
+                select(SummaryGenerationJob)
+                .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
+                .where(
+                    SummaryGenerationJob.status == SummaryGenerationStatus.QUEUED.value,
+                    SummaryGenerationJob.stage != WAITING_FOR_TRANSCRIPT_STAGE,
+                    SummaryGenerationJob.task_id.is_(None),
+                    has_segments,
+                    ~has_summary,
+                )
+                .options(
+                    selectinload(SummaryGenerationJob.recording)
+                    .selectinload(Recording.segments)
+                    .options(defer(Segment.embedding))
+                )
+                .order_by(SummaryGenerationJob.created_at.asc(), SummaryGenerationJob.id.asc())
+                .limit(remaining_limit)
             )
-            .options(
-                selectinload(SummaryGenerationJob.recording)
-                .selectinload(Recording.segments)
-                .options(defer(Segment.embedding))
-            )
-            .order_by(SummaryGenerationJob.created_at.asc(), SummaryGenerationJob.id.asc())
-            .limit(remaining_limit)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for job in orphaned_jobs:
         transcript_hash = summary_transcript_hash(build_summary_transcript(job.recording.segments))
         if transcript_hash != job.transcript_hash:
@@ -732,19 +737,23 @@ async def recover_missing_summary_generation_jobs(
         return recovered
 
     terminal_waiting_jobs = (
-        await db.execute(
-            select(SummaryGenerationJob)
-            .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
-            .where(
-                SummaryGenerationJob.status == SummaryGenerationStatus.QUEUED.value,
-                SummaryGenerationJob.stage == WAITING_FOR_TRANSCRIPT_STAGE,
-                Recording.status.notin_(WAIT_FOR_TRANSCRIPT_RECORDING_STATUSES),
-                ~has_segments,
+        (
+            await db.execute(
+                select(SummaryGenerationJob)
+                .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
+                .where(
+                    SummaryGenerationJob.status == SummaryGenerationStatus.QUEUED.value,
+                    SummaryGenerationJob.stage == WAITING_FOR_TRANSCRIPT_STAGE,
+                    Recording.status.notin_(WAIT_FOR_TRANSCRIPT_RECORDING_STATUSES),
+                    ~has_segments,
+                )
+                .order_by(SummaryGenerationJob.created_at.asc(), SummaryGenerationJob.id.asc())
+                .limit(remaining_limit)
             )
-            .order_by(SummaryGenerationJob.created_at.asc(), SummaryGenerationJob.id.asc())
-            .limit(remaining_limit)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for job in terminal_waiting_jobs:
         mark_summary_generation_failed(
             job,
@@ -1015,9 +1024,7 @@ async def _load_job_for_update(
     job_id: UUID,
 ) -> SummaryGenerationJob | None:
     result = await db.execute(
-        select(SummaryGenerationJob)
-        .where(SummaryGenerationJob.id == job_id)
-        .with_for_update()
+        select(SummaryGenerationJob).where(SummaryGenerationJob.id == job_id).with_for_update()
     )
     return result.scalar_one_or_none()
 

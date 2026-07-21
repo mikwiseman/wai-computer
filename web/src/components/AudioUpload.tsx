@@ -91,10 +91,13 @@ export function AudioUpload({ onUploadComplete, onError, folderId = null, locale
       const prefix = files.length > 1 ? `${index + 1}/${files.length}: ` : "";
       try {
         setProgress(`${prefix}${copy.creating}`);
-        // Pass an empty title so the backend auto-generates one from the
-        // transcript content instead of using the filename verbatim.
+        const extensionIndex = file.name.lastIndexOf(".");
+        const filenameTitle = extensionIndex > 0
+          ? file.name.slice(0, extensionIndex)
+          : file.name;
         const recording = await createRecording({
-          title: "",
+          title: filenameTitle,
+          title_mode: "preserve",
           type: "note",
           language: "multi",
           ...(folderId ? { folder_id: folderId } : {}),

@@ -55,6 +55,7 @@ class SettingsResponse(BaseModel):
     summary_language: str
     summary_style: str
     summary_instructions: str | None
+    automatic_recording_titles: bool
     dictation_live_stt_provider: str
     dictation_live_stt_model: str
     recording_live_stt_provider: str
@@ -90,6 +91,7 @@ class UpdateSettingsRequest(BaseModel):
     summary_language: str | None = None
     summary_style: str | None = None
     summary_instructions: str | None = None
+    automatic_recording_titles: bool | None = None
     dictation_live_stt_provider: str | None = None
     dictation_live_stt_model: str | None = None
     recording_live_stt_provider: str | None = None
@@ -213,9 +215,7 @@ class UpdateSettingsRequest(BaseModel):
             and self.dictation_post_filter_enabled is not None
             and (self.dictation_cleanup_level != "none") != self.dictation_post_filter_enabled
         ):
-            raise ValueError(
-                "dictation_cleanup_level and dictation_post_filter_enabled conflict"
-            )
+            raise ValueError("dictation_cleanup_level and dictation_post_filter_enabled conflict")
         return self
 
     @property
@@ -247,6 +247,7 @@ def _settings_response(user: CurrentUser) -> SettingsResponse:
         summary_language=user.summary_language,
         summary_style=user.summary_style,
         summary_instructions=user.summary_instructions,
+        automatic_recording_titles=user.automatic_recording_titles,
         dictation_style_rules=user.dictation_style_rules,
         dictation_live_stt_provider=DEFAULT_DICTATION_LIVE_STT_PROVIDER,
         dictation_live_stt_model=DEFAULT_DICTATION_LIVE_STT_MODEL,
@@ -299,6 +300,8 @@ async def update_settings(
     # summary_instructions: allow explicit empty string to clear
     if request.summary_instructions is not None:
         user.summary_instructions = request.summary_instructions or None
+    if request.automatic_recording_titles is not None:
+        user.automatic_recording_titles = request.automatic_recording_titles
     # dictation_style_rules: blank clears back to none
     if request.dictation_style_rules is not None:
         user.dictation_style_rules = request.dictation_style_rules.strip() or None
@@ -404,9 +407,7 @@ async def _user_has_voiceprint(user, db) -> bool:
 
     from app.models.person import Voiceprint
 
-    result = await db.execute(
-        select(Voiceprint.id).where(Voiceprint.user_id == user.id).limit(1)
-    )
+    result = await db.execute(select(Voiceprint.id).where(Voiceprint.user_id == user.id).limit(1))
     return result.scalar_one_or_none() is not None
 
 
@@ -471,25 +472,19 @@ async def get_voice_sharing(user: CurrentUser, db: Database) -> VoiceSharingResp
 
 
 @router.post("/voice-sharing", response_model=VoiceSharingResponse)
-async def enable_voice_sharing(
-    user: CurrentUser, db: Database
-) -> VoiceSharingResponse:
+async def enable_voice_sharing(user: CurrentUser, db: Database) -> VoiceSharingResponse:
     """Publish the user's voiceprint + name to the global match directory."""
     from app.core.voice_sharing import VoiceSharingError, publish_voice_sharing
 
     try:
         state = await publish_voice_sharing(db=db, user=user)
     except VoiceSharingError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return _voice_sharing_response(state)
 
 
 @router.delete("/voice-sharing", response_model=VoiceSharingResponse)
-async def disable_voice_sharing(
-    user: CurrentUser, db: Database
-) -> VoiceSharingResponse:
+async def disable_voice_sharing(user: CurrentUser, db: Database) -> VoiceSharingResponse:
     """Remove the user's directory entry. Other users stop seeing the auto-tag."""
     from app.core.voice_sharing import unpublish_voice_sharing
 

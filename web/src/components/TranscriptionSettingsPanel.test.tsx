@@ -11,6 +11,7 @@ function makeSettings(overrides?: Partial<UserSettings>): UserSettings {
     summary_language: "en",
     summary_style: "medium",
     summary_instructions: null,
+    automatic_recording_titles: true,
     dictation_live_stt_provider: "deepgram",
     dictation_live_stt_model: "nova-3",
     recording_live_stt_provider: "deepgram",
@@ -18,6 +19,7 @@ function makeSettings(overrides?: Partial<UserSettings>): UserSettings {
     file_stt_provider: "deepgram",
     file_stt_model: "nova-3",
     dictation_post_filter_enabled: true,
+    dictation_cleanup_level: "medium",
     dictation_post_filter_provider: "cerebras",
     dictation_post_filter_model: "gpt-oss-120b",
     ...overrides,
@@ -73,6 +75,25 @@ describe("TranscriptionSettingsPanel", () => {
     const [defaultLang] = screen.getAllByRole("combobox");
     await user.selectOptions(defaultLang, "fr");
     expect(onUpdate).toHaveBeenCalledWith({ default_language: "fr" });
+  });
+
+  it("keeps automatic naming to one clear account toggle", async () => {
+    const onUpdate = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <TranscriptionSettingsPanel
+        settings={makeSettings()}
+        transcriptionOptions={OPTIONS}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    const toggle = screen.getByRole("checkbox", {
+      name: /Name recordings automatically/i,
+    });
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+    expect(onUpdate).toHaveBeenCalledWith({ automatic_recording_titles: false });
   });
 
   it("patches summary_style on change", async () => {

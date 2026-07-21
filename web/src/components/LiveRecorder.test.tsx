@@ -12,6 +12,18 @@ import type { TranscriptSegmentInput } from "@/lib/types";
 const mockCreateRecording = vi.fn();
 const mockSaveTranscript = vi.fn();
 
+function makeStorage(): Storage {
+  const values = new Map<string, string>();
+  return {
+    get length() { return values.size; },
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => Array.from(values.keys())[index] ?? null,
+    removeItem: (key) => { values.delete(key); },
+    setItem: (key, value) => { values.set(key, String(value)); },
+  };
+}
+
 vi.mock("@/lib/api", () => ({
   createRecording: (...args: unknown[]) => mockCreateRecording(...args),
   saveTranscript: (...args: unknown[]) => mockSaveTranscript(...args),
@@ -128,6 +140,9 @@ describe("LiveRecorder", () => {
     FakeTranscriber.startState = "recording";
     FakeTranscriber.stopSegments = [];
     FakeTranscriber.stopError = null;
+    // Node 25 exposes a partial global localStorage unless a persistence file
+    // is configured. Browser behavior needs a complete Storage contract.
+    vi.stubGlobal("localStorage", makeStorage());
     localStorage.clear();
     vi.stubGlobal("MediaStream", FakeMediaStream);
     // Default: mic-only environment with no system-audio support.
@@ -368,7 +383,8 @@ describe("LiveRecorder", () => {
 
       await waitFor(() => {
         expect(mockCreateRecording).toHaveBeenCalledWith({
-          title: expect.stringContaining("Recording "),
+          title: expect.stringContaining("Recording · "),
+          title_mode: "automatic",
           type: "note",
         });
         expect(mockSaveTranscript).toHaveBeenCalledWith("rec-9", [

@@ -24,6 +24,19 @@ interface Copy {
   discardUnsaved: string;
 }
 
+function provisionalRecordingTitle(locale: Locale): string {
+  const isRussian = locale === "ru";
+  const date = new Intl.DateTimeFormat(isRussian ? "ru-RU" : "en-US", {
+    year: "numeric",
+    month: isRussian ? "2-digit" : "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: !isRussian,
+  }).format(new Date());
+  return `${isRussian ? "Запись" : "Recording"} · ${date}`;
+}
+
 const COPY: Record<Locale, Copy> = {
   en: {
     start: "Record in browser",
@@ -31,7 +44,7 @@ const COPY: Record<Locale, Copy> = {
     stop: "Stop & save",
     saving: "Saving…",
     listening: "Listening…",
-    defaultTitle: () => `Recording ${new Date().toLocaleString()}`,
+    defaultTitle: () => provisionalRecordingTitle("en"),
     micDenied: "Microphone access is required to record.",
     noSpeech: "No speech was captured — nothing to save.",
     recordingError: "Recording stopped unexpectedly. Start again to keep going.",
@@ -46,7 +59,7 @@ const COPY: Record<Locale, Copy> = {
     stop: "Стоп и сохранить",
     saving: "Сохраняем…",
     listening: "Слушаю…",
-    defaultTitle: () => `Запись ${new Date().toLocaleString()}`,
+    defaultTitle: () => provisionalRecordingTitle("ru"),
     micDenied: "Для записи нужен доступ к микрофону.",
     noSpeech: "Речь не распознана — сохранять нечего.",
     recordingError: "Запись неожиданно остановилась. Начните заново, чтобы продолжить.",
@@ -191,6 +204,7 @@ export function LiveRecorder({
         if (!recordingId) {
           const recording = await createRecording({
             title: payload.title,
+            title_mode: "automatic",
             type: "note",
             ...(payload.folderId ? { folder_id: payload.folderId } : {}),
           });

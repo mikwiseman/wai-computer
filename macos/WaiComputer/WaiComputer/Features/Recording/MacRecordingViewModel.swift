@@ -368,7 +368,12 @@ class MacRecordingViewModel: ObservableObject {
 
             // Create recording on server
             let language = DictationLanguageSelectionPolicy.providerLanguage(store: nil)
+            let provisionalTitle = RecordingTitleFormatter.provisionalTitle(
+                language: OnboardingL10n.language(for: LanguageManager.shared.current)
+            )
             recording = try await apiClient.createRecording(
+                title: provisionalTitle,
+                titleMode: .automatic,
                 type: recordingType,
                 language: language,
                 folderId: folderId

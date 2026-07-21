@@ -323,6 +323,9 @@ class MacRecordingDetailViewModel: ObservableObject {
         if detail?.summaryAudio?.isActive == true {
             return true
         }
+        if detail?.automaticTitlePending == true {
+            return true
+        }
 
         switch detail?.status {
         case .pendingUpload, .uploading, .processing:

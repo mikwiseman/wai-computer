@@ -281,6 +281,7 @@ public struct UserSettings: Codable, Sendable {
     public let summaryLanguage: String
     public let summaryStyle: String
     public let summaryInstructions: String?
+    public let automaticRecordingTitles: Bool
     public let dictationLiveSTTProvider: String
     public let dictationLiveSTTModel: String
     public let recordingLiveSTTProvider: String
@@ -301,6 +302,10 @@ public struct UserSettings: Codable, Sendable {
         summaryLanguage = try container.decode(String.self, forKey: .summaryLanguage)
         summaryStyle = try container.decode(String.self, forKey: .summaryStyle)
         summaryInstructions = try container.decodeIfPresent(String.self, forKey: .summaryInstructions)
+        automaticRecordingTitles = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .automaticRecordingTitles
+        ) ?? true
 
         dictationLiveSTTProvider = try container.decode(String.self, forKey: .dictationLiveSTTProvider)
         dictationLiveSTTModel = try container.decode(String.self, forKey: .dictationLiveSTTModel)
@@ -321,6 +326,7 @@ public struct UserSettings: Codable, Sendable {
         case summaryLanguage = "summary_language"
         case summaryStyle = "summary_style"
         case summaryInstructions = "summary_instructions"
+        case automaticRecordingTitles = "automatic_recording_titles"
         case dictationLiveSTTProvider = "dictation_live_stt_provider"
         case dictationLiveSTTModel = "dictation_live_stt_model"
         case recordingLiveSTTProvider = "recording_live_stt_provider"
@@ -342,6 +348,7 @@ public struct UpdateSettingsRequest: Codable, Sendable {
     public var summaryLanguage: String?
     public var summaryStyle: String?
     public var summaryInstructions: String?
+    public var automaticRecordingTitles: Bool?
     public var dictationLiveSTTProvider: String?
     public var dictationLiveSTTModel: String?
     public var recordingLiveSTTProvider: String?
@@ -360,6 +367,7 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         summaryLanguage: String? = nil,
         summaryStyle: String? = nil,
         summaryInstructions: String? = nil,
+        automaticRecordingTitles: Bool? = nil,
         dictationLiveSTTProvider: String? = nil,
         dictationLiveSTTModel: String? = nil,
         recordingLiveSTTProvider: String? = nil,
@@ -377,6 +385,7 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         self.summaryLanguage = summaryLanguage
         self.summaryStyle = summaryStyle
         self.summaryInstructions = summaryInstructions
+        self.automaticRecordingTitles = automaticRecordingTitles
         self.dictationLiveSTTProvider = dictationLiveSTTProvider
         self.dictationLiveSTTModel = dictationLiveSTTModel
         self.recordingLiveSTTProvider = recordingLiveSTTProvider
@@ -396,6 +405,7 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         case summaryLanguage = "summary_language"
         case summaryStyle = "summary_style"
         case summaryInstructions = "summary_instructions"
+        case automaticRecordingTitles = "automatic_recording_titles"
         case dictationLiveSTTProvider = "dictation_live_stt_provider"
         case dictationLiveSTTModel = "dictation_live_stt_model"
         case recordingLiveSTTProvider = "recording_live_stt_provider"

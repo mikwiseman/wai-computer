@@ -371,6 +371,25 @@ describe("api client wrappers", () => {
     });
   });
 
+  it("marks a live recording title as automatic", async () => {
+    await api.createRecording({
+      title: "Recording · Jul 21, 2026, 2:30 PM",
+      title_mode: "automatic",
+      type: "meeting",
+      language: "en",
+    });
+
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings", {
+      method: "POST",
+      body: JSON.stringify({
+        title: "Recording · Jul 21, 2026, 2:30 PM",
+        type: "meeting",
+        language: "en",
+        title_mode: "automatic",
+      }),
+    });
+  });
+
   it("decodes media upload recording ids", async () => {
     mockedApiUpload.mockResolvedValueOnce({
       kind: "recording",

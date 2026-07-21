@@ -340,7 +340,9 @@ class MacLibraryViewModel: ObservableObject {
         switch recording.status {
         case .pendingUpload, .uploading, .processing:
             return true
-        case .ready, .failed:
+        case .ready:
+            return recording.automaticTitlePending
+        case .failed:
             return false
         }
     }

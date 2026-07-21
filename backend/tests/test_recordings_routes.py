@@ -84,10 +84,14 @@ async def test_permanent_delete_removes_entity_mentions_and_dirties_entity(
     assert response.status_code == 204
 
     remaining = (
-        await db_session.execute(
-            select(EntityMention).where(EntityMention.source_id == recording.id)
+        (
+            await db_session.execute(
+                select(EntityMention).where(EntityMention.source_id == recording.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert remaining == []
     await db_session.refresh(entity)
     assert entity.dossier_dirty is True
@@ -1232,10 +1236,14 @@ async def test_generate_summary_preserves_manual_action_items(
             summary="Summary.",
             key_points=[],
             decisions=[],
-            action_items=[{
-                "task": "Generated task", "owner": None,
-                "due": None, "priority": "medium",
-            }],
+            action_items=[
+                {
+                    "task": "Generated task",
+                    "owner": None,
+                    "due": None,
+                    "priority": "medium",
+                }
+            ],
             topics=[],
             people_mentioned=[],
             follow_up_questions=[],
@@ -1401,15 +1409,16 @@ async def test_upload_size_mismatch_marks_failed_and_sends_sentry_message(
     ).scalar_one()
     assert refreshed.status == RecordingStatus.FAILED.value
     assert refreshed.failure_code == "upload_size_mismatch"
+    assert refreshed.title_auto_generated is False
     assert sentry_messages == [
         {
             "message": "Audio upload size mismatch",
-                "level": "warning",
-                "extras": {
-                    "alert_code": "recording.upload.size_mismatch",
-                    "recording_id": recording["id"],
-                    "client_file_size_bytes": 999,
-                    "staged_size_bytes": 13,
+            "level": "warning",
+            "extras": {
+                "alert_code": "recording.upload.size_mismatch",
+                "recording_id": recording["id"],
+                "client_file_size_bytes": 999,
+                "staged_size_bytes": 13,
             },
         }
     ]
@@ -1738,9 +1747,7 @@ async def test_duplicate_audio_upload_cannot_overwrite_ready_audio_transcript(
     assert duplicate_upload.status_code == 200
     data = duplicate_upload.json()
     assert data["duration_seconds"] == 55 * 60
-    assert [segment["content"] for segment in data["segments"]] == [
-        "Full canonical transcript"
-    ]
+    assert [segment["content"] for segment in data["segments"]] == ["Full canonical transcript"]
     enqueue_processing.assert_not_awaited()
 
 
@@ -2050,12 +2057,29 @@ async def test_save_transcript_accepts_empty_payload_without_erasing_existing_se
     detail_response = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
     assert detail_response.status_code == 200
     detail = detail_response.json()
-    assert [segment["content"] for segment in detail["segments"]] == [
-        "Keep this transcript"
-    ]
+    assert [segment["content"] for segment in detail["segments"]] == ["Keep this transcript"]
     assert detail["status"] == "ready"
     assert detail["failure_code"] is None
     assert detail["failure_message"] is None
+
+
+@pytest.mark.asyncio
+async def test_save_empty_transcript_stops_waiting_for_automatic_title(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    recording = await _create_recording(client, auth_headers, title=None)
+    assert recording["automatic_title_pending"] is True
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/transcript",
+        headers=auth_headers,
+        json={"duration_seconds": 0, "segments": []},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == RecordingStatus.FAILED.value
+    assert response.json()["automatic_title_pending"] is False
 
 
 @pytest.mark.asyncio
@@ -2389,9 +2413,7 @@ async def test_update_recording_nonexistent_returns_404(client: AsyncClient, aut
 @pytest.mark.asyncio
 async def test_update_recording_folder_id(client: AsyncClient, auth_headers: dict):
     """PATCH should move recording to a folder."""
-    folder_resp = await client.post(
-        "/api/folders", headers=auth_headers, json={"name": "Work"}
-    )
+    folder_resp = await client.post("/api/folders", headers=auth_headers, json={"name": "Work"})
     assert folder_resp.status_code == 201
     folder_id = folder_resp.json()["id"]
 
@@ -2600,6 +2622,52 @@ async def test_create_recording_with_null_title(client: AsyncClient, auth_header
 
 
 @pytest.mark.asyncio
+async def test_automatic_title_mode_respects_account_setting(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session,
+):
+    """A live recording's provisional title is replaceable only while the
+    account-level automatic naming preference is enabled."""
+    enabled = await client.post(
+        "/api/recordings",
+        headers=auth_headers,
+        json={
+            "title": "Запись · 21.07.2026, 14:30",
+            "title_mode": "automatic",
+            "type": "meeting",
+            "language": "ru",
+        },
+    )
+    assert enabled.status_code == 201, enabled.text
+    enabled_recording = await db_session.get(Recording, UUID(enabled.json()["id"]))
+    assert enabled_recording is not None
+    assert enabled_recording.title_auto_generated is True
+
+    updated = await client.patch(
+        "/api/settings",
+        headers=auth_headers,
+        json={"automatic_recording_titles": False},
+    )
+    assert updated.status_code == 200, updated.text
+
+    disabled = await client.post(
+        "/api/recordings",
+        headers=auth_headers,
+        json={
+            "title": "Запись · 21.07.2026, 15:00",
+            "title_mode": "automatic",
+            "type": "reflection",
+            "language": "ru",
+        },
+    )
+    assert disabled.status_code == 201, disabled.text
+    disabled_recording = await db_session.get(Recording, UUID(disabled.json()["id"]))
+    assert disabled_recording is not None
+    assert disabled_recording.title_auto_generated is False
+
+
+@pytest.mark.asyncio
 async def test_restore_nonexistent_recording_returns_404(client: AsyncClient, auth_headers: dict):
     """Restoring a nonexistent recording returns 404."""
     fake_id = "00000000-0000-0000-0000-000000000000"
@@ -2613,9 +2681,7 @@ async def test_restore_nonexistent_recording_returns_404(client: AsyncClient, au
 @pytest.mark.asyncio
 async def test_create_recording_with_folder_id(client: AsyncClient, auth_headers: dict):
     """Creating a recording with a valid folder_id should assign it to that folder."""
-    folder_resp = await client.post(
-        "/api/folders", headers=auth_headers, json={"name": "Projects"}
-    )
+    folder_resp = await client.post("/api/folders", headers=auth_headers, json={"name": "Projects"})
     assert folder_resp.status_code == 201
     folder_id = folder_resp.json()["id"]
 

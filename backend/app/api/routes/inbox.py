@@ -48,6 +48,7 @@ class InboxRow(BaseModel):
     source_id: str
     detail: InboxDetailRef
     title: str | None
+    automatic_title_pending: bool
     source_label: str
     sublabel: str | None
     activity_at: datetime
@@ -229,6 +230,7 @@ async def _recording_rows(
                 source_id=str(recording.id),
                 detail=InboxDetailRef(kind="recording", id=str(recording.id)),
                 title=recording.title,
+                automatic_title_pending=recording.title_auto_generated,
                 source_label="Recording",
                 sublabel=recording.type,
                 activity_at=recording.created_at,
@@ -289,9 +291,7 @@ async def _item_rows(
     if cursor is not None:
         stmt = stmt.where(_cursor_clause(activity_expr, "item", cursor))
 
-    result = await db.execute(
-        stmt.order_by(activity_expr.desc(), Item.id.desc()).limit(limit + 1)
-    )
+    result = await db.execute(stmt.order_by(activity_expr.desc(), Item.id.desc()).limit(limit + 1))
     rows: list[InboxRow] = []
     for item, activity_at, has_summary in result.all():
         source_status = _derive_status(item, bool(has_summary))
@@ -303,6 +303,7 @@ async def _item_rows(
                 source_id=str(item.id),
                 detail=InboxDetailRef(kind="item", id=str(item.id)),
                 title=item.title or title_from_body(item.body),
+                automatic_title_pending=False,
                 source_label="Material",
                 sublabel=item.kind,
                 activity_at=activity_at,
