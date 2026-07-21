@@ -415,6 +415,8 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     // Smart cleanup (same server pass the Mac app uses): fillers, spoken
     // self-corrections ("scratch that", "забудь"), and formatting commands.
     // On failure the raw words still land — degradation is visible, not silent.
+    // The deadline is a watchdog against a stalled connection (server p95 is
+    // well under a second), sized so it only fires on genuine pathology.
     let cleaned = replaced;
     try {
       const vocabulary = Array.from(
@@ -424,9 +426,20 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
             .filter((v): v is string => Boolean(v && v.trim())),
         ),
       );
-      const response = await cleanupDictation(replaced, vocabulary);
-      if (response.text.trim()) {
-        cleaned = response.text;
+      const timeoutMs = 12_000 + Math.min(12_000, Math.floor(replaced.length / 800) * 1_000);
+      let watchdog: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const response = await Promise.race([
+          cleanupDictation(replaced, vocabulary),
+          new Promise<never>((_, reject) => {
+            watchdog = setTimeout(() => reject(new Error("cleanup timed out")), timeoutMs);
+          }),
+        ]);
+        if (response.text.trim()) {
+          cleaned = response.text;
+        }
+      } finally {
+        clearTimeout(watchdog);
       }
     } catch {
       setNotice(copy.cleanupFailed);
