@@ -58,6 +58,28 @@ def test_merge_rejects_same_enclosure_url_with_different_signature_metadata():
     assert exc.value.code == 4
 
 
+def test_merge_rejects_republishing_same_build_with_different_signature_metadata():
+    merge_script = _load_merge_script()
+    url = "https://wai.computer/releases/macos/1.0.12-89/WaiComputer-1.0.12-89.dmg"
+    local = _appcast(_item("", "200", "rebuilt", url))
+    remote = _appcast(_item("", "100", "published", url))
+
+    with pytest.raises(SystemExit) as exc:
+        merge_script.merge(local, remote)
+
+    assert exc.value.code == 4
+
+
+def test_merge_allows_idempotent_republish_of_identical_build():
+    merge_script = _load_merge_script()
+    url = "https://wai.computer/releases/macos/1.0.12-89/WaiComputer-1.0.12-89.dmg"
+    item = _item("", "100", "published", url)
+
+    merged = merge_script.merge(_appcast(item), _appcast(item))
+
+    assert merged.count(url) == 1
+
+
 def test_merge_allows_same_build_channels_when_enclosure_urls_differ():
     merge_script = _load_merge_script()
     local = _appcast(

@@ -15,6 +15,7 @@ Exit codes:
   0  merged successfully (or remote was empty/missing)
   2  fatal — local appcast malformed or unreadable
   3  fatal — remote fetch failed for a reason other than 404
+  4  fatal — an existing enclosure URL has different signature metadata
 """
 from __future__ import annotations
 
@@ -146,11 +147,13 @@ def merge(local_xml: str, remote_xml: str | None) -> str:
         print("merge-appcast: remote appcast missing <channel>; using local-only", file=sys.stderr)
         return ET.tostring(local_root, encoding="unicode", xml_declaration=True)
 
+    remote_items = remote_channel.findall("item")
+    validate_new_enclosure_url(new_item, remote_items)
+
     existing = [
-        item for item in remote_channel.findall("item")
+        item for item in remote_items
         if not (item_build(item) == new_build and item_channel(item) == new_channel)
     ]
-    validate_new_enclosure_url(new_item, existing)
 
     by_channel: dict[str, list[ET.Element]] = {}
     by_channel.setdefault(new_channel, []).append(new_item)
@@ -174,7 +177,11 @@ def merge(local_xml: str, remote_xml: str | None) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--local", required=True, help="Path to local appcast.xml (single new item)")
+    parser.add_argument(
+        "--local",
+        required=True,
+        help="Path to local appcast.xml (single new item)",
+    )
     parser.add_argument("--remote-url", required=True, help="URL of the live remote appcast.xml")
     parser.add_argument("--out", required=True, help="Path to write merged appcast.xml")
     args = parser.parse_args()
