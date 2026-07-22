@@ -15,6 +15,7 @@ AI second brain for recordings, transcription, search, and summaries.
 - Server: `root@157.180.47.68`, deploy root `/opt/waicomputer`.
 - Runtime env: `/etc/waicomputer/backend.env` is the source of truth; `/opt/waicomputer/backend/.env` is a symlink to it.
 - Keep aligned: `FRONTEND_URL=https://wai.computer`, `AUTH_COOKIE_DOMAIN=wai.computer`, `CORS_ORIGINS` includes `https://wai.computer`, `SENTRY_DSN` on the current project.
+- YouTube captions egress through Squid on the wai-ru edge at `63.250.57.133:3128`; `/etc/squid/conf.d/waicomputer.conf` allows only origin `157.180.47.68` and YouTube-owned domains, with access logs and caching disabled. The edge UFW rule also allows port 3128 only from the origin. Keep `YOUTUBE_PROXY_URL=http://63.250.57.133:3128` in the backend runtime env. Videos without captions use `GEMINI_API_KEY` + pinned `YOUTUBE_GEMINI_MODEL` directly; never add YouTube cookies or media downloads.
 
 ## Deploy
 

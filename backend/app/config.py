@@ -225,16 +225,12 @@ class Settings(BaseSettings):
     # voice notes may be routed to the agent when addressed to Wai.
     telegram_voice_command_max_seconds: int = 60
 
-    # YouTube ingestion. Cloud-server IPs are routinely blocked by YouTube's
-    # anti-bot layer; a proxy URL (e.g. http://user:pass@gate.decodo.com:10001)
-    # routes both caption fetches and the audio fallback around the block.
+    # Exact YouTube captions use a restricted egress proxy because YouTube
+    # blocks the origin VPS. Videos without captions use Gemini's native video
+    # understanding; media is never downloaded.
     youtube_proxy_url: str = ""
-    # When a video has no captions at all, download its audio (yt-dlp) and
-    # transcribe with the regular file-STT path. Explicit, budget-guarded
-    # recovery — the reply discloses that the transcript came from audio.
-    youtube_audio_fallback_enabled: bool = True
-    youtube_audio_max_bytes: int = 200 * 1024 * 1024
-    youtube_audio_max_seconds: int = 4 * 3600
+    gemini_api_key: str = ""
+    youtube_gemini_model: str = "gemini-3.6-flash"
 
     # Email (Resend)
     resend_api_key: str = ""

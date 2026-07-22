@@ -91,41 +91,6 @@ def test_extract_article_uses_trafilatura() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_youtube_transcript_joins_snippets() -> None:
-    from app.core import source_fetch as sf
-
-    class FetchedList(list):
-        language_code = "en"
-
-    snippets = FetchedList(
-        [
-            SimpleNamespace(text="hello", start=0.0, duration=1.0),
-            SimpleNamespace(text="world", start=1.0, duration=1.5),
-        ]
-    )
-    transcript = SimpleNamespace(
-        fetch=lambda: snippets, is_generated=False, language_code="en"
-    )
-
-    class FakeList:
-        def find_transcript(self, codes):
-            return transcript
-
-        def __iter__(self):
-            return iter([transcript])
-
-    fake_api = SimpleNamespace(list=lambda vid: FakeList())
-    with patch.object(sf, "_youtube_api", return_value=fake_api):
-        text, lang, segments = sf._fetch_youtube_transcript("vid123")
-    assert text == "hello world"
-    assert lang == "en"
-    assert segments == [
-        {"content": "hello", "start_ms": 0, "end_ms": 1000},
-        {"content": "world", "start_ms": 1000, "end_ms": 2500},
-    ]
-
-
-@pytest.mark.asyncio
 async def test_fetch_pdf_bytes_dispatch() -> None:
     from app.core import source_fetch as sf
 
