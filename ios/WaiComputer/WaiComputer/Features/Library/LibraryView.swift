@@ -144,7 +144,11 @@ struct LibraryView: View {
             }
             .overlay {
                 if importViewModel.isUploading {
-                    ImportUploadOverlay(filename: importViewModel.uploadingFilename)
+                    ImportUploadOverlay(
+                        filename: importViewModel.uploadingFilename,
+                        currentFileIndex: importViewModel.currentFileIndex,
+                        totalFileCount: importViewModel.totalFileCount
+                    )
                 }
             }
             .toolbar {
@@ -211,13 +215,12 @@ struct LibraryView: View {
             .fileImporter(
                 isPresented: $importViewModel.showFileImporter,
                 allowedContentTypes: ImportViewModel.allowedContentTypes,
-                allowsMultipleSelection: false
+                allowsMultipleSelection: true
             ) { result in
                 switch result {
                 case .success(let urls):
-                    guard let url = urls.first else { return }
                     importViewModel.handleFileSelection(
-                        result: .success(url),
+                        result: .success(urls),
                         apiClient: appState.getAPIClient()
                     )
                 case .failure(let error):
@@ -227,14 +230,18 @@ struct LibraryView: View {
                     )
                 }
             }
-            .onReceive(importViewModel.$completedRecording) { recording in
-                guard let recording else { return }
-                Task {
-                    await viewModel.loadLibrary(apiClient: appState.getAPIClient())
+            .onReceive(importViewModel.$importSummary) { summary in
+                guard let summary else { return }
+                if summary.importedCount > 0 {
+                    Task {
+                        await viewModel.loadLibrary(apiClient: appState.getAPIClient())
+                    }
                 }
-                importedRecording = recording
-                showImportedDetail = true
-                importViewModel.reset()
+                if let recording = summary.singleRecording {
+                    importedRecording = recording
+                    showImportedDetail = true
+                }
+                importViewModel.consumeImportSummary()
             }
             .alert(
                 t("Import Failed", "Не удалось импортировать"),
@@ -1913,6 +1920,8 @@ class LibraryViewModel: ObservableObject {
 
 private struct ImportUploadOverlay: View {
     let filename: String?
+    let currentFileIndex: Int
+    let totalFileCount: Int
     @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
@@ -1924,9 +1933,21 @@ private struct ImportUploadOverlay: View {
                 ProgressView()
                     .controlSize(.large)
 
-                if let filename {
-                    Text(String(format: t("Uploading %@…", "Загрузка %@…"), filename))
+                if totalFileCount > 1 {
+                    Text(String(
+                        format: t("Uploading %d of %d", "Загрузка: %d из %d"),
+                        currentFileIndex,
+                        totalFileCount
+                    ))
+                    .font(.headline)
+                } else {
+                    Text(t("Uploading", "Загружаем"))
                         .font(.headline)
+                }
+
+                if let filename {
+                    Text(filename)
+                        .font(.subheadline)
                         .foregroundStyle(.primary)
                 }
 

@@ -55,7 +55,7 @@ struct NewRecordingView: View {
                 RecordingOptionRow(
                     title: t("Import Audio or Video", "Импорт аудио или видео"),
                     icon: "square.and.arrow.down",
-                    subtitle: t("Transcribe an existing audio or video file", "Расшифровать готовый аудио- или видеофайл"),
+                    subtitle: t("Transcribe one or several existing files", "Расшифровать один или несколько файлов"),
                     shortcut: "⌘I",
                     keyEquivalent: KeyboardShortcut("i", modifiers: .command),
                     isPrimary: false,
