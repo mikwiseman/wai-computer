@@ -16,6 +16,8 @@ class MacImportViewModel: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
     @Published var currentFilename = ""
+    @Published var currentFileIndex = 0
+    @Published var totalFileCount = 0
 
     private let allowedTypes = MediaImportSupport.importableExtensions
 
@@ -26,65 +28,49 @@ class MacImportViewModel: ObservableObject {
         panel.allowedContentTypes = allowedTypes.compactMap {
             .init(filenameExtension: $0)
         }
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
 
         let result = panel.runModal()
-        guard result == .OK, let fileURL = panel.url else { return }
+        guard result == .OK, !panel.urls.isEmpty else { return }
+        await uploadFiles(panel.urls, apiClient: apiClient)
+    }
 
-        let filename = fileURL.lastPathComponent
-        currentFilename = filename
+    func uploadFiles(_ fileURLs: [URL], apiClient: APIClient) async {
+        guard !isImporting, !fileURLs.isEmpty else { return }
+
+        currentFilename = ""
+        currentFileIndex = 0
+        totalFileCount = fileURLs.count
+        errorMessage = ""
+        showError = false
         isImporting = true
         importState = .importing
 
-        // Videos upload as their audio track when AVFoundation can extract it
-        // locally (mp4/mov/m4v) — a fraction of the bytes. Containers it can't
-        // read (mkv/avi/…) upload whole; the server's ffmpeg pipeline extracts.
-        var uploadURL = fileURL
-        var extractedTempURL: URL?
-        if MediaImportSupport.isVideoExtension(fileURL.pathExtension) {
-            if let extracted = await MediaAudioExtractor.extractAudioForUpload(source: fileURL) {
-                uploadURL = extracted
-                extractedTempURL = extracted
-            }
-        }
-        defer {
-            if let extractedTempURL {
-                try? FileManager.default.removeItem(at: extractedTempURL)
-            }
-        }
-
-        var recordingId: String?
-        do {
-            let filename = fileURL.deletingPathExtension().lastPathComponent
-            let recording = try await apiClient.createRecording(
-                title: filename,
-                titleMode: .preserve,
-                type: .note
-            )
-            recordingId = recording.id
-            let detail = try await apiClient.uploadAudio(recordingId: recording.id, fileURL: uploadURL)
-
-            if detail.status == .failed || detail.failureMessage?.isEmpty == false {
-                errorMessage = UserFacingErrorFormatter.displayMessage(
-                    detail.failureMessage,
-                    fallback: RecordingCopy.importProcessingFailedFallback(language: language),
-                    context: .recording
+        let language = LanguageManager.shared.current
+        let summary = await RecordingBatchImporter.importSequentially(
+            files: fileURLs,
+            onProgress: { [weak self] index, total, file in
+                self?.currentFileIndex = index
+                self?.totalFileCount = total
+                self?.currentFilename = file.lastPathComponent
+            },
+            importFile: { fileURL in
+                await RecordingFileImporter.importFile(
+                    fileURL,
+                    apiClient: apiClient,
+                    processingFailureFallback: RecordingCopy.importProcessingFailedFallback(
+                        language: language
+                    )
                 )
-                showError = true
-                importState = .error
-            } else {
-                importState = .done
             }
-        } catch {
-            if let recordingId {
-                try? await apiClient.deleteRecording(id: recordingId, permanent: true)
-            }
-            errorMessage = error.userFacingMessage(context: .recording)
-            showError = true
-            importState = .error
-        }
+        )
 
+        importState = summary.importedCount > 0 ? .done : .error
+        if let message = summary.failureMessage(language: OnboardingL10n.language(for: language)) {
+            errorMessage = message
+            showError = true
+        }
         isImporting = false
     }
 }

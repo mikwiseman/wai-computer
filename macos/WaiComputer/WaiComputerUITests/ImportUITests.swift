@@ -65,8 +65,8 @@ final class ImportUITests: XCTestCase {
         let label = importButton.label
         XCTAssertTrue(label.contains("Import Audio or Video"),
                        "Import button label should contain 'Import Audio or Video', got: \(label)")
-        XCTAssertTrue(label.contains("Transcribe an existing audio file"),
-                       "Import button label should contain subtitle text, got: \(label)")
+        XCTAssertTrue(label.contains("Transcribe one or several existing files"),
+                      "Import button label should contain batch-import subtitle text, got: \(label)")
 
         // Verify the recording options are also present (confirms full new recording view)
         let startRecordingButton = app.descendants(matching: .any)
@@ -100,7 +100,7 @@ final class ImportUITests: XCTestCase {
         let importLabel = importButton.label
         XCTAssertTrue(importLabel.contains("Импорт аудио или видео"),
                       "Import button label should contain Russian title, got: \(importLabel)")
-        XCTAssertTrue(importLabel.contains("Расшифровать готовый аудиофайл"),
-                      "Import button label should contain Russian subtitle, got: \(importLabel)")
+        XCTAssertTrue(importLabel.contains("Расшифровать один или несколько файлов"),
+                      "Import button label should contain Russian batch-import subtitle, got: \(importLabel)")
     }
 }

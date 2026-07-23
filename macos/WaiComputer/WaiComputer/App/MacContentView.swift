@@ -326,7 +326,18 @@ struct MacMainView: View {
             VStack(spacing: Spacing.md) {
                 ProgressView()
                     .controlSize(.small)
-                Text(t("Importing", "Импортируем") + " \(importViewModel.currentFilename)…")
+                if importViewModel.totalFileCount > 1 {
+                    Text(String(
+                        format: t("Importing %d of %d", "Импорт: %d из %d"),
+                        importViewModel.currentFileIndex,
+                        importViewModel.totalFileCount
+                    ))
+                    .font(Typography.headingMedium)
+                } else {
+                    Text(t("Importing", "Импортируем"))
+                        .font(Typography.headingMedium)
+                }
+                Text(importViewModel.currentFilename)
                     .font(Typography.bodySmall)
                     .foregroundStyle(Palette.textSecondary)
                     .lineLimit(1)

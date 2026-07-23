@@ -6,7 +6,9 @@ import WaiComputerKit
 class ImportViewModel: ObservableObject {
     @Published var isUploading = false
     @Published var uploadingFilename: String?
-    @Published var completedRecording: Recording?
+    @Published var currentFileIndex = 0
+    @Published var totalFileCount = 0
+    @Published private(set) var importSummary: RecordingImportSummary?
     @Published var errorMessage: String?
     @Published var showFileImporter = false
 
@@ -15,84 +17,69 @@ class ImportViewModel: ObservableObject {
             .compactMap { UTType(filenameExtension: $0) }
     }()
 
-    func handleFileSelection(result: Result<URL, Error>, apiClient: APIClient) {
+    func handleFileSelection(result: Result<[URL], Error>, apiClient: APIClient) {
         switch result {
-        case .success(let fileURL):
+        case .success(let fileURLs):
             Task {
-                await uploadFile(fileURL: fileURL, apiClient: apiClient)
+                await uploadFiles(fileURLs, apiClient: apiClient)
             }
         case .failure(let error):
             errorMessage = error.userFacingMessage(context: .recording)
         }
     }
 
-    private func uploadFile(fileURL: URL, apiClient: APIClient) async {
-        guard fileURL.startAccessingSecurityScopedResource() else {
-            errorMessage = OnboardingL10n.text(
-                "Unable to access the selected file.",
-                "Не удалось открыть выбранный файл.",
-                language: LanguageManager.shared.current
-            )
-            return
-        }
-        defer { fileURL.stopAccessingSecurityScopedResource() }
+    func uploadFiles(_ fileURLs: [URL], apiClient: APIClient) async {
+        guard !isUploading, !fileURLs.isEmpty else { return }
 
-        let filename = fileURL.deletingPathExtension().lastPathComponent
-        uploadingFilename = filename
+        uploadingFilename = nil
+        currentFileIndex = 0
+        totalFileCount = fileURLs.count
+        importSummary = nil
+        errorMessage = nil
         isUploading = true
 
-        // Videos upload as their audio track when AVFoundation can extract it
-        // locally — a fraction of the bytes over cellular. Containers it can't
-        // read upload whole; the server's ffmpeg pipeline extracts.
-        var uploadURL = fileURL
-        var extractedTempURL: URL?
-        if MediaImportSupport.isVideoExtension(fileURL.pathExtension) {
-            if let extracted = await MediaAudioExtractor.extractAudioForUpload(source: fileURL) {
-                uploadURL = extracted
-                extractedTempURL = extracted
-            }
-        }
-        defer {
-            if let extractedTempURL {
-                try? FileManager.default.removeItem(at: extractedTempURL)
-            }
-        }
+        let language = LanguageManager.shared.current
+        let summary = await RecordingBatchImporter.importSequentially(
+            files: fileURLs,
+            onProgress: { [weak self] index, total, file in
+                self?.currentFileIndex = index
+                self?.totalFileCount = total
+                self?.uploadingFilename = file.lastPathComponent
+            },
+            importFile: { fileURL in
+                guard fileURL.startAccessingSecurityScopedResource() else {
+                    return .failure(
+                        RecordingImportFailure(
+                            filename: fileURL.lastPathComponent,
+                            message: OnboardingL10n.text(
+                                "Unable to access the selected file.",
+                                "Не удалось открыть выбранный файл.",
+                                language: language
+                            )
+                        )
+                    )
+                }
+                defer { fileURL.stopAccessingSecurityScopedResource() }
 
-        var recordingId: String?
-        do {
-            let recording = try await apiClient.createRecording(
-                title: filename,
-                titleMode: .preserve,
-                type: .note
-            )
-            recordingId = recording.id
-            let detail = try await apiClient.uploadAudio(recordingId: recording.id, fileURL: uploadURL)
-
-            if detail.status == .failed || detail.failureMessage?.isEmpty == false {
-                let message = UserFacingErrorFormatter.displayMessage(
-                    detail.failureMessage,
-                    fallback: "Couldn't transcribe that audio file. Please try again.",
-                    context: .recording
+                return await RecordingFileImporter.importFile(
+                    fileURL,
+                    apiClient: apiClient,
+                    processingFailureFallback: OnboardingL10n.text(
+                        "Couldn’t transcribe that file. Please try again.",
+                        "Не удалось расшифровать файл. Попробуйте ещё раз.",
+                        language: language
+                    )
                 )
-                errorMessage = message
-            } else {
-                completedRecording = recording
             }
-        } catch {
-            if let recordingId {
-                try? await apiClient.deleteRecording(id: recordingId, permanent: true)
-            }
-            errorMessage = error.userFacingMessage(context: .recording)
-        }
+        )
 
+        errorMessage = summary.failureMessage(language: OnboardingL10n.language(for: language))
         isUploading = false
         uploadingFilename = nil
+        importSummary = summary
     }
 
-    func reset() {
-        completedRecording = nil
-        errorMessage = nil
-        isUploading = false
-        uploadingFilename = nil
+    func consumeImportSummary() {
+        importSummary = nil
     }
 }
