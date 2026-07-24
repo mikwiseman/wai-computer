@@ -4,25 +4,25 @@ import WaiComputerKit
 // MARK: - Spacing (8pt grid)
 
 enum Spacing {
-    static let xxs: CGFloat = 2
-    static let xs: CGFloat = 4
-    static let sm: CGFloat = 8
-    static let md: CGFloat = 12
-    static let lg: CGFloat = 16
-    static let xl: CGFloat = 24
-    static let xxl: CGFloat = 32
-    static let xxxl: CGFloat = 48
-    static let huge: CGFloat = 64
+    static let xxs = WaiDesignTokens.Spacing.xxs
+    static let xs = WaiDesignTokens.Spacing.xs
+    static let sm = WaiDesignTokens.Spacing.sm
+    static let md = WaiDesignTokens.Spacing.md
+    static let lg = WaiDesignTokens.Spacing.lg
+    static let xl = WaiDesignTokens.Spacing.xl
+    static let xxl = WaiDesignTokens.Spacing.xxl
+    static let xxxl = WaiDesignTokens.Spacing.xxxl
+    static let huge = WaiDesignTokens.Spacing.huge
 }
 
 // MARK: - Radius (concentric hierarchy)
 
 enum Radius {
-    static let sm: CGFloat = 8
-    static let md: CGFloat = 12
-    static let lg: CGFloat = 16
-    static let xl: CGFloat = 22
-    static let xxl: CGFloat = 28
+    static let sm = WaiDesignTokens.Radius.sm
+    static let md = WaiDesignTokens.Radius.md
+    static let lg = WaiDesignTokens.Radius.lg
+    static let xl = WaiDesignTokens.Radius.xl
+    static let xxl = WaiDesignTokens.Radius.xxl
 }
 
 // MARK: - Elevation
@@ -56,25 +56,27 @@ enum Elevation {
 // MARK: - Typography
 
 enum Typography {
-    static let displayLarge: Font = .system(size: 32, weight: .bold, design: .serif)
-    static let displayMedium: Font = .system(size: 26, weight: .semibold, design: .serif)
-    static let displaySmall: Font = .system(size: 22, weight: .semibold, design: .serif)
+    /// Semantic text styles preserve the product hierarchy while scaling with
+    /// Dynamic Type. Fixed point sizes are reserved for decorative glyphs.
+    static let displayLarge: Font = .system(.largeTitle, design: .serif, weight: .bold)
+    static let displayMedium: Font = .system(.title, design: .serif, weight: .semibold)
+    static let displaySmall: Font = .system(.title2, design: .serif, weight: .semibold)
 
-    static let headingLarge: Font = .system(size: 18, weight: .semibold)
-    static let headingMedium: Font = .system(size: 15, weight: .semibold)
-    static let headingSmall: Font = .system(size: 13, weight: .semibold)
+    static let headingLarge: Font = .system(.title3, weight: .semibold)
+    static let headingMedium: Font = .system(.headline, weight: .semibold)
+    static let headingSmall: Font = .system(.subheadline, weight: .semibold)
 
-    static let bodyLarge: Font = .system(size: 15)
-    static let body: Font = .system(size: 14)
-    static let bodySmall: Font = .system(size: 13)
-    static let reading: Font = .system(size: 15)
+    static let bodyLarge: Font = .body
+    static let body: Font = .body
+    static let bodySmall: Font = .subheadline
+    static let reading: Font = .body
 
-    static let label: Font = .system(size: 12, weight: .medium)
-    static let labelSmall: Font = .system(size: 11, weight: .medium)
-    static let caption: Font = .system(size: 11)
+    static let label: Font = .system(.caption, weight: .medium)
+    static let labelSmall: Font = .system(.caption2, weight: .semibold)
+    static let caption: Font = .caption2
 
-    static let mono: Font = .system(size: 13, design: .monospaced)
-    static let monoLarge: Font = .system(size: 15, weight: .medium, design: .monospaced)
+    static let mono: Font = .system(.caption, design: .monospaced)
+    static let monoLarge: Font = .system(.body, design: .monospaced, weight: .medium)
 }
 
 // MARK: - Theme
@@ -306,26 +308,6 @@ enum Palette {
 
 // MARK: - Buttons
 
-struct WaiPrimaryButtonStyle: ButtonStyle {
-    let isDisabled: Bool
-
-    init(isDisabled: Bool = false) {
-        self.isDisabled = isDisabled
-    }
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(Typography.headingSmall)
-            .foregroundStyle(Palette.onAccent)
-            .padding(.horizontal, Spacing.xl)
-            .padding(.vertical, Spacing.md)
-            .frame(minHeight: 44)
-            .background(isDisabled ? Palette.accent.opacity(0.4) : Palette.accent)
-            .clipShape(Capsule())
-            .opacity(configuration.isPressed ? 0.8 : 1.0)
-    }
-}
-
 struct WaiGhostButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -348,6 +330,60 @@ struct WaiQuietButtonStyle: ButtonStyle {
     }
 }
 
+/// Native Liquid Glass buttons on iOS 26, with an explicit opaque system
+/// control when Reduce Transparency is enabled and a native pre-26 fallback.
+private struct WaiGlassButtonModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let prominent: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            if prominent {
+                content
+                    .buttonStyle(.borderedProminent)
+                    .tint(Palette.accent)
+            } else {
+                content.buttonStyle(.bordered)
+            }
+        } else if #available(iOS 26.0, *) {
+            if prominent {
+                content
+                    .buttonStyle(.glassProminent)
+                    .tint(Palette.accent)
+            } else {
+                content.buttonStyle(.glass)
+            }
+        } else if prominent {
+            content
+                .buttonStyle(.borderedProminent)
+                .tint(Palette.accent)
+        } else {
+            content.buttonStyle(.bordered)
+        }
+    }
+}
+
+/// Places related glass controls in one rendering/morphing context on iOS 26.
+struct WaiGlassEffectGroup<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    init(spacing: CGFloat = Spacing.sm, @ViewBuilder content: @escaping () -> Content) {
+        self.spacing = spacing
+        self.content = content
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing, content: content)
+        } else {
+            content()
+        }
+    }
+}
+
 // MARK: - Surfaces
 
 private struct WaiCardModifier: ViewModifier {
@@ -359,6 +395,58 @@ private struct WaiCardModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .strokeBorder(Palette.border, lineWidth: 1)
             )
+    }
+}
+
+private struct WaiGlassChromeModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let cornerRadius: CGFloat
+    let tint: Color?
+    let interactive: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(
+                    Palette.panelRaised,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                )
+        } else if #available(iOS 26.0, *) {
+            if let tint, interactive {
+                content.glassEffect(
+                    .regular.tint(tint).interactive(),
+                    in: .rect(cornerRadius: cornerRadius)
+                )
+            } else if let tint {
+                content.glassEffect(.regular.tint(tint), in: .rect(cornerRadius: cornerRadius))
+            } else if interactive {
+                content.glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
+            } else {
+                content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            }
+        } else {
+            content
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                )
+                .overlay {
+                    if let tint {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(tint.opacity(0.18))
+                            .allowsHitTesting(false)
+                    }
+                }
+        }
     }
 }
 
@@ -391,24 +479,25 @@ extension View {
         modifier(WaiShadowModifier(elevation: elevation))
     }
 
+    /// Use for controls that float above content or navigation.
+    func waiGlassButton(prominent: Bool = false) -> some View {
+        modifier(WaiGlassButtonModifier(prominent: prominent))
+            .controlSize(prominent ? .large : .regular)
+            .buttonBorderShape(.capsule)
+    }
+
     /// Liquid Glass for floating navigation and interactive chrome only.
     /// Content cards stay opaque for hierarchy and legibility.
-    @ViewBuilder
-    func waiGlassChrome(cornerRadius: CGFloat, interactive: Bool = false) -> some View {
-        if #available(iOS 26.0, *) {
-            if interactive {
-                self.glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
-            } else {
-                self.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-            }
-        } else {
-            self
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Palette.border, lineWidth: 1)
-                )
-        }
+    func waiGlassChrome(
+        cornerRadius: CGFloat,
+        tint: Color? = nil,
+        interactive: Bool = false
+    ) -> some View {
+        modifier(WaiGlassChromeModifier(
+            cornerRadius: cornerRadius,
+            tint: tint,
+            interactive: interactive
+        ))
     }
 
     func waiSectionHeader() -> some View {
@@ -445,5 +534,14 @@ struct Triangle: Shape {
         path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         path.closeSubpath()
         return path
+    }
+}
+
+/// One adaptive hairline used inside custom cards instead of platform-default
+/// dividers with inconsistent insets.
+struct WaiDivider: View {
+    var body: some View {
+        Palette.border
+            .frame(height: 1)
     }
 }

@@ -67,8 +67,10 @@ struct WaiHomeView: View {
             .multilineTextAlignment(.center)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .frame(maxWidth: .infinity)
-            .background(.ultraThinMaterial)
+            .waiGlassChrome(cornerRadius: Radius.md)
+            .waiShadow(.raised)
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, Spacing.sm)
             .accessibilityIdentifier("wai-citation-load-error")
     }
 

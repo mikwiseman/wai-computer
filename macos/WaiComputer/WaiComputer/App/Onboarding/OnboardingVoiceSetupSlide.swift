@@ -126,23 +126,25 @@ struct OnboardingVoiceSetupSlide: View {
     @ViewBuilder
     private var footer: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack {
-                Button(t("Skip for now", "Пропустить пока"), action: skipAndAdvance)
-                    .buttonStyle(WaiGhostButtonStyle())
-                    .accessibilityIdentifier("onboarding-voice-skip-button")
-                Spacer()
-                if recorder.state == .recorded {
-                    Button(t("Re-record", "Записать заново"), action: handleRecordTap)
-                        .buttonStyle(WaiGhostButtonStyle())
-                        .accessibilityIdentifier("onboarding-voice-rerecord-button")
-                    Button(t("Use this take", "Использовать запись"), action: submit)
-                        .buttonStyle(WaiPrimaryButtonStyle(isDisabled: recorder.state == .uploading || !recorder.hasMinimumDuration))
-                        .disabled(recorder.state == .uploading || !recorder.hasMinimumDuration)
-                        .accessibilityIdentifier("onboarding-voice-use-take-button")
-                        // The slide owns the primary CTA on this page (the
-                        // shared footer hides its Continue), so Return
-                        // submits the take instead of discarding it.
-                        .keyboardShortcut(.defaultAction)
+            WaiGlassEffectGroup(spacing: Spacing.md) {
+                HStack {
+                    Button(t("Skip for now", "Пропустить пока"), action: skipAndAdvance)
+                        .waiGlassButton()
+                        .accessibilityIdentifier("onboarding-voice-skip-button")
+                    Spacer()
+                    if recorder.state == .recorded {
+                        Button(t("Re-record", "Записать заново"), action: handleRecordTap)
+                            .waiGlassButton()
+                            .accessibilityIdentifier("onboarding-voice-rerecord-button")
+                        Button(t("Use this take", "Использовать запись"), action: submit)
+                            .waiGlassButton(prominent: true)
+                            .disabled(recorder.state == .uploading || !recorder.hasMinimumDuration)
+                            .accessibilityIdentifier("onboarding-voice-use-take-button")
+                            // The slide owns the primary CTA on this page (the
+                            // shared footer hides its Continue), so Return
+                            // submits the take instead of discarding it.
+                            .keyboardShortcut(.defaultAction)
+                    }
                 }
             }
             Text(t(

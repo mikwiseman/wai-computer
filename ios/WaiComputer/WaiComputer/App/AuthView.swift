@@ -319,7 +319,7 @@ struct AuthView: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .buttonStyle(WaiPrimaryButtonStyle(isDisabled: appState.isLoading || !isFormValid))
+        .waiGlassButton(prominent: true)
         .frame(maxWidth: maxWidth ?? .infinity)
         .disabled(appState.isLoading || !isFormValid)
         .accessibilityIdentifier("auth-submit-button")

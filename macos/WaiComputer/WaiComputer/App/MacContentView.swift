@@ -1809,11 +1809,7 @@ private struct InlineLibraryErrorBanner: View {
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.sm)
-        // Adaptive warning surface (the old solid orange + black text broke
-        // in dark mode): tinted panel + hairline, readable in both schemes.
-        .background(Palette.warning.opacity(0.14))
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        .waiGlassChrome(cornerRadius: Radius.lg, tint: Palette.warning.opacity(0.22))
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg)
                 .strokeBorder(Palette.warning.opacity(0.35), lineWidth: 1)
@@ -1867,7 +1863,7 @@ private struct FolderNameSheet: View {
                     .frame(width: MacMainLayoutMetrics.folderNameSheetActionWidth)
 
                 Button(primaryTitle, action: onSubmit)
-                    .buttonStyle(WaiPrimaryButtonStyle(isDisabled: folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                    .waiGlassButton(prominent: true)
                     .disabled(folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.defaultAction)
                     .frame(width: MacMainLayoutMetrics.folderNameSheetActionWidth)
@@ -2243,7 +2239,7 @@ struct MacAuthView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: !isFormValid || appState.isLoading))
+                .waiGlassButton(prominent: true)
                 .disabled(!isFormValid || appState.isLoading)
                 .keyboardShortcut(.defaultAction)
                 .frame(maxWidth: 380)
@@ -2516,8 +2512,7 @@ private struct RecordingRecoveryNoticeBanner: View {
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        .waiGlassChrome(cornerRadius: Radius.md)
         .waiShadow(.raised)
         .accessibilityIdentifier("recording-recovery-banner")
     }

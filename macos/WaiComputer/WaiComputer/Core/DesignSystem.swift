@@ -4,15 +4,15 @@ import WaiComputerKit
 // MARK: - Spacing (8pt grid)
 
 enum Spacing {
-    static let xxs: CGFloat = 2
-    static let xs: CGFloat = 4
-    static let sm: CGFloat = 8
-    static let md: CGFloat = 12
-    static let lg: CGFloat = 16
-    static let xl: CGFloat = 24
-    static let xxl: CGFloat = 32
-    static let xxxl: CGFloat = 48
-    static let huge: CGFloat = 64
+    static let xxs = WaiDesignTokens.Spacing.xxs
+    static let xs = WaiDesignTokens.Spacing.xs
+    static let sm = WaiDesignTokens.Spacing.sm
+    static let md = WaiDesignTokens.Spacing.md
+    static let lg = WaiDesignTokens.Spacing.lg
+    static let xl = WaiDesignTokens.Spacing.xl
+    static let xxl = WaiDesignTokens.Spacing.xxl
+    static let xxxl = WaiDesignTokens.Spacing.xxxl
+    static let huge = WaiDesignTokens.Spacing.huge
 }
 
 // MARK: - Radius (concentric hierarchy)
@@ -23,15 +23,15 @@ enum Spacing {
 /// `tokens.css`.
 enum Radius {
     /// Chips, small inline controls
-    static let sm: CGFloat = 8
+    static let sm = WaiDesignTokens.Radius.sm
     /// Buttons, inputs, list rows
-    static let md: CGFloat = 12
+    static let md = WaiDesignTokens.Radius.md
     /// Cards, panels, popovers
-    static let lg: CGFloat = 16
+    static let lg = WaiDesignTokens.Radius.lg
     /// Sheets, modals, floating overlays
-    static let xl: CGFloat = 22
+    static let xl = WaiDesignTokens.Radius.xl
     /// Large floating panels (Ask Anything)
-    static let xxl: CGFloat = 28
+    static let xxl = WaiDesignTokens.Radius.xxl
 }
 
 // MARK: - Typography
@@ -459,23 +459,6 @@ struct WaiCardModifier: ViewModifier {
     }
 }
 
-/// Accent-filled primary button — capsule, the 2026 control shape
-/// (matches native Tahoe controls and web `.wai-primary-button`).
-struct WaiPrimaryButtonStyle: ButtonStyle {
-    let isDisabled: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(Typography.headingSmall)
-            .foregroundStyle(Palette.onAccent)
-            .padding(.horizontal, Spacing.xl)
-            .padding(.vertical, Spacing.md)
-            .background(isDisabled ? Palette.accent.opacity(0.4) : Palette.accent)
-            .clipShape(Capsule())
-            .opacity(configuration.isPressed ? 0.8 : 1.0)
-    }
-}
-
 /// Text-only accent button
 struct WaiGhostButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -488,14 +471,68 @@ struct WaiGhostButtonStyle: ButtonStyle {
 
 /// Quiet toolbar button — secondary ink instead of accent. Use for rows of
 /// utility actions (export/share/move) where five accent-tinted buttons
-/// would compete; reserve `WaiGhostButtonStyle` for the one action that
-/// deserves emphasis.
+/// would compete; reserve glass prominence for the one action that deserves
+/// emphasis.
 struct WaiQuietButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Typography.headingSmall)
             .foregroundStyle(Palette.textSecondary)
             .opacity(configuration.isPressed ? 0.6 : 1.0)
+    }
+}
+
+/// Native Liquid Glass buttons on macOS 26, with an explicit opaque system
+/// control when Reduce Transparency is enabled and a native pre-26 fallback.
+private struct WaiGlassButtonModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let prominent: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            if prominent {
+                content
+                    .buttonStyle(.borderedProminent)
+                    .tint(Palette.accent)
+            } else {
+                content.buttonStyle(.bordered)
+            }
+        } else if #available(macOS 26.0, *) {
+            if prominent {
+                content
+                    .buttonStyle(.glassProminent)
+                    .tint(Palette.accent)
+            } else {
+                content.buttonStyle(.glass)
+            }
+        } else if prominent {
+            content
+                .buttonStyle(.borderedProminent)
+                .tint(Palette.accent)
+        } else {
+            content.buttonStyle(.bordered)
+        }
+    }
+}
+
+/// Places related glass controls in one rendering/morphing context on macOS 26.
+struct WaiGlassEffectGroup<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    init(spacing: CGFloat = Spacing.sm, @ViewBuilder content: @escaping () -> Content) {
+        self.spacing = spacing
+        self.content = content
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing, content: content)
+        } else {
+            content()
+        }
     }
 }
 
@@ -543,6 +580,58 @@ struct WaiSectionHeaderModifier: ViewModifier {
     }
 }
 
+private struct WaiGlassChromeModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let cornerRadius: CGFloat
+    let tint: Color?
+    let interactive: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(
+                    Palette.panelRaised,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                )
+        } else if #available(macOS 26.0, *) {
+            if let tint, interactive {
+                content.glassEffect(
+                    .regular.tint(tint).interactive(),
+                    in: .rect(cornerRadius: cornerRadius)
+                )
+            } else if let tint {
+                content.glassEffect(.regular.tint(tint), in: .rect(cornerRadius: cornerRadius))
+            } else if interactive {
+                content.glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
+            } else {
+                content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            }
+        } else {
+            content
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                )
+                .overlay {
+                    if let tint {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(tint.opacity(0.18))
+                            .allowsHitTesting(false)
+                    }
+                }
+        }
+    }
+}
+
 // MARK: - View Extensions
 
 extension View {
@@ -573,22 +662,22 @@ extension View {
     /// Liquid Glass for floating chrome (banners, HUDs, overlay panels) on
     /// macOS 26+, degrading to `.ultraThinMaterial` + hairline on 13–25.
     /// Chrome only — content surfaces (transcripts, lists) must stay opaque.
-    @ViewBuilder
-    func waiGlassChrome(cornerRadius: CGFloat, interactive: Bool = false) -> some View {
-        if #available(macOS 26.0, *) {
-            if interactive {
-                self.glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
-            } else {
-                self.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-            }
-        } else {
-            self
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .strokeBorder(Palette.border, lineWidth: 1)
-                )
-        }
+    func waiGlassChrome(
+        cornerRadius: CGFloat,
+        tint: Color? = nil,
+        interactive: Bool = false
+    ) -> some View {
+        modifier(WaiGlassChromeModifier(
+            cornerRadius: cornerRadius,
+            tint: tint,
+            interactive: interactive
+        ))
+    }
+
+    /// Use for controls that float above content or navigation.
+    func waiGlassButton(prominent: Bool = false) -> some View {
+        modifier(WaiGlassButtonModifier(prominent: prominent))
+            .controlSize(prominent ? .large : .regular)
     }
 
     func waiTextField(isActive: Bool = false) -> some View {

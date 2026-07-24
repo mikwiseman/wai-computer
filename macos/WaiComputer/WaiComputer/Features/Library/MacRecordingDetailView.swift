@@ -874,7 +874,7 @@ struct MacRecordingDetailView: View {
                         state: generationState
                     ))
                 }
-                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary))
+                .waiGlassButton(prominent: true)
                 .disabled(isGeneratingSummary)
 
                 if isGeneratingSummary {
@@ -1346,7 +1346,7 @@ private struct RecordingDetailLoadErrorView: View {
             )
 
             Button(retryTitle, action: onRetry)
-                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: false))
+                .waiGlassButton(prominent: true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("recording-detail-load-error")

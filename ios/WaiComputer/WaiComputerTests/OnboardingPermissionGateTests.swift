@@ -651,6 +651,10 @@ final class OnboardingPermissionGateTests: XCTestCase {
         XCTAssertTrue(source.contains(".textSelection(.enabled)"))
         XCTAssertTrue(source.contains("ios-comparison-detail-view"))
         XCTAssertTrue(source.contains("ios-comparison-table"))
+        XCTAssertTrue(source.contains("compactComparisonCards"))
+        XCTAssertTrue(source.contains("ios-comparison-compact-cards"))
+        XCTAssertTrue(source.contains("horizontalSizeClass == .compact"))
+        XCTAssertTrue(source.contains(".waiCard()"))
         XCTAssertTrue(source.contains("IOSScreenshotFixtures.comparison(id: comparisonId)"))
         XCTAssertTrue(appSource.contains("case comparison"))
         XCTAssertTrue(appSource.contains("static let comparisonSet"))
@@ -1013,7 +1017,9 @@ final class OnboardingPermissionGateTests: XCTestCase {
         XCTAssertTrue(companionSource.contains("compactHeaderIconButton"))
         XCTAssertTrue(composerSource.contains("composerErrorBanner(message)"))
         XCTAssertTrue(composerSource.contains("Image(systemName: \"arrow.up\")"))
-        XCTAssertTrue(composerSource.contains("RoundedRectangle(cornerRadius: usesCompactChatPresentation ? 24 : 14"))
+        XCTAssertTrue(composerSource.contains(".companionGlassChrome("))
+        XCTAssertTrue(composerSource.contains("WaiDesignTokens.Radius.xl"))
+        XCTAssertTrue(composerSource.contains(".companionGlassButton(tint: companionAccentColor, prominent: true)"))
         XCTAssertFalse(messageRowsSource.contains("Text(errorMessage)"))
         XCTAssertFalse(companionSource.contains(".font(.system(size: 22, weight: .semibold, design: .serif))"))
     }
@@ -1046,7 +1052,7 @@ final class OnboardingPermissionGateTests: XCTestCase {
         XCTAssertTrue(source.contains("auth-regular-brand-panel"))
         XCTAssertTrue(source.contains("auth-regular-form-panel"))
         XCTAssertTrue(source.contains("auth-compact-layout"))
-        XCTAssertTrue(source.contains("WaiPrimaryButtonStyle(isDisabled: appState.isLoading || !isFormValid)"))
+        XCTAssertTrue(source.contains(".waiGlassButton(prominent: true)"))
         XCTAssertFalse(source.contains(".background(.blue)"))
     }
 

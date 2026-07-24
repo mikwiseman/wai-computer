@@ -355,7 +355,7 @@ struct MenuBarView: View {
             Button(t("Open App", "Открыть приложение")) {
                 openMainWindow()
             }
-            .buttonStyle(WaiPrimaryButtonStyle(isDisabled: false))
+            .waiGlassButton(prominent: true)
 
             WaiDivider()
 

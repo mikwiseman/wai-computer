@@ -508,8 +508,6 @@ private struct IOSWorkspaceSplitView: View {
                     }
                 }
                 .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
-                .background(.regularMaterial)
 
                 IOSWorkspaceSidebarFooter(
                     user: appState.currentUser,
@@ -519,7 +517,9 @@ private struct IOSWorkspaceSplitView: View {
                     .padding(.horizontal, Spacing.lg)
                     .padding(.vertical, Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.regularMaterial)
+                    .waiGlassChrome(cornerRadius: Radius.lg, interactive: true)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.bottom, Spacing.sm)
             }
             .navigationTitle("WaiComputer")
             .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 340)
@@ -1156,12 +1156,8 @@ struct IOSWorkspaceErrorBanner: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Palette.border)
-        }
+        .waiGlassChrome(cornerRadius: Radius.md, tint: Palette.danger.opacity(0.18))
+        .waiShadow(.raised)
         .accessibilityIdentifier("ios-workspace-error-banner")
     }
 }
@@ -1173,10 +1169,10 @@ private struct IOSWorkspaceSidebarHeader: View {
         HStack(spacing: Spacing.md) {
             WaiTriangleIcon(size: 34)
                 .frame(width: 42, height: 42)
-                .background(.thinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Palette.panelRaised)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
                         .stroke(Palette.border)
                 }
 

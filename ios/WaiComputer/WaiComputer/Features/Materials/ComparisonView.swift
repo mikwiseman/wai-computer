@@ -194,6 +194,7 @@ struct ComparisonDetailView: View {
     let comparisonId: String
 
     @EnvironmentObject private var languageManager: LanguageManager
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var set: ComparisonSet?
     @State private var loading = true
     @State private var pollCount = 0
@@ -239,13 +240,63 @@ struct ComparisonDetailView: View {
                 description: Text(set?.schemaRationale ?? "")
             )
         } else if let set, let columns = set.columns, let rows = set.rows, !columns.isEmpty {
-            comparisonTable(columns: columns, rows: rows, rationale: set.schemaRationale)
+            if horizontalSizeClass == .compact {
+                compactComparisonCards(columns: columns, rows: rows, rationale: set.schemaRationale)
+            } else {
+                comparisonTable(columns: columns, rows: rows, rationale: set.schemaRationale)
+            }
         } else {
             ContentUnavailableViewCompat(
                 t("No comparison data", "Нет данных"),
                 systemImage: "tablecells"
             )
         }
+    }
+
+    /// Side-by-side tables are readable on iPad, but force every value off
+    /// screen on iPhone. Compact width uses one card per item so every column
+    /// stays visible without horizontal panning or clipped rationale text.
+    private func compactComparisonCards(
+        columns: [ComparisonColumn],
+        rows: [ComparisonRow],
+        rationale: String?
+    ) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Spacing.lg) {
+                if let rationale, !rationale.isEmpty {
+                    Text(rationale)
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                ForEach(rows) { row in
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        Text(row.title)
+                            .font(Typography.headingMedium)
+                            .foregroundStyle(Palette.textPrimary)
+
+                        WaiDivider()
+
+                        ForEach(columns) { column in
+                            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                                Text(column.name)
+                                    .waiSectionHeader()
+                                Text(cell(row, column.name))
+                                    .font(Typography.body)
+                                    .foregroundStyle(Palette.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+                    .waiCard()
+                }
+            }
+            .padding(Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .accessibilityIdentifier("ios-comparison-compact-cards")
     }
 
     private func comparisonTable(

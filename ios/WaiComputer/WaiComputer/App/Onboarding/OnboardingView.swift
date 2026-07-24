@@ -256,25 +256,27 @@ struct OnboardingView: View {
         if isVoiceSetupPage {
             EmptyView()
         } else {
-            HStack {
-                if !isLastPage, canSkipCurrentPage {
-                    Button(t("Skip", "Пропустить")) {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            currentPage = OnboardingPermissionGate.skipDestination(
-                                from: currentPageEnum,
-                                hasMicrophonePermission: hasMicrophonePermission
-                            ).rawValue
+            WaiGlassEffectGroup(spacing: Spacing.md) {
+                HStack {
+                    if !isLastPage, canSkipCurrentPage {
+                        Button(t("Skip", "Пропустить")) {
+                            withAnimation(.easeInOut(duration: WaiDesignTokens.Motion.emphasized)) {
+                                currentPage = OnboardingPermissionGate.skipDestination(
+                                    from: currentPageEnum,
+                                    hasMicrophonePermission: hasMicrophonePermission
+                                ).rawValue
+                            }
                         }
+                        .waiGlassButton()
+                        .accessibilityIdentifier("onboarding-skip-button")
+                    } else {
+                        Spacer().frame(width: 1)
                     }
-                    .buttonStyle(WaiGhostButtonStyle())
-                    .accessibilityIdentifier("onboarding-skip-button")
-                } else {
-                    Spacer().frame(width: 1)
+
+                    Spacer()
+
+                    primaryButton
                 }
-
-                Spacer()
-
-                primaryButton
             }
         }
     }
@@ -291,7 +293,7 @@ struct OnboardingView: View {
             }
             .frame(minWidth: 140)
         }
-        .buttonStyle(WaiPrimaryButtonStyle())
+        .waiGlassButton(prominent: true)
         .disabled(isRequestingPermission)
         .accessibilityIdentifier(primaryButtonAccessibilityId)
     }

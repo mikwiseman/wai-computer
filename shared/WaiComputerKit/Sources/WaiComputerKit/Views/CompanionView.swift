@@ -18,6 +18,147 @@ public extension View {
     }
 }
 
+private struct CompanionGlassChromeModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let cornerRadius: CGFloat
+    let tint: Color?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(
+                    reduceTransparencySurface,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
+                )
+        } else {
+            platformGlass(content: content)
+        }
+    }
+
+    private var reduceTransparencySurface: Color {
+        #if os(iOS)
+        Color(uiColor: .secondarySystemBackground)
+        #elseif os(macOS)
+        Color(nsColor: .controlBackgroundColor)
+        #else
+        Color.primary
+        #endif
+    }
+
+    @ViewBuilder
+    private func platformGlass(content: Content) -> some View {
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            if let tint {
+                content.glassEffect(.regular.tint(tint), in: .rect(cornerRadius: cornerRadius))
+            } else {
+                content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            }
+        } else {
+            legacyMaterial(content: content)
+        }
+        #elseif os(macOS)
+        if #available(macOS 26.0, *) {
+            if let tint {
+                content.glassEffect(.regular.tint(tint), in: .rect(cornerRadius: cornerRadius))
+            } else {
+                content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            }
+        } else {
+            legacyMaterial(content: content)
+        }
+        #else
+        legacyMaterial(content: content)
+        #endif
+    }
+
+    private func legacyMaterial(content: Content) -> some View {
+        content
+            .background(
+                .ultraThinMaterial,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+            )
+    }
+}
+
+private struct CompanionGlassButtonModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let tint: Color
+    let prominent: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            fallback(content: content)
+        } else {
+            platformGlass(content: content)
+        }
+    }
+
+    @ViewBuilder
+    private func platformGlass(content: Content) -> some View {
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            nativeGlass(content: content)
+        } else {
+            fallback(content: content)
+        }
+        #elseif os(macOS)
+        if #available(macOS 26.0, *) {
+            nativeGlass(content: content)
+        } else {
+            fallback(content: content)
+        }
+        #else
+        fallback(content: content)
+        #endif
+    }
+
+    @ViewBuilder
+    @available(iOS 26.0, macOS 26.0, *)
+    private func nativeGlass(content: Content) -> some View {
+        if prominent {
+            content
+                .buttonStyle(.glassProminent)
+                .tint(tint)
+        } else {
+            content.buttonStyle(.glass(.regular.tint(tint)))
+        }
+    }
+
+    @ViewBuilder
+    private func fallback(content: Content) -> some View {
+        if prominent {
+            content
+                .buttonStyle(.borderedProminent)
+                .tint(tint)
+        } else {
+            content
+                .buttonStyle(.bordered)
+                .tint(tint)
+        }
+    }
+}
+
+private extension View {
+    func companionGlassChrome(cornerRadius: CGFloat, tint: Color? = nil) -> some View {
+        modifier(CompanionGlassChromeModifier(cornerRadius: cornerRadius, tint: tint))
+    }
+
+    func companionGlassButton(tint: Color, prominent: Bool = false) -> some View {
+        modifier(CompanionGlassButtonModifier(tint: tint, prominent: prominent))
+    }
+}
+
 struct CompanionComposerInsets: Equatable {
     let horizontal: CGFloat
     let vertical: CGFloat
@@ -33,7 +174,10 @@ struct CompanionComposerInsets: Equatable {
 }
 
 enum CompanionComposerMetrics {
-    static let textInsets = CompanionComposerInsets(horizontal: 12, vertical: 10)
+    static let textInsets = CompanionComposerInsets(
+        horizontal: WaiDesignTokens.Spacing.md,
+        vertical: WaiDesignTokens.Spacing.sm + WaiDesignTokens.Spacing.xxs
+    )
     static let placeholderInsets = textInsets
     static let minHeight: CGFloat = 48
     static let maxHeight: CGFloat = 112
@@ -1110,10 +1254,7 @@ public struct CompanionView: View {
                                 .font(.system(size: 15, weight: .semibold))
                                 .frame(width: usesCompactChatPresentation ? 34 : 36, height: usesCompactChatPresentation ? 34 : 36)
                         }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(companionAccentColor)
-                        .background(companionAccentColor.opacity(0.10))
-                        .clipShape(Circle())
+                        .companionGlassButton(tint: companionAccentColor)
                         .help(t("Dictate your message", "Продиктовать сообщение"))
                         .accessibilityIdentifier("wai-voice-input-button")
                     }
@@ -1132,10 +1273,7 @@ public struct CompanionView: View {
                                     .frame(minWidth: 88)
                             }
                         }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(companionAccentColor)
-                        .background(companionAccentColor.opacity(0.12))
-                        .clipShape(Capsule())
+                        .companionGlassButton(tint: companionAccentColor)
                         .accessibilityIdentifier("wai-stop-button")
                     } else {
                         Button {
@@ -1151,23 +1289,24 @@ public struct CompanionView: View {
                                     .frame(minWidth: 92)
                             }
                         }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(canSend ? Color.white : Color.secondary)
-                        .background(canSend ? companionAccentColor : Color.primary.opacity(0.08))
-                        .clipShape(Capsule())
+                        .companionGlassButton(tint: companionAccentColor, prominent: true)
                         .disabled(!canSend)
                         .accessibilityIdentifier("wai-send-button")
                     }
                 }
                 .padding(.horizontal, usesCompactChatPresentation ? 8 : 10)
                 .padding(.vertical, usesCompactChatPresentation ? 6 : 8)
-                .background(Color.primary.opacity(0.045))
-                .overlay {
-                    RoundedRectangle(cornerRadius: usesCompactChatPresentation ? 24 : 14, style: .continuous)
-                        .stroke(Color.primary.opacity(0.10), lineWidth: 1)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: usesCompactChatPresentation ? 24 : 14, style: .continuous))
-                .contentShape(RoundedRectangle(cornerRadius: usesCompactChatPresentation ? 24 : 14, style: .continuous))
+                .companionGlassChrome(
+                    cornerRadius: usesCompactChatPresentation
+                        ? WaiDesignTokens.Radius.xl
+                        : WaiDesignTokens.Radius.lg
+                )
+                .contentShape(RoundedRectangle(
+                    cornerRadius: usesCompactChatPresentation
+                        ? WaiDesignTokens.Radius.xl
+                        : WaiDesignTokens.Radius.lg,
+                    style: .continuous
+                ))
                 .onTapGesture { inputFocused = true }
             }
             .frame(maxWidth: contentMaxWidth, alignment: .leading)
@@ -1204,12 +1343,10 @@ public struct CompanionView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(Color.red.opacity(0.08))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.red.opacity(0.18), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .companionGlassChrome(
+            cornerRadius: WaiDesignTokens.Radius.md,
+            tint: Color.red.opacity(0.18)
+        )
         .accessibilityIdentifier("wai-composer-error")
     }
 

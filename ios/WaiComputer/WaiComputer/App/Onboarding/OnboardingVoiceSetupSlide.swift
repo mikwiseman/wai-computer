@@ -62,18 +62,18 @@ struct OnboardingVoiceSetupSlide: View {
                     .foregroundStyle(Palette.danger)
             }
 
-            HStack {
-                Button(t("Skip for now", "Пропустить пока"), action: skipAndAdvance)
-                    .buttonStyle(WaiGhostButtonStyle())
-                Spacer()
-                if recorder.state == .recorded {
-                    Button(t("Re-record", "Записать заново"), action: handleRecordTap)
-                        .buttonStyle(WaiGhostButtonStyle())
-                    Button(t("Use this take", "Использовать запись"), action: submit)
-                        .buttonStyle(WaiPrimaryButtonStyle(
-                            isDisabled: recorder.state == .uploading || !recorder.hasMinimumDuration
-                        ))
-                        .disabled(recorder.state == .uploading || !recorder.hasMinimumDuration)
+            WaiGlassEffectGroup(spacing: Spacing.md) {
+                HStack {
+                    Button(t("Skip for now", "Пропустить пока"), action: skipAndAdvance)
+                        .waiGlassButton()
+                    Spacer()
+                    if recorder.state == .recorded {
+                        Button(t("Re-record", "Записать заново"), action: handleRecordTap)
+                            .waiGlassButton()
+                        Button(t("Use this take", "Использовать запись"), action: submit)
+                            .waiGlassButton(prominent: true)
+                            .disabled(recorder.state == .uploading || !recorder.hasMinimumDuration)
+                    }
                 }
             }
             .padding(.horizontal, Spacing.xl)

@@ -710,12 +710,8 @@ private struct IOSInboxStatusBanner: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Palette.border)
-        }
+        .waiGlassChrome(cornerRadius: Radius.md, tint: Palette.accent.opacity(0.14))
+        .waiShadow(.raised)
         .accessibilityIdentifier("ios-inbox-status-banner")
     }
 }

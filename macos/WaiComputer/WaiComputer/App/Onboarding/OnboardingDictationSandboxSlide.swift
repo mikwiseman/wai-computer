@@ -36,7 +36,7 @@ struct OnboardingDictationSandboxSlide: View {
 
             HStack(spacing: 12) {
                 Button(t("Continue", "Продолжить"), action: onContinue)
-                    .buttonStyle(WaiPrimaryButtonStyle(isDisabled: !hasDictatedOnce))
+                    .waiGlassButton(prominent: true)
                     .disabled(!hasDictatedOnce)
                     .accessibilityIdentifier("onboarding-sandbox-continue")
                     .keyboardShortcut(.defaultAction)

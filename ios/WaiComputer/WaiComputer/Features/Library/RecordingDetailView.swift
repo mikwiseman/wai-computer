@@ -622,7 +622,7 @@ struct RecordingDetailView: View {
                         state: generationState
                     ))
                 }
-                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary))
+                .waiGlassButton(prominent: true)
                 .disabled(isGeneratingSummary)
 
                 if isGeneratingSummary {
@@ -889,7 +889,7 @@ struct RecordingDetailView: View {
                     await viewModel.loadDetail(recordingId: recording.id, apiClient: appState.getAPIClient())
                 }
             }
-            .buttonStyle(WaiPrimaryButtonStyle())
+            .waiGlassButton(prominent: true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("recording-detail-load-error")
@@ -1258,7 +1258,7 @@ struct SummaryTabView: View {
                         Button(action: onGenerateAudio) {
                             Text(summaryAudioButtonTitle)
                         }
-                        .buttonStyle(WaiPrimaryButtonStyle(isDisabled: summaryAudioDisabled))
+                        .waiGlassButton(prominent: true)
                         .disabled(summaryAudioDisabled)
 
                         if isGeneratingAudio {
@@ -1368,7 +1368,7 @@ struct SummaryTabView: View {
                         Button(action: onGenerate) {
                             Text(summaryButtonTitle)
                         }
-                        .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isActive))
+                        .waiGlassButton(prominent: true)
                         .disabled(isActive)
 
                         if isActive {

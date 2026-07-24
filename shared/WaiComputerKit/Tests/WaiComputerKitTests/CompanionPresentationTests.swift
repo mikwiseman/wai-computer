@@ -32,6 +32,10 @@ final class CompanionPresentationTests: XCTestCase {
             CompanionComposerMetrics.textInsets,
             CompanionComposerMetrics.placeholderInsets
         )
+        XCTAssertEqual(
+            CompanionComposerMetrics.textInsets.horizontal,
+            WaiDesignTokens.Spacing.md
+        )
         XCTAssertGreaterThanOrEqual(CompanionComposerMetrics.minHeight, 44)
         XCTAssertGreaterThan(
             CompanionComposerMetrics.maxHeight,

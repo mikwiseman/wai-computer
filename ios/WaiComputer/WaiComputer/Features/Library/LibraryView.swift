@@ -1426,9 +1426,8 @@ private struct BulkOperationBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
-        .clipShape(Capsule())
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+        .waiGlassChrome(cornerRadius: Radius.xl)
+        .waiShadow(.floating)
         .accessibilityIdentifier("library-bulk-operation-banner")
     }
 
@@ -1956,9 +1955,8 @@ private struct ImportUploadOverlay: View {
                     .foregroundStyle(.secondary)
             }
             .padding(32)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: .black.opacity(0.15), radius: 20, y: 8)
+            .waiGlassChrome(cornerRadius: Radius.xl)
+            .waiShadow(.floating)
         }
     }
 
