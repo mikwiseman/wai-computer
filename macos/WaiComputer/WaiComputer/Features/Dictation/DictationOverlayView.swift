@@ -31,6 +31,11 @@ struct DictationOverlayView: View {
 
             Spacer(minLength: 0)
 
+            // Translation target switcher — pick any preset target mid-dictation.
+            if manager.activeMode == .translation {
+                TranslationTargetChip(store: manager.translationLanguageStore)
+            }
+
             // Duration
             if manager.state == .listening {
                 Text(formattedDuration)
@@ -137,6 +142,50 @@ struct DictationOverlayView: View {
 
     private var formattedDuration: String {
         MacDateFormatting.duration(seconds: Int(manager.dictationDuration))
+    }
+}
+
+/// Compact target-language switcher shown in the overlay during Translation
+/// mode. Click to pick any preset target (Settings → Translation targets)
+/// without leaving the dictation — the choice applies when the hotkey is
+/// released, because translation happens at finalize time.
+private struct TranslationTargetChip: View {
+    @ObservedObject var store: TranslationLanguageStore
+
+    var body: some View {
+        Menu {
+            ForEach(store.enabledEntries) { entry in
+                Button {
+                    store.selectLanguage(entry.code)
+                } label: {
+                    if entry.code == store.selectedLanguageCode {
+                        Label(entry.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(entry.displayName)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "globe")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(store.targetLanguageCode.uppercased())
+                    .font(Typography.caption.weight(.semibold))
+                if store.enabledLanguageCodes.count > 1 {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 7, weight: .bold))
+                }
+            }
+            .foregroundStyle(.white.opacity(0.85))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(.white.opacity(0.15))
+            .clipShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityIdentifier("dictation-overlay-translation-target-chip")
     }
 }
 

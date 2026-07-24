@@ -70,6 +70,7 @@ targets:
       - path: WaiComputer/Features/Dictation/DictationContextCollector.swift
       - path: WaiComputer/Features/Dictation/DictationDictionaryStore.swift
       - path: WaiComputer/Features/Dictation/DictationLanguageStore.swift
+      - path: WaiComputer/Features/Dictation/TranslationLanguageStore.swift
       - path: WaiComputer/Features/Dictation/DictationOverlayPanel.swift
       - path: WaiComputer/Features/Dictation/DictationStartupAudioBuffer.swift
       - path: WaiComputer/Features/Dictation/GlobalHotkeyManager.swift

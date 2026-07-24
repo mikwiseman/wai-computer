@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import WaiComputerKit
 
 struct DictationDictionaryView: View {
@@ -13,6 +14,8 @@ struct DictationDictionaryView: View {
     /// The word whose add/save was rejected as a case-insensitive duplicate —
     /// drives the inline feedback under the add row instead of silence.
     @State private var duplicateWord: String?
+    /// Outcome line of the last bulk import ("12 added, 3 already existed…").
+    @State private var importSummary: String?
 
     /// SuperWhisper warns that very long vocabulary lists confuse the model
     /// and degrade language detection. ~50 entries on the wire is the
@@ -286,8 +289,59 @@ struct DictationDictionaryView: View {
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
                 Spacer()
+                Button(t("Import from file…", "Импорт из файла…")) { importFromFile() }
+                    .buttonStyle(.plain)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.accent)
+                    .accessibilityIdentifier("dictionary-import-button")
+            }
+            if let importSummary {
+                HStack(spacing: 6) {
+                    Text(importSummary)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                    Spacer()
+                }
             }
         }
+    }
+
+    /// Bulk import (Typeless 1.4-style): one word per line, optional
+    /// `word,replacement` pairs. Parsing lives in the kit
+    /// (`DictionaryBulkImport`) so limits match the backend columns.
+    private func importFromFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.plainText, .commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let contents: String
+        do {
+            contents = try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            importSummary = t(
+                "Could not read the file as UTF-8 text.",
+                "Не удалось прочитать файл как текст UTF-8."
+            )
+            return
+        }
+
+        let parsed = DictionaryBulkImport.parse(contents)
+        var added = 0
+        var duplicates = 0
+        for entry in parsed.words {
+            if dictionaryStore.add(word: entry.word, replacement: entry.replacement) {
+                added += 1
+            } else {
+                duplicates += 1
+            }
+        }
+        let skipped = parsed.skippedLineCount
+        importSummary = t(
+            "Imported \(added) words (\(duplicates) already existed, \(skipped) lines skipped).",
+            "Импортировано слов: \(added) (уже были: \(duplicates), пропущено строк: \(skipped))."
+        )
     }
 
     @ViewBuilder

@@ -1,18 +1,40 @@
 import Foundation
 import WaiComputerKit
 
+/// Target languages for Translation mode. The user pre-sets an ordered list of
+/// targets (Typeless-style "Translation targets") and switches the active one
+/// from Settings, the dictation overlay, or by cycling mid-dictation.
 @MainActor
 final class TranslationLanguageStore: ObservableObject {
     static let userDefaultsKey = "dictationTranslationTargetLanguage"
+    static let enabledTargetsKey = "dictationTranslationTargetLanguages"
 
     @Published private(set) var selectedLanguageCode: String
+    /// Ordered preset targets. Never empty; always contains the selection.
+    @Published private(set) var enabledLanguageCodes: [String]
 
     init(defaults: UserDefaults = .standard) {
-        let stored = defaults.string(forKey: Self.userDefaultsKey)
-        let initial = stored.flatMap { TranslationLanguageCatalog.entry(for: $0)?.code }
+        let storedSelection = defaults.string(forKey: Self.userDefaultsKey)
+        let selection = storedSelection.flatMap { TranslationLanguageCatalog.entry(for: $0)?.code }
             ?? Self.defaultLanguageCode()
-        self.selectedLanguageCode = initial
-        defaults.set(initial, forKey: Self.userDefaultsKey)
+
+        var enabled = (defaults.stringArray(forKey: Self.enabledTargetsKey) ?? [])
+            .compactMap { TranslationLanguageCatalog.entry(for: $0)?.code }
+        enabled = enabled.reduce(into: []) { unique, code in
+            if !unique.contains(code) { unique.append(code) }
+        }
+        // Legacy single-target installs (or a wiped list) fold into the
+        // enabled list so nothing the user picked before is lost.
+        if enabled.isEmpty {
+            enabled = [selection]
+        } else if !enabled.contains(selection) {
+            enabled.append(selection)
+        }
+
+        self.selectedLanguageCode = selection
+        self.enabledLanguageCodes = enabled
+        defaults.set(selection, forKey: Self.userDefaultsKey)
+        defaults.set(enabled, forKey: Self.enabledTargetsKey)
     }
 
     var selectedEntry: TranslationLanguageCatalog.Entry {
@@ -28,10 +50,57 @@ final class TranslationLanguageStore: ObservableObject {
         selectedEntry.englishName
     }
 
+    var enabledEntries: [TranslationLanguageCatalog.Entry] {
+        enabledLanguageCodes.compactMap { TranslationLanguageCatalog.entry(for: $0) }
+    }
+
     func selectLanguage(_ code: String, defaults: UserDefaults = .standard) {
         guard let entry = TranslationLanguageCatalog.entry(for: code) else { return }
+        if !enabledLanguageCodes.contains(entry.code) {
+            enabledLanguageCodes.append(entry.code)
+            defaults.set(enabledLanguageCodes, forKey: Self.enabledTargetsKey)
+        }
         selectedLanguageCode = entry.code
         defaults.set(entry.code, forKey: Self.userDefaultsKey)
+    }
+
+    func enableLanguage(_ code: String, defaults: UserDefaults = .standard) {
+        guard let entry = TranslationLanguageCatalog.entry(for: code),
+              !enabledLanguageCodes.contains(entry.code)
+        else { return }
+        enabledLanguageCodes.append(entry.code)
+        defaults.set(enabledLanguageCodes, forKey: Self.enabledTargetsKey)
+    }
+
+    func disableLanguage(_ code: String, defaults: UserDefaults = .standard) {
+        guard enabledLanguageCodes.count > 1,
+              let index = enabledLanguageCodes.firstIndex(of: code)
+        else { return }
+        enabledLanguageCodes.remove(at: index)
+        defaults.set(enabledLanguageCodes, forKey: Self.enabledTargetsKey)
+        if selectedLanguageCode == code, let fallback = enabledLanguageCodes.first {
+            selectedLanguageCode = fallback
+            defaults.set(fallback, forKey: Self.userDefaultsKey)
+        }
+    }
+
+    func moveEnabledLanguages(
+        fromOffsets source: IndexSet,
+        toOffset destination: Int,
+        defaults: UserDefaults = .standard
+    ) {
+        enabledLanguageCodes.move(fromOffsets: source, toOffset: destination)
+        defaults.set(enabledLanguageCodes, forKey: Self.enabledTargetsKey)
+    }
+
+    /// Cycle to the next preset target, wrapping in list order.
+    func selectNextTarget(defaults: UserDefaults = .standard) {
+        guard enabledLanguageCodes.count > 1,
+              let index = enabledLanguageCodes.firstIndex(of: selectedLanguageCode)
+        else { return }
+        let next = enabledLanguageCodes[(index + 1) % enabledLanguageCodes.count]
+        selectedLanguageCode = next
+        defaults.set(next, forKey: Self.userDefaultsKey)
     }
 
     private static func defaultLanguageCode() -> String {
