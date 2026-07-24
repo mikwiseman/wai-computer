@@ -1803,3 +1803,37 @@ async def test_cleanup_stream_includes_known_names(
     instructions = captured["messages"][0]["content"]
     assert "<known_names>" in instructions
     assert "Boris Katz" in instructions
+
+
+@pytest.mark.asyncio
+async def test_cleanup_caps_oversized_vocabulary_and_known_names(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Pathological vocabulary lists are bounded, not forwarded wholesale."""
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Cleaned.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "medium")
+
+    vocabulary = [f"term{i}" for i in range(210)]
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "please clean up this dictated sentence", "vocabulary": vocabulary},
+    )
+
+    assert response.status_code == 200
+    instructions = captured["messages"][0]["content"]
+    preserve_block = instructions.split("<preserve_exact>")[1].split("</preserve_exact>")[0]
+    kept = [line for line in preserve_block.strip().splitlines() if line]
+    assert len(kept) == 200
+    assert "term0" in kept
+    assert "term209" not in kept
