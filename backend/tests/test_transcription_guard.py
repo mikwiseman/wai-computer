@@ -163,6 +163,61 @@ async def test_breaker_open_alert_fires_once_per_transition(
     assert len(ops_calls) == 2
 
 
+async def test_quota_exhaustion_sends_actionable_alert_once_without_opening_other_breaker(
+    settings, monkeypatch, fake_redis
+):
+    monkeypatch.setattr(settings, "deepgram_breaker_failure_threshold", 5)
+    sentry_calls: list[tuple] = []
+    ops_calls: list[dict] = []
+    monkeypatch.setattr(
+        guard,
+        "capture_sentry_anomaly",
+        lambda *args, **kwargs: sentry_calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        guard,
+        "notify_ops",
+        lambda **kwargs: ops_calls.append(kwargs),
+    )
+
+    result = {
+        "success": False,
+        "status_code": 401,
+        "provider": "elevenlabs",
+        "model": "scribe_v2",
+        "error_code": "quota_exceeded",
+    }
+    await guard.record_provider_result(**result)
+    await guard.record_provider_result(**result)
+
+    assert await guard.provider_breaker_open() is False
+    assert len(sentry_calls) == 1
+    assert len(ops_calls) == 1
+    assert ops_calls[0] == {
+        "alert_code": "transcription.provider_quota_exhausted",
+        "message": (
+            "ElevenLabs transcription credits exhausted — "
+            "replenish credits or enable usage-based billing"
+        ),
+        "extras": {
+            "provider": "elevenlabs",
+            "model": "scribe_v2",
+            "status_code": 401,
+            "error_code": "quota_exceeded",
+        },
+        "level": "error",
+    }
+
+    await guard.record_provider_result(
+        success=True,
+        provider="elevenlabs",
+        model="scribe_v2",
+    )
+    await guard.record_provider_result(**result)
+    assert len(sentry_calls) == 2
+    assert len(ops_calls) == 2
+
+
 async def test_breaker_opens_on_failure_streak(settings, monkeypatch, fake_redis):
     monkeypatch.setattr(settings, "deepgram_breaker_failure_threshold", 3)
     await guard.record_provider_result(success=False, status_code=500)

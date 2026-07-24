@@ -122,7 +122,7 @@ async def transcribe_audio_file(
         raise TranscriptionGuardError(
             "transcription_halted", "Transcription is temporarily disabled."
         )
-    if await provider_breaker_open():
+    if provider == "deepgram" and await provider_breaker_open():
         raise TranscriptionGuardError(
             "provider_unavailable", "Transcription provider is temporarily unavailable."
         )
@@ -182,8 +182,14 @@ async def transcribe_audio_file(
                 audio_duration_seconds=audio_duration_seconds,
             )
     except httpx.HTTPStatusError as exc:
-        await record_provider_result(success=False, status_code=exc.response.status_code)
         error_code = _provider_error_code(exc) or "unknown"
+        await record_provider_result(
+            success=False,
+            status_code=exc.response.status_code,
+            provider=provider,
+            model=selected_model,
+            error_code=error_code,
+        )
         latency_ms = round((perf_counter() - started_at) * 1000)
         logger.warning(
             "file STT failed provider=%s model=%s latency_ms=%s status_code=%s "
@@ -200,7 +206,11 @@ async def transcribe_audio_file(
         )
         raise
     except Exception as exc:
-        await record_provider_result(success=False)
+        await record_provider_result(
+            success=False,
+            provider=provider,
+            model=selected_model,
+        )
         latency_ms = round((perf_counter() - started_at) * 1000)
         logger.exception(
             "file STT failed provider=%s model=%s latency_ms=%s error_type=%s "
@@ -215,7 +225,11 @@ async def transcribe_audio_file(
         )
         raise
 
-    await record_provider_result(success=True)
+    await record_provider_result(
+        success=True,
+        provider=provider,
+        model=selected_model,
+    )
     await record_minutes(guard_user_id, estimated_minutes)
     latency_ms = round((perf_counter() - started_at) * 1000)
     threshold_ms = file_stt_slow_threshold_ms(audio_duration_seconds)

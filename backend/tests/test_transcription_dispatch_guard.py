@@ -32,8 +32,32 @@ async def test_dispatch_blocks_when_halted(settings):
 async def test_dispatch_blocks_when_breaker_open(settings):
     await guard.record_provider_result(success=False, status_code=402)  # opens breaker
     with pytest.raises(TranscriptionGuardError) as ei:
-        await dispatcher.transcribe_audio_file(b"x", user_id="u1", audio_duration_seconds=10)
+        await dispatcher.transcribe_audio_file(
+            b"x",
+            user_id="u1",
+            audio_duration_seconds=10,
+            provider="deepgram",
+            model="nova-3",
+        )
     assert ei.value.code == "provider_unavailable"
+
+
+async def test_dispatch_allows_elevenlabs_when_deepgram_breaker_is_open(monkeypatch):
+    await guard.record_provider_result(success=False, status_code=402)
+
+    async def _fake(*_a, **_k):
+        return FileTranscription(segments=[], words=[])
+
+    monkeypatch.setattr(dispatcher, "elevenlabs_transcribe_audio_file", _fake)
+    await dispatcher.transcribe_audio_file(
+        b"x",
+        user_id="u1",
+        audio_duration_seconds=10,
+        provider="elevenlabs",
+        model="scribe_v2",
+    )
+
+    assert await guard.provider_breaker_open() is True
 
 
 async def test_dispatch_rejects_over_max_duration(settings, monkeypatch):
@@ -74,7 +98,13 @@ async def test_dispatch_402_opens_breaker_and_reraises(settings, monkeypatch):
     async def _fake(*_a, **_k):
         raise httpx.HTTPStatusError("budget exceeded", request=request, response=response)
 
-    monkeypatch.setattr(dispatcher, "elevenlabs_transcribe_audio_file", _fake)
+    monkeypatch.setattr(dispatcher, "deepgram_transcribe_audio_file", _fake)
     with pytest.raises(httpx.HTTPStatusError):
-        await dispatcher.transcribe_audio_file(b"x", user_id="u1", audio_duration_seconds=10)
+        await dispatcher.transcribe_audio_file(
+            b"x",
+            user_id="u1",
+            audio_duration_seconds=10,
+            provider="deepgram",
+            model="nova-3",
+        )
     assert await guard.provider_breaker_open() is True

@@ -283,6 +283,49 @@ async def test_transcription_surfaces_deepgram_quota_issue_without_provider_fall
 
 
 @pytest.mark.asyncio
+async def test_transcription_reports_elevenlabs_quota_metadata_to_guard():
+    response = httpx.Response(
+        401,
+        json={"detail": {"status": "quota_exceeded", "message": "Quota exceeded."}},
+        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+    )
+    error = httpx.HTTPStatusError(
+        "Client error '401 Unauthorized'",
+        request=response.request,
+        response=response,
+    )
+
+    with (
+        patch(
+            "app.core.transcription.elevenlabs_transcribe_audio_file",
+            new=AsyncMock(side_effect=error),
+        ),
+        patch(
+            "app.core.transcription.record_provider_result",
+            new=AsyncMock(),
+        ) as record_result,
+    ):
+        from app.core.transcription import transcribe_audio_file
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await transcribe_audio_file(
+                b"m4a",
+                language="ru",
+                content_type="audio/mp4",
+                provider="elevenlabs",
+                model="scribe_v2",
+            )
+
+    record_result.assert_awaited_once_with(
+        success=False,
+        status_code=401,
+        provider="elevenlabs",
+        model="scribe_v2",
+        error_code="quota_exceeded",
+    )
+
+
+@pytest.mark.asyncio
 async def test_transcription_reraises_unexpected_deepgram_failure_without_fallback(caplog):
     with patch(
         "app.core.transcription.deepgram_transcribe_audio_file",

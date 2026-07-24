@@ -48,6 +48,7 @@ _SAFE_EXTRA_KEYS = frozenset(
         "content_type",
         "model",
         "provider",
+        "error_code",
         "error_type",
         "recording_id",
         "transaction",

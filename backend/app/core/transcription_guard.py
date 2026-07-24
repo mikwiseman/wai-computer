@@ -32,7 +32,7 @@ from redis.exceptions import RedisError
 
 from app.config import get_settings
 from app.core.observability import capture_sentry_anomaly
-from app.core.ops_alerts import notify_ops
+from app.core.ops_alerts import OPS_ALERT_THROTTLE_SECONDS, notify_ops
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 _KILL_KEY = "dg:killswitch"
 _BREAKER_FAILS = "dg:breaker:fails"
 _BREAKER_OPEN = "dg:breaker:open"
+_QUOTA_ALERT_PREFIX = "stt:quota-alert"
 
 _DAY_TTL_SECONDS = 172_800  # 2 days — keys are date-stamped; TTL is just cleanup.
 
@@ -343,27 +344,60 @@ async def provider_breaker_open() -> bool:
         return False
 
 
-async def record_provider_result(*, success: bool, status_code: int | None = None) -> None:
-    """Feed a Deepgram call outcome to the circuit breaker.
+async def record_provider_result(
+    *,
+    success: bool,
+    status_code: int | None = None,
+    provider: str = "deepgram",
+    model: str | None = None,
+    error_code: str | None = None,
+) -> None:
+    """Record a provider outcome and feed only Deepgram into its breaker.
 
-    Success closes the breaker. HTTP 402 (budget exceeded) opens it immediately.
-    A streak of other failures opens it once the threshold is reached.
+    Quota exhaustion sends one fleet-wide actionable alert per throttle window.
+    ElevenLabs outcomes never mutate the Deepgram breaker. For Deepgram, success
+    closes the breaker, HTTP 402 / quota exhaustion opens it immediately, and a
+    streak of other failures opens it once the threshold is reached.
     """
     settings = get_settings()
     threshold = settings.deepgram_breaker_failure_threshold
-    if threshold <= 0:
-        return
     cooldown = max(1, settings.deepgram_breaker_cooldown_seconds)
+    provider = provider.strip().lower()
+    quota_alert_key = f"{_QUOTA_ALERT_PREFIX}:{provider}"
     try:
         r = get_redis()
         if success:
-            await r.delete(_BREAKER_FAILS, _BREAKER_OPEN)
+            if provider == "deepgram":
+                await r.delete(_BREAKER_FAILS, _BREAKER_OPEN, quota_alert_key)
+            else:
+                await r.delete(quota_alert_key)
             return
-        if status_code == 402:
+        if error_code == "quota_exceeded":
+            should_alert = await r.set(
+                quota_alert_key,
+                "1",
+                ex=OPS_ALERT_THROTTLE_SECONDS,
+                nx=True,
+            )
+            if should_alert:
+                _alert_provider_quota_exhausted(
+                    provider=provider,
+                    model=model,
+                    status_code=status_code,
+                    error_code=error_code,
+                )
+        if provider != "deepgram" or threshold <= 0:
+            return
+        if status_code == 402 or error_code == "quota_exceeded":
             was_open = bool(await r.exists(_BREAKER_OPEN))
-            await r.set(_BREAKER_OPEN, "402", ex=cooldown)
-            if not was_open:
-                _alert_breaker_open(reason="402", status_code=status_code, threshold=threshold)
+            reason = error_code or "402"
+            await r.set(_BREAKER_OPEN, reason, ex=cooldown)
+            if not was_open and error_code != "quota_exceeded":
+                _alert_breaker_open(
+                    reason=reason,
+                    status_code=status_code,
+                    threshold=threshold,
+                )
             return
         was_open = bool(await r.exists(_BREAKER_OPEN))
         pipe = r.pipeline()
@@ -380,6 +414,53 @@ async def record_provider_result(*, success: bool, status_code: int | None = Non
                 )
     except RedisError as exc:
         _degraded("transcription.guard.breaker_write_degraded", exc)
+        if not success and error_code == "quota_exceeded":
+            _alert_provider_quota_exhausted(
+                provider=provider,
+                model=model,
+                status_code=status_code,
+                error_code=error_code,
+            )
+
+
+def _alert_provider_quota_exhausted(
+    *,
+    provider: str,
+    model: str | None,
+    status_code: int | None,
+    error_code: str,
+) -> None:
+    provider_name = "ElevenLabs" if provider == "elevenlabs" else provider
+    message = (
+        f"{provider_name} transcription credits exhausted — "
+        "replenish credits or enable usage-based billing"
+    )
+    extras = {
+        "provider": provider,
+        "model": model,
+        "status_code": status_code,
+        "error_code": error_code,
+    }
+    try:
+        capture_sentry_anomaly(
+            "transcription.provider_quota_exhausted",
+            message,
+            category="recording",
+            extras=extras,
+            level="error",
+        )
+        notify_ops(
+            alert_code="transcription.provider_quota_exhausted",
+            message=message,
+            extras=extras,
+            level="error",
+        )
+    except Exception as exc:  # noqa: BLE001 - alerting must never affect guards
+        logger.warning(
+            "provider quota alert failed provider=%s error_type=%s",
+            provider,
+            type(exc).__name__,
+        )
 
 
 def _alert_breaker_open(

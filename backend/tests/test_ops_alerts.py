@@ -27,6 +27,7 @@ def test_format_includes_message_code_and_safe_extras_only():
         {
             "user_id": "u1",
             "mints_last_15min": 60,
+            "error_code": "quota_exceeded",
             "transcript": "SECRET TRANSCRIPT",
             "email": "a@b.com",
         },
@@ -35,6 +36,7 @@ def test_format_includes_message_code_and_safe_extras_only():
     assert "High mint rate" in text
     assert "realtime.session_mint.high_rate" in text
     assert "u1" in text and "60" in text
+    assert "quota_exceeded" in text
     # Unsafe/PII keys are never forwarded.
     assert "SECRET TRANSCRIPT" not in text
     assert "a@b.com" not in text
