@@ -714,6 +714,8 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("--env WAI_MOCK_DICTATION_PERMISSIONS=\"$permission_mock\""))
         XCTAssertBefore("--env WAI_ENABLE_UI_TEST_MODE=1", "--args -ApplePersistenceIgnoreState YES", in: source)
         XCTAssertTrue(source.contains("wait_for_ui_text main-ready \"Inbox\""))
+        XCTAssertTrue(source.contains("wait_for_ui_text recording-flow-live \"Recording audio.\""))
+        XCTAssertFalse(source.contains("UI test live transcript"))
         XCTAssertFalse(source.contains("wait_for_ui_text main-ready \"All Recordings\""))
         XCTAssertFalse(source.contains("\"import-audio-button\" || die \"Import button missing\""))
     }
