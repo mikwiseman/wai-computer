@@ -1525,3 +1525,281 @@ async def test_cleanup_applies_russian_spoken_corrections(
 
     assert response.status_code == 200
     assert response.json()["text"] == "Созвон в среду в 15:00."
+
+
+# --- Typeless 2.0 semantics: think-first cleanup + known-name recall ---
+
+
+@pytest.mark.asyncio
+async def test_cleanup_prompt_covers_side_notes_and_late_corrections(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Cleaned.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "light")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "this is for my boss keep it formal um send the report Monday"},
+    )
+
+    assert response.status_code == 200
+    instructions = captured["messages"][0]["content"]
+    # Side notes to the writer are guidance, not text — at every level.
+    assert "Side notes to the writer" in instructions
+    assert "leave the aside itself out" in instructions
+    assert "unclear whether words are an aside" in instructions
+    # Change-of-mind corrections apply even when they arrive long after.
+    assert "long after" in instructions
+    assert "the change at the original location and drop the correction sentence" in instructions
+    # Light stays light: no restructuring rules.
+    assert "merge it into that topic" not in instructions
+    assert "main point leads" not in instructions
+
+
+@pytest.mark.asyncio
+async def test_cleanup_medium_groups_afterthoughts_without_full_reorder(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Cleaned.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "medium")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={
+            "text": (
+                "plan the launch for June oh and about the deadline "
+                "I mentioned it moved to Friday"
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    instructions = captured["messages"][0]["content"]
+    assert "merge it into that topic" in instructions
+    assert "main point leads" not in instructions
+
+
+@pytest.mark.asyncio
+async def test_cleanup_high_organizes_out_of_order_thoughts(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Cleaned.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "high")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={
+            "text": (
+                "also budget is 500 the main ask is a decision on scope "
+                "and one more thing timeline slips a week"
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    instructions = captured["messages"][0]["content"]
+    assert "main point leads" in instructions
+    assert "reorganize order, not meaning" in instructions
+
+
+@pytest.mark.asyncio
+async def test_cleanup_includes_known_names_for_recall(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    db_session,
+):
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    from sqlalchemy import select as sa_select
+
+    from app.models.dictation import DictationDictionaryWord
+    from app.models.entity import Entity
+    from app.models.person import Person
+    from app.models.user import User
+
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Cleaned.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+
+    from tests.conftest import LEGAL_ACCEPTANCE
+
+    email = "recall.names@example.com"
+    register = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
+    )
+    assert register.status_code in (200, 201)
+    headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+    await _set_cleanup_level(client, headers, "medium")
+
+    user = (
+        await db_session.execute(sa_select(User).where(User.email == email))
+    ).scalar_one()
+    db_session.add(
+        Person(user_id=user.id, display_name="Анна Каренина", aliases=["Аня"])
+    )
+    db_session.add(Entity(user_id=user.id, type="project", name="Астерис"))
+    db_session.add(Entity(user_id=user.id, type="topic", name="планы на год"))
+    db_session.add(
+        DictationDictionaryWord(
+            user_id=user.id,
+            client_word_id=str(uuid4()),
+            word="Мейстудио",
+            replacement="Wai Studio",
+            origin="manual",
+            occurred_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.flush()
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=headers,
+        json={
+            "text": "напиши нашему дизайнеру как её там что проект готов",
+            "vocabulary": ["Астерис"],
+        },
+    )
+
+    assert response.status_code == 200
+    instructions = captured["messages"][0]["content"]
+    assert "<known_names>" in instructions
+    assert "Анна Каренина" in instructions
+    assert "Аня" in instructions
+    assert "Wai Studio" in instructions
+    # Free-form topics are not names.
+    assert "планы на год" not in instructions
+    # Recall contract: resolve only clear matches, never invent.
+    assert "Never invent a name" in instructions
+    # Vocabulary already carries Астерис — the known-names block must not repeat it.
+    known_block = instructions.split("<known_names>")[1].split("</known_names>")[0]
+    assert "Астерис" not in known_block
+    preserve_block = instructions.split("<preserve_exact>")[1].split("</preserve_exact>")[0]
+    assert "Астерис" in preserve_block
+
+
+@pytest.mark.asyncio
+async def test_cleanup_omits_known_names_block_when_user_has_none(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Cleaned.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "medium")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "please clean up this dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    instructions = captured["messages"][0]["content"]
+    assert "<known_names>" not in instructions
+    assert "Never invent a name" not in instructions
+
+
+@pytest.mark.asyncio
+async def test_cleanup_stream_includes_known_names(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    db_session,
+):
+    from sqlalchemy import select as sa_select
+
+    from app.models.person import Person
+    from app.models.user import User
+
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _AsyncStream(
+            [
+                _make_stream_chunk(delta="Cleaned."),
+                _make_stream_chunk(finish_reason="stop"),
+            ]
+        )
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+
+    from tests.conftest import LEGAL_ACCEPTANCE
+
+    email = "recall.stream@example.com"
+    register = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
+    )
+    assert register.status_code in (200, 201)
+    headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+    await _set_cleanup_level(client, headers, "medium")
+
+    user = (
+        await db_session.execute(sa_select(User).where(User.email == email))
+    ).scalar_one()
+    db_session.add(Person(user_id=user.id, display_name="Boris Katz", aliases=[]))
+    await db_session.flush()
+
+    async with client.stream(
+        "POST",
+        "/api/dictation/cleanup/stream",
+        headers=headers,
+        json={"text": "tell our ML professor I forget his name the demo is ready"},
+    ) as response:
+        assert response.status_code == 200
+        async for _ in response.aiter_bytes():
+            pass
+
+    instructions = captured["messages"][0]["content"]
+    assert "<known_names>" in instructions
+    assert "Boris Katz" in instructions

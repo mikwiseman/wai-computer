@@ -21,6 +21,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, Database, PaymentModeOverride
 from app.billing.quota import WordQuota, count_words
@@ -41,13 +42,16 @@ from app.core.cerebras_chat import (
     chat_completion_usage_response,
     get_cerebras_client,
 )
+from app.core.personalization import load_user_entity_terms
 from app.models.dictation import DictationDictionaryWord, DictationEntry, DictationSnippet
+from app.models.person import Person
 
 router = APIRouter(prefix="/dictation", tags=["dictation"])
 logger = logging.getLogger(__name__)
 MAX_CLEANUP_TEXT_LENGTH = 100_000
 MAX_CLEANUP_VOCABULARY_ENTRIES = 200
 MAX_CLEANUP_VOCABULARY_ENTRY_CHARS = 60
+MAX_CLEANUP_KNOWN_NAMES = 60
 MAX_CLEANUP_APP_NAME_CHARS = 120
 MAX_CLEANUP_APP_BUNDLE_ID_CHARS = 200
 MAX_CLEANUP_CONTEXT_AROUND_CHARS = 400
@@ -93,8 +97,22 @@ Spoken self-corrections (highest priority):
 - Restatement corrections count even without a trigger phrase: when the
   speaker breaks off and restates the same thing differently ("we should buy
   a gift... a present for Anna"), keep only the final version.
+- Corrections can arrive long after the original: when the speaker refers
+  back to something said earlier ("earlier when I said Tuesday — make that
+  Thursday", "кстати, там где я говорил про бюджет — поставь 500"), apply
+  the change at the original location and drop the correction sentence
+  itself. Only the final decision survives, no matter how late it came.
 - Words like "actually" or "точнее" used as ordinary content (not a
   correction) stay as content. Use the whole dictation as context to decide.
+
+Side notes to the writer:
+- Asides addressed to the writing process rather than the message — audience
+  or tone notes ("this is for my boss, keep it formal", "это для клиента,
+  повежливее"), format wishes, or explicit "don't write this part" remarks —
+  are guidance: apply what they ask and leave the aside itself out of the
+  output.
+- When it is unclear whether words are an aside or content, keep them as
+  content.
 
 Spoken formatting commands:
 - "new line" / "новая строка" / "с новой строки" → a line break.
@@ -144,6 +162,9 @@ Additionally for this level:
 - Break rambling run-ons into clear sentences and paragraphs.
 - When the speaker dictates an enumeration ("first... second... third...",
   "во-первых... во-вторых..."), format it as a list.
+- When a later remark clearly belongs to an earlier topic ("oh, and about
+  the deadline I mentioned — it moved to Friday"), merge it into that topic's
+  place instead of leaving it stranded at the end.
 - Keep the speaker's own wording; clarity comes from punctuation, paragraphs,
   and removing speech artifacts — not from paraphrasing.
 """
@@ -159,6 +180,10 @@ Additionally for this level:
 - Tighten redundant filler phrasing and circular repetitions while preserving
   every concrete detail, number, name, decision, and nuance of the final
   intended message.
+- When thoughts arrived out of order, reorder sentences and group related
+  points so the main point leads and details sit with their subject —
+  reorganize order, not meaning: every detail, number, name, decision, and
+  nuance stays.
 - Do not summarize away details or change commitments.
 """
     ),
@@ -354,19 +379,18 @@ def _build_style_rules_block(style_rules: str | None) -> str:
     )
 
 
-def _build_vocabulary_block(vocabulary: list[str] | None) -> str:
-    """Render the user's dictionary as a tagged preserve block.
-
-    Vocabulary that must survive the cleanup pass goes inside an explicit
-    XML-style tag rather than inline prose — the model treats tagged content
-    as structured, not as suggestion. Caps avoid pathological lists drowning
-    out the cleanup instructions.
-    """
-    if not vocabulary:
-        return ""
-    seen: set[str] = set()
+def _normalized_terms(
+    terms: list[str] | None,
+    *,
+    cap: int,
+    exclude: set[str] | None = None,
+) -> list[str]:
+    """Trim, dedupe (casefold), bound, and optionally exclude term lists."""
+    if not terms:
+        return []
+    seen: set[str] = set(exclude or ())
     cleaned: list[str] = []
-    for raw in vocabulary:
+    for raw in terms:
         term = raw.strip()
         if not term:
             continue
@@ -375,8 +399,20 @@ def _build_vocabulary_block(vocabulary: list[str] | None) -> str:
             continue
         seen.add(key)
         cleaned.append(term[:MAX_CLEANUP_VOCABULARY_ENTRY_CHARS])
-        if len(cleaned) >= MAX_CLEANUP_VOCABULARY_ENTRIES:
+        if len(cleaned) >= cap:
             break
+    return cleaned
+
+
+def _build_vocabulary_block(vocabulary: list[str] | None) -> str:
+    """Render the user's dictionary as a tagged preserve block.
+
+    Vocabulary that must survive the cleanup pass goes inside an explicit
+    XML-style tag rather than inline prose — the model treats tagged content
+    as structured, not as suggestion. Caps avoid pathological lists drowning
+    out the cleanup instructions.
+    """
+    cleaned = _normalized_terms(vocabulary, cap=MAX_CLEANUP_VOCABULARY_ENTRIES)
     if not cleaned:
         return ""
     joined = "\n".join(cleaned)
@@ -386,6 +422,43 @@ def _build_vocabulary_block(vocabulary: list[str] | None) -> str:
         "audio matches them — even if the model would normally autocorrect or "
         "rephrase. Do not invent occurrences that aren't in the audio.\n"
         f"<preserve_exact>\n{joined}\n</preserve_exact>"
+    )
+
+
+def _build_known_names_block(
+    known_names: list[str] | None,
+    *,
+    vocabulary: list[str] | None,
+) -> str:
+    """Render the user's people/project/dictionary names for recall resolution.
+
+    Powers the "describe a name you can't recall" behavior: the model may
+    resolve an explicitly signalled memory gap against these exact names, and
+    nothing else. Names already carried by the vocabulary preserve block are
+    excluded so each term is stated once.
+    """
+    already_preserved = {
+        term.casefold()
+        for term in _normalized_terms(vocabulary, cap=MAX_CLEANUP_VOCABULARY_ENTRIES)
+    }
+    cleaned = _normalized_terms(
+        known_names,
+        cap=MAX_CLEANUP_KNOWN_NAMES,
+        exclude=already_preserved,
+    )
+    if not cleaned:
+        return ""
+    joined = "\n".join(cleaned)
+    return (
+        "\n\nThe user's known names: people, projects, organizations, and "
+        "dictionary spellings from their workspace. When the speaker signals "
+        "they cannot recall a name and describes it instead (\"our backend "
+        "contractor, I forget his name\", \"как её, наш дизайнер из Берлина\"), "
+        "and exactly one known name clearly matches the description, write that "
+        "exact name and drop the recall struggle. If no single clear match "
+        "exists, keep the description as dictated. Never invent a name, and "
+        "never replace a name the speaker actually dictated with a known name.\n"
+        f"<known_names>\n{joined}\n</known_names>"
     )
 
 
@@ -486,9 +559,47 @@ def _string_event_field(event: Any, name: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+async def _load_cleanup_known_names(db: AsyncSession, *, user_id: UUID) -> list[str]:
+    """Load the names a cleanup pass may resolve a recall gap against.
+
+    Dictionary spellings (replacement wins over the raw word), tagged People
+    with aliases, and person/project/organization entities from the user's
+    brain graph. Bounded queries, newest first; `_build_known_names_block`
+    dedupes and caps the final list.
+    """
+    names: list[str] = []
+    dictionary_result = await db.execute(
+        select(DictationDictionaryWord)
+        .where(DictationDictionaryWord.user_id == user_id)
+        .order_by(DictationDictionaryWord.updated_at.desc())
+        .limit(MAX_CLEANUP_VOCABULARY_ENTRIES)
+    )
+    for word in dictionary_result.scalars():
+        replacement = (word.replacement or "").strip()
+        source = (word.word or "").strip()
+        if replacement or source:
+            names.append(replacement or source)
+
+    persons_result = await db.execute(
+        select(Person.display_name, Person.aliases)
+        .where(Person.user_id == user_id)
+        .order_by(Person.updated_at.desc())
+        .limit(MAX_CLEANUP_KNOWN_NAMES)
+    )
+    for display_name, aliases in persons_result.all():
+        if display_name and display_name.strip():
+            names.append(display_name.strip())
+        if isinstance(aliases, list):
+            names.extend(str(alias).strip() for alias in aliases if str(alias).strip())
+
+    names.extend(await load_user_entity_terms(db, user_id=user_id))
+    return names
+
+
 def _prepare_cleanup_cerebras_request(
     request: CleanupRequest,
     user: CurrentUser,
+    known_names: list[str] | None = None,
 ) -> CleanupCerebrasRequest | CleanupResponse:
     text = request.text.strip()
     if not text:
@@ -526,6 +637,7 @@ def _prepare_cleanup_cerebras_request(
             cleanup_instructions
             + _build_context_block(request.context)
             + _build_vocabulary_block(request.vocabulary)
+            + _build_known_names_block(known_names, vocabulary=request.vocabulary)
             + _build_style_rules_block(user.dictation_style_rules)
         ),
         input=(
@@ -839,13 +951,14 @@ def _translation_instructions(
 
 
 @router.post("/cleanup", response_model=CleanupResponse)
-async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
+async def cleanup_dictation(request: CleanupRequest, user: CurrentUser, db: Database):
     """Clean up raw dictated text via Cerebras gpt-oss.
 
     Removes filler words, fixes grammar, adds proper punctuation, and formats
     the text while preserving the original meaning.
     """
-    prepared = _prepare_cleanup_cerebras_request(request, user)
+    known_names = await _load_cleanup_known_names(db, user_id=user.id)
+    prepared = _prepare_cleanup_cerebras_request(request, user, known_names)
     if isinstance(prepared, CleanupResponse):
         return prepared
 
@@ -960,9 +1073,14 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
 
 
 @router.post("/cleanup/stream")
-async def cleanup_dictation_stream(request: CleanupRequest, user: CurrentUser):
+async def cleanup_dictation_stream(
+    request: CleanupRequest,
+    user: CurrentUser,
+    db: Database,
+):
     """Stream AI cleanup deltas as server-sent events."""
-    prepared = _prepare_cleanup_cerebras_request(request, user)
+    known_names = await _load_cleanup_known_names(db, user_id=user.id)
+    prepared = _prepare_cleanup_cerebras_request(request, user, known_names)
     if isinstance(prepared, CleanupResponse):
         text = prepared.text
 
