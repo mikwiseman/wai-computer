@@ -645,7 +645,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
 
         XCTAssertTrue(source.contains("private var processingRefreshTask: Task<Void, Never>?"))
         XCTAssertTrue(source.contains("processingRefreshTask?.cancel()"))
-        XCTAssertTrue(source.contains("rows.contains(where: { $0.status == .processing })"))
+        XCTAssertTrue(source.contains("$0.status == .processing || $0.automaticTitlePending == true"))
         XCTAssertTrue(source.contains("try? await Task.sleep(for: .seconds(4))"))
         XCTAssertTrue(source.contains("await self?.refreshProcessingRowsIfCurrent(generation: generation)"))
         XCTAssertTrue(source.contains("scheduleProcessingRefreshIfNeeded()"))
