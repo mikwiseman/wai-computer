@@ -315,6 +315,7 @@ class MacRecordingViewModel: ObservableObject {
         #if DEBUG
         if testingMode.isRecordingFlow {
             currentRecordingId = MacUITestFixtures.completedRecording.id
+            hasSystemAudio = inputSource.requestsSystemAudio
             duration = TimeInterval(MacUITestFixtures.completedRecording.durationSeconds ?? 0)
             // Static clock: UI tests assert a stable fixture duration.
             durationClock = RecordingDurationClock(baseSeconds: duration, runningSince: nil)

@@ -533,7 +533,9 @@ run_recording_flow_smoke() {
   json_path="$(wait_for_ui_text recording-flow-ready "Record")"
   click_identifier "$json_path" start-recording-button
 
-  json_path="$(wait_for_ui_text recording-flow-live "UI test live transcript")"
+  # Meetings intentionally show recording status rather than provisional
+  # transcript text; the canonical transcript appears after Stop.
+  json_path="$(wait_for_ui_text recording-flow-live "Recording audio.")"
   click_identifier "$json_path" stop-recording-button
   wait_for_ui_text recording-flow-detail "UI test finalized transcript."
 }

@@ -21,6 +21,10 @@ final class MacRecordingViewModelStateTests: XCTestCase {
         XCTAssertEqual(viewModel.statusText(language: .russian), "Пауза")
         XCTAssertEqual(viewModel.currentRecordingId, MacUITestFixtures.completedRecording.id)
         XCTAssertEqual(viewModel.duration, TimeInterval(MacUITestFixtures.completedRecording.durationSeconds ?? 0))
+        XCTAssertTrue(
+            viewModel.hasSystemAudio,
+            "The dual-source fixture should represent the healthy production capture state."
+        )
 
         await viewModel.resumeRecording()
 
