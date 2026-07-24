@@ -3,9 +3,9 @@ import { LandingPage } from "@/components/LandingPage";
 import { PaymentComplianceSection } from "./PaymentCompliance";
 
 export const metadata: Metadata = {
-  title: "WaiComputer — записи, расшифровки и поиск",
+  title: "WaiComputer | записи, расшифровки и поиск",
   description:
-    "Записывайте встречи и голосовые заметки. WaiComputer расшифрует речь, выделит главное и поможет быстро найти нужное.",
+    "WaiComputer для Mac записывает встречи, превращает диктовку в текст и помогает быстро найти важное.",
   alternates: {
     canonical: "https://wai.computer/ru",
     languages: {

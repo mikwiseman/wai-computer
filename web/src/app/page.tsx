@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { LandingPage } from "@/components/LandingPage";
 
 export const metadata: Metadata = {
-  title: "WaiComputer — A second memory for your voice",
+  title: "WaiComputer | A second memory for your voice",
   description:
-    "Turn meetings, thoughts, and voice notes into clear summaries, actions, and answers.",
+    "WaiComputer for Mac records meetings, turns dictation into text, and keeps every voice searchable.",
   alternates: {
     canonical: "https://wai.computer",
     languages: {

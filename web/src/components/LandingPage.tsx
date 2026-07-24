@@ -25,10 +25,12 @@ const copy = {
     pricing: "Pricing",
     pricingHref: "/pricing",
     signIn: "Sign in",
+    heroEyebrow: "The native WaiComputer app for Mac",
     heroTitle: "Build a second memory.",
     heroBody:
-      "Meetings, thoughts, and notes become clear summaries, actions, and answers.",
-    primary: "Start free",
+      "Record meetings, dictate into any app, and find what matters whenever you need it.",
+    startFree: "Start free",
+    downloadMac: "Download for Mac",
     web: "Open on the web",
     journeyEyebrow: "One continuous memory",
     journeyTitle: "From voice to answer.",
@@ -40,16 +42,20 @@ const copy = {
     productEyebrow: "Inside WaiComputer",
     productTitle: "Every memory, in one Inbox.",
     productBody:
-      "Recording, dictation, summaries, search, and MCP — one connected memory.",
+      "Recording, dictation, summaries, search, and MCP live in one connected memory.",
     detailAlt: "WaiComputer recording summary and transcript",
     libraryAlt: "WaiComputer memory library",
-    platformsTitle: "Your memory, wherever you work.",
+    macEyebrow: "WaiComputer for macOS",
+    macTitle: "Your memory starts on your Mac.",
+    macBody:
+      "Capture both sides of a meeting, dictate wherever you type, and keep every word in one searchable memory.",
+    macMeta: "macOS 14 or later",
+    alsoAvailable: "Also available",
     privacy: "Recording starts only when you tell it to.",
     platformWebTestId: "platform-web",
     platformMeta: {
-      mac: "Native · macOS 14+",
-      web: "No install",
-      iphone: "TestFlight",
+      web: "Web",
+      iphone: "iPhone beta",
     },
     finalTitle: "Keep what matters close.",
     finalBody: "Start free. Upgrade only when your memory needs to grow.",
@@ -67,10 +73,12 @@ const copy = {
     pricing: "Цены",
     pricingHref: "/ru/pricing",
     signIn: "Войти",
+    heroEyebrow: "Приложение WaiComputer для Mac",
     heroTitle: "Не держите всё в голове.",
     heroBody:
-      "Записывайте встречи и голосовые заметки. WaiComputer расшифрует речь, выделит главное и поможет быстро найти нужное.",
-    primary: "Попробовать бесплатно",
+      "Записывайте встречи, диктуйте текст в любом приложении и находите важное, когда оно понадобится.",
+    startFree: "Попробовать бесплатно",
+    downloadMac: "Скачать для Mac",
     web: "Открыть в браузере",
     journeyEyebrow: "Как работает WaiComputer",
     journeyTitle: "Запишите один раз. Найдите в любой момент.",
@@ -80,18 +88,22 @@ const copy = {
       { number: "03", title: "Поиск", body: "Ищите по словам или задавайте вопросы по своим записям." },
     ],
     productEyebrow: "Всё в одном месте",
-    productTitle: "Откройте запись — сразу увидите главное.",
+    productTitle: "Откройте запись и сразу увидите главное.",
     productBody:
-      "Запись, расшифровка, краткий итог и задачи — в одном окне. Все записи собраны в общей библиотеке.",
+      "Запись, расшифровка, краткий итог и задачи собраны в одном окне. Все записи находятся в общей библиотеке.",
     detailAlt: "Краткий итог и расшифровка в WaiComputer",
     libraryAlt: "Библиотека записей WaiComputer",
-    platformsTitle: "На Mac, iPhone и в браузере.",
-    privacy: "Без фоновой записи — вы сами решаете, когда начать.",
+    macEyebrow: "WaiComputer для macOS",
+    macTitle: "Ваша память начинается на Mac.",
+    macBody:
+      "Записывайте обе стороны разговора, диктуйте в любом приложении и сохраняйте каждую мысль в общей памяти.",
+    macMeta: "Для macOS 14 и новее",
+    alsoAvailable: "Также доступно",
+    privacy: "Без фоновой записи. Вы сами решаете, когда начать.",
     platformWebTestId: "platform-web-ru",
     platformMeta: {
-      mac: "macOS 14+",
-      web: "Без установки",
-      iphone: "Бета · TestFlight",
+      web: "Браузер",
+      iphone: "iPhone, бета",
     },
     finalTitle: "Начните с первой записи.",
     finalBody: "Бесплатно. В Pro нет недельного лимита на расшифровку, а записи хранятся без срока.",
@@ -132,7 +144,7 @@ export function LandingPage({ locale, legal }: LandingPageProps) {
             {t.signIn}
           </Link>
           <Link href="/register" className={styles.getStarted}>
-            {t.primary}
+            {t.startFree}
           </Link>
         </nav>
       </header>
@@ -165,18 +177,20 @@ export function LandingPage({ locale, legal }: LandingPageProps) {
             priority
             alt=""
           />
+          <p className={styles.heroEyebrow}>{t.heroEyebrow}</p>
           <h1 id={`hero-title${suffix}`} className={styles.headline}>
             {t.heroTitle}
           </h1>
           <p className={styles.subhead}>{t.heroBody}</p>
           <div className={styles.heroActions}>
-            <Link
-              href="/register"
+            <a
+              href={macUrl}
+              download
               className={styles.primaryCta}
-              data-testid={`primary-cta${suffix}`}
+              data-testid={`download-mac${suffix}`}
             >
-              {t.primary}
-            </Link>
+              {t.downloadMac}
+            </a>
             <Link
               href="/dashboard"
               className={styles.secondaryCta}
@@ -243,41 +257,51 @@ export function LandingPage({ locale, legal }: LandingPageProps) {
         </div>
       </section>
 
-      <section className={styles.platformSection} aria-labelledby={`platform-title${suffix}`}>
-        <h2 id={`platform-title${suffix}`} className={styles.sectionTitle}>
-          {t.platformsTitle}
-        </h2>
-        <div className={styles.platforms}>
-          <a
-            href={macUrl}
-            download
-            className={styles.platformChip}
-            data-testid={`download-mac${suffix}`}
-          >
-            <span>Mac</span>
-            <small>{t.platformMeta.mac}</small>
-          </a>
-          <Link
-            href="/dashboard"
-            className={styles.platformChip}
-            data-testid={t.platformWebTestId}
-          >
-            <span>{locale === "ru" ? "Браузер" : "Web"}</span>
-            <small>{t.platformMeta.web}</small>
-          </Link>
-          <a
-            href={TESTFLIGHT_URL}
-            className={styles.platformChip}
-            data-testid={`download-ios${suffix}`}
-          >
-            <span>iPhone</span>
-            <small>{t.platformMeta.iphone}</small>
-          </a>
+      <section className={styles.macSection} aria-labelledby={`mac-title${suffix}`}>
+        <div className={styles.macVisual} aria-hidden="true">
+          <Image
+            className={styles.macAppIcon}
+            src="/app-icon-320.png"
+            width={220}
+            height={220}
+            alt=""
+          />
+          <span className={styles.macVisualLabel}>WaiComputer · macOS</span>
         </div>
-        <p className={styles.privacyLine}>
-          <CircleCheck size={16} strokeWidth={1.8} aria-hidden="true" />
-          {t.privacy}
-        </p>
+        <div className={styles.macContent}>
+          <p className={styles.eyebrow}>{t.macEyebrow}</p>
+          <h2 id={`mac-title${suffix}`} className={styles.sectionTitle}>
+            {t.macTitle}
+          </h2>
+          <p className={styles.macBody}>{t.macBody}</p>
+          <div className={styles.macActions}>
+            <a
+              href={macUrl}
+              download
+              className={styles.primaryCta}
+              data-testid={`download-mac-secondary${suffix}`}
+            >
+              {t.downloadMac}
+            </a>
+            <span className={styles.macMeta}>{t.macMeta}</span>
+          </div>
+          <div
+            className={styles.secondaryPlatforms}
+            aria-label={locale === "ru" ? "Другие платформы" : "Other platforms"}
+          >
+            <span>{t.alsoAvailable}</span>
+            <Link href="/dashboard" data-testid={t.platformWebTestId}>
+              {t.platformMeta.web}
+            </Link>
+            <a href={TESTFLIGHT_URL} data-testid={`download-ios${suffix}`}>
+              {t.platformMeta.iphone}
+            </a>
+          </div>
+          <p className={styles.privacyLine}>
+            <CircleCheck size={16} strokeWidth={1.8} aria-hidden="true" />
+            {t.privacy}
+          </p>
+        </div>
       </section>
 
       <section className={styles.finalCta} aria-labelledby={`final-title${suffix}`}>
@@ -286,7 +310,7 @@ export function LandingPage({ locale, legal }: LandingPageProps) {
           <p>{t.finalBody}</p>
         </div>
         <Link href="/register" className={styles.primaryCta}>
-          {t.primary}
+          {t.startFree}
         </Link>
       </section>
 

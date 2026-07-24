@@ -32,7 +32,6 @@
 .brand,
 .navLinks,
 .heroActions,
-.platforms,
 .footer div {
   display: flex;
   align-items: center;
@@ -185,6 +184,14 @@
   box-shadow: 0 16px 44px rgba(67, 45, 18, 0.12);
 }
 
+.heroEyebrow {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(0.95rem, 1.25vw, 1.05rem);
+  font-weight: 720;
+  letter-spacing: -0.01em;
+}
+
 .headline,
 .sectionTitle,
 .finalCta h2 {
@@ -243,7 +250,7 @@
 
 .memorySection,
 .productSection,
-.platformSection,
+.macSection,
 .finalCta,
 .section,
 .footer {
@@ -421,54 +428,136 @@
   filter: var(--media-dim);
 }
 
-.platformSection {
+.macSection {
   display: grid;
-  justify-items: center;
-  gap: 2rem;
+  grid-template-columns: minmax(320px, 0.92fr) minmax(0, 1.08fr);
+  gap: clamp(2rem, 6vw, 5rem);
+  min-height: 560px;
+  padding: clamp(0.75rem, 1.4vw, 1.1rem);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--material-thin-border));
+  border-radius: clamp(2rem, 4vw, 3.5rem);
+  background: color-mix(in srgb, var(--material-regular-bg) 84%, var(--accent-soft));
+  box-shadow: inset 0 1px 0 var(--material-highlight), var(--material-shadow);
+  -webkit-backdrop-filter: var(--material-regular-blur);
+  backdrop-filter: var(--material-regular-blur);
+}
+
+.macVisual {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  overflow: hidden;
+  border-radius: clamp(1.45rem, 3.2vw, 2.75rem);
+  background:
+    radial-gradient(circle at 48% 42%, rgba(215, 151, 55, 0.3), transparent 34%),
+    linear-gradient(145deg, #242117 0%, #10120f 58%, #1d1912 100%);
+}
+
+.macVisual::before,
+.macVisual::after {
+  position: absolute;
+  z-index: -1;
+  content: "";
+  border: 1px solid rgba(240, 196, 119, 0.16);
+  border-radius: 50%;
+}
+
+.macVisual::before {
+  width: min(78%, 420px);
+  aspect-ratio: 1;
+}
+
+.macVisual::after {
+  width: min(108%, 580px);
+  aspect-ratio: 1;
+}
+
+.macAppIcon {
+  width: clamp(150px, 17vw, 220px);
+  height: auto;
+  border-radius: 24%;
+  box-shadow: 0 36px 90px rgba(0, 0, 0, 0.44), 0 0 0 1px rgba(255, 255, 255, 0.16);
+  transform: rotate(-2deg);
+}
+
+.macVisualLabel {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 1.35rem;
+  left: 1.5rem;
+  color: rgba(255, 255, 255, 0.66);
+  font-family: var(--font-family-mono);
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
   text-align: center;
 }
 
-.platformSection .sectionTitle {
-  max-width: 18ch;
+.macContent {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 1.25rem;
+  padding: clamp(2rem, 5vw, 4.5rem) clamp(1.25rem, 4vw, 3.5rem) clamp(2rem, 5vw, 4.5rem) 0;
 }
 
-.platforms {
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0.7rem;
+.macContent .sectionTitle {
+  max-width: 10ch;
 }
 
-.platformChip {
+.macBody {
+  max-width: 34rem;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: clamp(1.05rem, 1.5vw, 1.2rem);
+  line-height: 1.58;
+}
+
+.macActions {
   display: grid;
   grid-template-columns: auto auto;
-  align-items: baseline;
-  gap: 0.65rem;
-  min-height: 54px;
-  padding: 0 1.15rem;
-  border: 1px solid var(--material-thin-border);
-  border-radius: var(--radius-pill);
-  background: var(--material-thin-bg);
-  box-shadow: inset 0 1px 0 var(--material-highlight), var(--shadow-1);
-  color: var(--ink);
-  text-decoration: none;
-  -webkit-backdrop-filter: var(--material-thin-blur);
-  backdrop-filter: var(--material-thin-blur);
-  transition: transform 160ms ease, border-color 160ms ease;
+  align-items: center;
+  gap: 0.9rem 1rem;
+  margin-top: 0.25rem;
 }
 
-.platformChip:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
+.macMeta {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  font-weight: 620;
 }
 
-.platformChip span {
-  font-weight: 720;
-}
-
-.platformChip small {
+.secondaryPlatforms {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 1rem;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border);
   color: var(--ink-faint);
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 0.86rem;
+}
+
+.secondaryPlatforms > span {
+  font-weight: 620;
+}
+
+.secondaryPlatforms a {
+  color: var(--ink);
+  font-weight: 680;
+  text-decoration-color: color-mix(in srgb, var(--ink) 42%, transparent);
+  text-underline-offset: 0.2em;
+  transition: color 160ms ease, text-decoration-color 160ms ease;
+}
+
+.secondaryPlatforms a:hover {
+  color: var(--accent-strong);
+  text-decoration-color: currentColor;
 }
 
 .privacyLine {
@@ -693,6 +782,19 @@
     max-width: 36rem;
   }
 
+  .macSection {
+    grid-template-columns: 1fr;
+  }
+
+  .macVisual {
+    min-height: 390px;
+  }
+
+  .macContent {
+    order: -1;
+    padding: clamp(2rem, 6vw, 4rem);
+  }
+
   .complianceGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -771,7 +873,7 @@
 
   .memorySection,
   .productSection,
-  .platformSection,
+  .macSection,
   .finalCta,
   .section,
   .footer {
@@ -808,16 +910,40 @@
     margin-right: 0;
   }
 
-  .platforms {
+  .macSection {
+    gap: 0;
+    padding: 0.6rem;
+    border-radius: 2rem;
+  }
+
+  .macContent {
+    padding: 2rem 1.2rem 2.5rem;
+  }
+
+  .macContent .sectionTitle {
+    font-size: clamp(2.65rem, 13vw, 4rem);
+  }
+
+  .macActions {
+    grid-template-columns: 1fr;
     width: 100%;
   }
 
-  .platformChip {
-    grid-template-columns: 1fr;
-    gap: 0.15rem;
-    min-width: 0;
-    flex: 1 1 132px;
-    padding: 0.7rem 0.9rem;
+  .macActions .primaryCta {
+    width: 100%;
+    min-height: 54px;
+  }
+
+  .macVisual {
+    min-height: 320px;
+  }
+
+  .macAppIcon {
+    width: 142px;
+  }
+
+  .macVisualLabel {
+    bottom: 1rem;
   }
 
   .finalCta {
@@ -860,7 +986,7 @@
   .getStarted,
   .primaryCta,
   .secondaryCta,
-  .platformChip,
+  .secondaryPlatforms a,
   .heroAtmosphere img {
     transition: none;
   }

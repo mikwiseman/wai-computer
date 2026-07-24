@@ -279,16 +279,27 @@ describe("app pages", () => {
       }),
     ).toBeInTheDocument();
 
-    expect(screen.getByTestId("primary-cta")).toHaveAttribute("href", "/register");
-    expect(screen.getByTestId("download-web")).toHaveAttribute("href", "/dashboard");
+    expect(screen.getByText("The native WaiComputer app for Mac")).toBeInTheDocument();
 
-    const macLink = screen.getByTestId("download-mac");
-    expect(macLink).toHaveAttribute(
+    const heroMacLink = screen.getByTestId("download-mac");
+    expect(heroMacLink).toHaveAttribute(
       "href",
       "/releases/macos/WaiComputer-latest.dmg",
     );
-    expect(macLink).toHaveAttribute("download");
-    expect(macLink).toHaveTextContent("Mac");
+    expect(heroMacLink).toHaveAttribute("download");
+    expect(heroMacLink).toHaveTextContent("Download for Mac");
+    expect(screen.getByTestId("download-web")).toHaveAttribute("href", "/dashboard");
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Your memory starts on your Mac." }),
+    ).toBeInTheDocument();
+    const secondaryMacLink = screen.getByTestId("download-mac-secondary");
+    expect(secondaryMacLink).toHaveAttribute(
+      "href",
+      "/releases/macos/WaiComputer-latest.dmg",
+    );
+    expect(secondaryMacLink).toHaveAttribute("download");
+    expect(secondaryMacLink).toHaveTextContent("Download for Mac");
 
     const iosLink = screen.getByTestId("download-ios");
     expect(iosLink).toHaveAttribute(
@@ -322,23 +333,33 @@ describe("app pages", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Записывайте встречи и голосовые заметки. WaiComputer расшифрует речь, выделит главное и поможет быстро найти нужное.",
+        "Записывайте встречи, диктуйте текст в любом приложении и находите важное, когда оно понадобится.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByText("Приложение WaiComputer для Mac")).toBeInTheDocument();
 
-    expect(screen.getByTestId("primary-cta-ru")).toHaveAttribute("href", "/register");
-
-    const macLink = screen.getByTestId("download-mac-ru");
-    expect(macLink).toHaveAttribute(
+    const heroMacLink = screen.getByTestId("download-mac-ru");
+    expect(heroMacLink).toHaveAttribute(
       "href",
       "/releases/macos/WaiComputer-ru-latest.dmg",
     );
-    expect(macLink).toHaveAttribute("download");
-    expect(macLink).toHaveTextContent("Mac");
+    expect(heroMacLink).toHaveAttribute("download");
+    expect(heroMacLink).toHaveTextContent("Скачать для Mac");
 
     const webLink = screen.getByTestId("download-web-ru");
     expect(webLink).toHaveAttribute("href", "/dashboard");
     expect(webLink).toHaveTextContent("Открыть в браузере");
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Ваша память начинается на Mac." }),
+    ).toBeInTheDocument();
+    const secondaryMacLink = screen.getByTestId("download-mac-secondary-ru");
+    expect(secondaryMacLink).toHaveAttribute(
+      "href",
+      "/releases/macos/WaiComputer-ru-latest.dmg",
+    );
+    expect(secondaryMacLink).toHaveAttribute("download");
+    expect(secondaryMacLink).toHaveTextContent("Скачать для Mac");
 
     const iosLink = screen.getByTestId("download-ios-ru");
     expect(iosLink).toHaveAttribute(
@@ -369,17 +390,17 @@ describe("app pages", () => {
       screen.getByText("Получите расшифровку, краткий итог и список задач."),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 2, name: "Откройте запись — сразу увидите главное." }),
+      screen.getByRole("heading", { level: 2, name: "Откройте запись и сразу увидите главное." }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Запись, расшифровка, краткий итог и задачи — в одном окне. Все записи собраны в общей библиотеке.",
+        "Запись, расшифровка, краткий итог и задачи собраны в одном окне. Все записи находятся в общей библиотеке.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByAltText("Краткий итог и расшифровка в WaiComputer")).toBeInTheDocument();
     expect(screen.getByAltText("Библиотека записей WaiComputer")).toBeInTheDocument();
     expect(
-      screen.getByText("Без фоновой записи — вы сами решаете, когда начать."),
+      screen.getByText("Без фоновой записи. Вы сами решаете, когда начать."),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 2, name: "Начните с первой записи." }),
