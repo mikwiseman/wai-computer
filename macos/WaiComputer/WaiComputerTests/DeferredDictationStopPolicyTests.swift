@@ -63,6 +63,28 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
         )
     }
 
+    func testDualSourceFinalizationKeepsOneCompleteMixerFlush() {
+        XCTAssertEqual(
+            DictationFinalizationPolicy.captureTailDelay(
+                tapBufferFrames: 256,
+                sampleRate: 48_000,
+                includesSystemAudio: true
+            ),
+            .milliseconds(200)
+        )
+    }
+
+    func testDualSourceFinalizationStillHonorsLongerMicrophoneTail() {
+        XCTAssertEqual(
+            DictationFinalizationPolicy.captureTailDelay(
+                tapBufferFrames: 16_384,
+                sampleRate: 48_000,
+                includesSystemAudio: true
+            ),
+            .milliseconds(450)
+        )
+    }
+
     func testCleanupDisabledUsesRawTranscript() {
         let resolution = DictationCleanupPolicy.resolve(
             rawText: "raw transcript",

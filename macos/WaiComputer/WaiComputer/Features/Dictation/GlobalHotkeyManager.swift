@@ -381,6 +381,7 @@ enum HotkeyReleasePolicy {
 
 enum DictationFinalizationPolicy {
     private static let minimumTailDelayMilliseconds = 150
+    private static let dualSourceMinimumTailDelayMilliseconds = 200
     private static let maximumTailDelayMilliseconds = 450
     static let minimumTailDelay: Duration = .milliseconds(minimumTailDelayMilliseconds)
     static let maximumTailDelay: Duration = .milliseconds(maximumTailDelayMilliseconds)
@@ -392,9 +393,16 @@ enum DictationFinalizationPolicy {
     /// AVAudioEngine taps deliver audio in chunks. If we stop the engine
     /// immediately on key-up, the last syllables can still be sitting in the
     /// current tap buffer and never reach the realtime STT provider.
-    static func captureTailDelay(tapBufferFrames: Int, sampleRate: Double) -> Duration {
+    static func captureTailDelay(
+        tapBufferFrames: Int,
+        sampleRate: Double,
+        includesSystemAudio: Bool = false
+    ) -> Duration {
+        let minimumMilliseconds = includesSystemAudio
+            ? dualSourceMinimumTailDelayMilliseconds
+            : minimumTailDelayMilliseconds
         guard tapBufferFrames > 0, sampleRate > 0 else {
-            return minimumTailDelay
+            return .milliseconds(minimumMilliseconds)
         }
         let tapMilliseconds = Double(tapBufferFrames) / sampleRate * 1_000
         let targetMilliseconds = Int(
@@ -402,7 +410,7 @@ enum DictationFinalizationPolicy {
         )
         return .milliseconds(
             max(
-                minimumTailDelayMilliseconds,
+                minimumMilliseconds,
                 min(maximumTailDelayMilliseconds, targetMilliseconds)
             )
         )

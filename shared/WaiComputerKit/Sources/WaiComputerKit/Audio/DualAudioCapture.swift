@@ -63,6 +63,22 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     /// Whether system audio has stalled (no buffers for multiple monitor intervals).
     public private(set) var systemAudioStalled = false
 
+    /// Thread-safe health snapshot for owners that must reject silent
+    /// mic-only degradation before finalizing a dual-source session.
+    public var isSystemAudioStreamHealthy: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard systemAudioStreamActive,
+              !systemAudioStalled,
+              let lastSystemBufferAt else {
+            return false
+        }
+        // The tap normally delivers buffers continuously, including silence.
+        // A recent buffer is therefore required at finalization; otherwise a
+        // route/TCC failure near the end could predate the slower stall monitor.
+        return Date().timeIntervalSince(lastSystemBufferAt) < 1.0
+    }
+
     static let audioPresenceThreshold: Float = 0.000_001
 
     public init(config: AudioCaptureConfig = .default, mixToMono: Bool = true) {
@@ -75,6 +91,28 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
         self.audioBuffers = stream
         self.bufferContinuation = continuation
+    }
+
+    /// Build a dual capture around an already-running microphone stream.
+    ///
+    /// Dictation uses this initializer with `AudioEngineHost.Lease.buffers`.
+    /// That preserves the process-wide microphone engine and its pre-roll
+    /// instead of starting the per-session `MicrophoneCapture` that previously
+    /// destabilized the macOS audio HAL after repeated dictation presses.
+    ///
+    /// The caller owns the microphone stream and must release its lease after
+    /// `stopRecording()`. This capture owns only the system-audio tap.
+    public convenience init(
+        liveMicrophoneBuffers: AsyncStream<AVAudioPCMBuffer>,
+        config: AudioCaptureConfig = .default,
+        mixToMono: Bool = true
+    ) {
+        self.init(
+            config: config,
+            mixToMono: mixToMono,
+            mic: LiveMicrophoneStreamCapture(audioBuffers: liveMicrophoneBuffers),
+            system: SystemAudioCapture(config: config)
+        )
     }
 
     init(
@@ -123,9 +161,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
 
         _isRecording = true
         setPaused(false)
-        lock.lock()
-        localSpeechTracker = LocalSpeechTracker(sampleRate: config.sampleRate)
-        lock.unlock()
+        resetLocalSpeechTracker()
         startDualMode()
     }
 
@@ -446,9 +482,12 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         systemBuffer.append(contentsOf: samples)
         systemAudioStreamActive = true
         lastSystemBufferAt = Date()
+        // `systemAudioStalled` means buffers stopped arriving. Any new buffer,
+        // including a valid silent one between speakers, proves the tap has
+        // recovered and must clear the stale warning.
+        systemAudioStalled = false
         if hasRealSystemAudio {
             systemAudioReceivedAny = true
-            systemAudioStalled = false
         }
         lock.unlock()
     }
@@ -468,6 +507,12 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         if !paused {
             lastSystemBufferAt = Date()
         }
+        lock.unlock()
+    }
+
+    private func resetLocalSpeechTracker() {
+        lock.lock()
+        localSpeechTracker = LocalSpeechTracker(sampleRate: config.sampleRate)
         lock.unlock()
     }
 
@@ -498,6 +543,37 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         os_unfair_lock_lock(continuationLock)
         bufferContinuation?.finish()
         os_unfair_lock_unlock(continuationLock)
+    }
+}
+
+@available(macOS 14.2, *)
+private final class LiveMicrophoneStreamCapture: AudioCaptureProtocol, @unchecked Sendable {
+    let audioBuffers: AsyncStream<AVAudioPCMBuffer>
+    private(set) var isRecording = false
+    private(set) var isPaused = false
+
+    init(audioBuffers: AsyncStream<AVAudioPCMBuffer>) {
+        self.audioBuffers = audioBuffers
+    }
+
+    func startRecording() async throws {
+        isRecording = true
+        isPaused = false
+    }
+
+    func pauseRecording() async throws {
+        guard isRecording else { return }
+        isPaused = true
+    }
+
+    func resumeRecording() async throws {
+        guard isRecording else { return }
+        isPaused = false
+    }
+
+    func stopRecording() async {
+        isRecording = false
+        isPaused = false
     }
 }
 

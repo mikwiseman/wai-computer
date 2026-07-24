@@ -80,6 +80,42 @@ final class DualAudioCaptureTests: XCTestCase {
         XCTAssertFalse(system.isRecording)
     }
 
+    func testSilentSystemBuffersAreHealthyAndRecoverAfterAStreamGap() async throws {
+        let mic = MockAudioCapture(emitInterval: 0.01)
+        let system = PausableSystemAudioCapture()
+        let capture = DualAudioCapture(mic: mic, system: system)
+
+        try await capture.startRecording()
+        XCTAssertFalse(capture.isSystemAudioStreamHealthy)
+
+        system.emitBuffer(value: 0)
+        await waitUntil { capture.isSystemAudioStreamHealthy }
+        XCTAssertTrue(
+            capture.isSystemAudioStreamHealthy,
+            "A silent buffer is still proof that the Core Audio tap is alive."
+        )
+        XCTAssertFalse(
+            capture.systemAudioReceivedAny,
+            "Silence must not be reported as an audible remote speaker."
+        )
+
+        try await Task.sleep(for: .milliseconds(1_050))
+        XCTAssertFalse(
+            capture.isSystemAudioStreamHealthy,
+            "A tap that stops delivering buffers must not silently degrade to microphone-only."
+        )
+
+        system.emitBuffer(value: 0)
+        await waitUntil { capture.isSystemAudioStreamHealthy }
+        XCTAssertTrue(
+            capture.isSystemAudioStreamHealthy,
+            "The next valid buffer should clear transient stream-health failure."
+        )
+
+        await capture.stopRecording()
+        XCTAssertFalse(capture.isSystemAudioStreamHealthy)
+    }
+
     func testSystemAudioAggregateDescriptionIsTapOnly() {
         let description = SystemAudioTapAggregateDescription.make(
             aggregateUID: "aggregate-test-uid",
@@ -517,6 +553,17 @@ final class DualAudioCaptureTests: XCTestCase {
             }
         }
     }
+
+    private func waitUntil(
+        timeout: Duration = .seconds(1),
+        condition: @escaping @Sendable () -> Bool
+    ) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !condition(), clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
 }
 
 @available(macOS 14.2, *)
@@ -559,9 +606,12 @@ private final class PausableSystemAudioCapture: SystemAudioCaptureProtocol, @unc
     private(set) var isRecording = false
     private(set) var isPaused = false
     let audioBuffers: AsyncStream<AVAudioPCMBuffer>
+    private let continuation: AsyncStream<AVAudioPCMBuffer>.Continuation
 
     init() {
-        self.audioBuffers = AsyncStream { _ in }
+        let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
+        self.audioBuffers = stream
+        self.continuation = continuation
     }
 
     func startRecording() async throws {
@@ -572,6 +622,7 @@ private final class PausableSystemAudioCapture: SystemAudioCaptureProtocol, @unc
     func stopRecording() async {
         isRecording = false
         isPaused = false
+        continuation.finish()
     }
 
     func pauseRecording() async throws {
@@ -586,6 +637,17 @@ private final class PausableSystemAudioCapture: SystemAudioCaptureProtocol, @unc
 
     func waitForAudioBuffers(timeout: TimeInterval) async -> Bool {
         true
+    }
+
+    func emitBuffer(value: Float) {
+        guard let buffer = MockAudioCapture.constantBuffer(
+            value: value,
+            channelCount: 1,
+            frameCount: 160
+        ) else {
+            return
+        }
+        continuation.yield(buffer)
     }
 }
 

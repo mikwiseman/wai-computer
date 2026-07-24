@@ -191,41 +191,43 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var footerControls: some View {
-        HStack(spacing: 12) {
-            if currentPage > 0 {
-                Button(t("Back", "Назад")) {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        currentPage = max(currentPage - 1, 0)
+        WaiGlassEffectGroup(spacing: Spacing.md) {
+            HStack(spacing: Spacing.md) {
+                if currentPage > 0 {
+                    Button(t("Back", "Назад")) {
+                        withAnimation(.easeInOut(duration: WaiDesignTokens.Motion.emphasized)) {
+                            currentPage = max(currentPage - 1, 0)
+                        }
                     }
+                    .waiGlassButton()
+                    .accessibilityIdentifier("onboarding-back-button")
                 }
-                .buttonStyle(WaiGhostButtonStyle())
-                .accessibilityIdentifier("onboarding-back-button")
-            }
 
-            Spacer()
+                Spacer()
 
-            // Plain "Skip" skips only the current step. The whole-phase exit
-            // ("Skip setup") exists only on the sandbox page, where the label
-            // says so. The permission page shows a step-scoped "Skip for now"
-            // that advances to Languages instead of dropping the rest of the
-            // flow. Voice setup renders its own "Skip for now", so the footer
-            // skip is hidden there.
-            if !isVoiceSetupPage {
-                Button(skipButtonTitle, action: handleSkipTap)
-                    .buttonStyle(WaiGhostButtonStyle())
-                    .accessibilityIdentifier("onboarding-skip-button")
-            }
-
-            // Sandbox and voice-setup slides own their primary CTAs; the
-            // footer hides its button there to avoid two competing CTAs.
-            if !slideOwnsPrimaryCTA {
-                Button(action: handlePrimaryTap) {
-                    Text(primaryButtonTitle)
-                        .frame(minWidth: 160)
+                // Plain "Skip" skips only the current step. The whole-phase exit
+                // ("Skip setup") exists only on the sandbox page, where the label
+                // says so. The permission page shows a step-scoped "Skip for now"
+                // that advances to Languages instead of dropping the rest of the
+                // flow. Voice setup renders its own "Skip for now", so the footer
+                // skip is hidden there.
+                if !isVoiceSetupPage {
+                    Button(skipButtonTitle, action: handleSkipTap)
+                        .waiGlassButton()
+                        .accessibilityIdentifier("onboarding-skip-button")
                 }
-                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: false))
-                .accessibilityIdentifier(primaryButtonAccessibilityId)
-                .keyboardShortcut(.defaultAction)
+
+                // Sandbox and voice-setup slides own their primary CTAs; the
+                // footer hides its button there to avoid two competing CTAs.
+                if !slideOwnsPrimaryCTA {
+                    Button(action: handlePrimaryTap) {
+                        Text(primaryButtonTitle)
+                            .frame(minWidth: 160)
+                    }
+                    .waiGlassButton(prominent: true)
+                    .accessibilityIdentifier(primaryButtonAccessibilityId)
+                    .keyboardShortcut(.defaultAction)
+                }
             }
         }
     }
@@ -830,13 +832,13 @@ private struct OnboardingPermissionSlide: View {
         }
         if systemAudioReadiness == .unsupported {
             return t(
-                "System Audio Recording requires macOS 14.2 or later. Microphone dictation can still work, but meeting recordings cannot capture app audio on this Mac.",
-                "Запись звука Mac требует macOS 14.2 или новее. Диктовка через микрофон может работать, но записи встреч не смогут сохранять звук приложений на этом Mac."
+                "System audio in dictation and meeting recordings requires macOS 14.2 or later. Microphone-only dictation remains available on this Mac.",
+                "Системный звук в диктовке и записях встреч требует macOS 14.2 или новее. На этом Mac доступна диктовка только через микрофон."
             )
         }
         return t(
-            "Grant Microphone for your voice, Accessibility for the global dictation hotkey and text insertion, and System Audio so meeting recordings capture other speakers and audio playing on your Mac.",
-            "Разреши микрофон для своего голоса, Универсальный доступ для глобальной клавиши и вставки текста, а звук Mac — чтобы записи встреч сохраняли других участников и аудио из приложений."
+            "Grant Microphone for your voice, Accessibility for the global dictation hotkey and text insertion, and System Audio so dictation and meeting recordings capture other speakers and audio playing on your Mac.",
+            "Разреши микрофон для своего голоса, Универсальный доступ для глобальной клавиши и вставки текста, а звук Mac — чтобы диктовка и встречи слышали других участников и аудио из приложений."
         )
     }
 

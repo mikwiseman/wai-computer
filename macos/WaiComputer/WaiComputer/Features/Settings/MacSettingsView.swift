@@ -1845,8 +1845,8 @@ struct MacSettingsView: View {
 
     private var dictationPrivacyText: String {
         return t(
-            "WaiComputer only sends microphone audio while you are actively dictating.",
-            "WaiComputer отправляет звук с микрофона только во время активной диктовки."
+            "WaiComputer sends microphone and system audio only while you are actively dictating.",
+            "WaiComputer отправляет звук с микрофона и системный звук только во время активной диктовки."
         )
     }
 

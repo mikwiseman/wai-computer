@@ -221,6 +221,10 @@ final class DictationManager: ObservableObject {
     /// starts ONCE for the lifetime of the dictation feature, and per-press
     /// sessions just attach a buffer fan-out via `lease()`.
     private var activeAudioLease: AudioEngineHost.Lease?
+    /// System-audio half of main dictation on macOS 14.2+. Stored behind the
+    /// deployment-safe protocol because `DualAudioCapture` itself is only
+    /// available where Core Audio process taps exist.
+    private var activeDictationAudioCapture: (any AudioCaptureProtocol)?
     private var providerAudioTask: Task<Void, Never>?
     private var sessionEventTask: Task<Void, Never>?
     private var cleanupStreamTask: Task<String, Error>?
@@ -693,6 +697,32 @@ final class DictationManager: ObservableObject {
             try await AudioEngineHost.shared.prewarm()
             let lease = try await AudioEngineHost.shared.lease()
             activeAudioLease = lease
+            let liveAudioBuffers: AsyncStream<AVAudioPCMBuffer>
+            let captureSource: String
+            if mode == .dictation, #available(macOS 14.2, *) {
+                let dualCapture = DualAudioCapture(liveMicrophoneBuffers: lease.buffers)
+                try await dualCapture.startRecording()
+                guard state == .connecting else {
+                    await dualCapture.stopRecording()
+                    await AudioEngineHost.shared.release(lease)
+                    if activeAudioLease?.id == lease.id {
+                        activeAudioLease = nil
+                    }
+                    await AudioEngineHost.shared.teardown()
+                    return
+                }
+                activeDictationAudioCapture = dualCapture
+                liveAudioBuffers = dualCapture.audioBuffers
+                captureSource = "microphone_and_system"
+            } else {
+                // Translation, Ask Anything, and Transform are intentional
+                // microphone-only commands so call audio cannot become an
+                // accidental instruction. Main dictation also stays mic-only
+                // before macOS 14.2, where Core Audio process taps do not exist
+                // and onboarding explicitly identifies compatibility mode.
+                liveAudioBuffers = lease.buffers
+                captureSource = "microphone"
+            }
             let startupAudioBuffer = DictationStartupAudioBuffer(
                 maxBufferedBytes: Self.startupAudioMaxBufferedBytes
             )
@@ -702,7 +732,7 @@ final class DictationManager: ObservableObject {
             )
             let audioCounter = audioSendCounter
             let liveProvider = Self.liveSTTProvider
-            providerAudioTask = Task.detached(priority: .userInitiated) { [weak self, startupAudioBuffer, lease, session, liveProvider] in
+            providerAudioTask = Task.detached(priority: .userInitiated) { [weak self, startupAudioBuffer, lease, liveAudioBuffers, session, liveProvider] in
                 var liveSent = 0
 
                 func pump(_ buffer: AVAudioPCMBuffer) async -> Bool {
@@ -750,7 +780,7 @@ final class DictationManager: ObservableObject {
                 // Then drain live buffers until the lease is released by the
                 // main flow (finishProviderAudioPumpBeforeFinalizing) or
                 // cleanup() — both finish the underlying continuation.
-                for await buffer in lease.buffers {
+                for await buffer in liveAudioBuffers {
                     let ok = await pump(buffer)
                     if !ok { return }
                 }
@@ -761,6 +791,7 @@ final class DictationManager: ObservableObject {
                 "startupBuffered": true,
                 "preRollBuffers": lease.preRoll.count,
                 "engineHost": true,
+                "captureSource": captureSource,
             ])
 
             refreshSettingsAndPrefetchIfNeeded(apiClient: apiClient, reason: "start")
@@ -872,7 +903,13 @@ final class DictationManager: ObservableObject {
             }
         } catch {
             log.error("Failed to start dictation")
-            self.error = error.userFacingMessage(context: .dictation)
+            if error is DualAudioCaptureError || error is SystemAudioCaptureError {
+                self.error = RecordingCopy.systemAudioCaptureUnavailableMessage(
+                    language: LanguageManager.shared.current
+                )
+            } else {
+                self.error = error.userFacingMessage(context: .dictation)
+            }
             instrumentationSession?.failure(error, extras: ["stage": "start"])
             instrumentationSession = nil
             await resetAfterStartFailure()
@@ -902,7 +939,7 @@ final class DictationManager: ObservableObject {
         instrumentationSession?.event(.finalizingStarted, data: ["durationMs": Int(dictationDuration * 1000)])
 
         // Drain the active provider before choosing the best final transcript.
-        await finishProviderAudioPumpBeforeFinalizing()
+        guard await finishProviderAudioPumpBeforeFinalizing() else { return }
         guard shouldContinueFinalization() else { return }
 
         // Start cleanup speculatively only when the transcript is already
@@ -1660,23 +1697,62 @@ final class DictationManager: ObservableObject {
         await cleanup()
     }
 
-    private func finishProviderAudioPumpBeforeFinalizing() async {
+    private func finishProviderAudioPumpBeforeFinalizing() async -> Bool {
         if let lease = activeAudioLease {
-            await waitForFinalCaptureTail(lease: lease)
+            await waitForFinalCaptureTail(
+                lease: lease,
+                includesSystemAudio: activeDictationAudioCapture != nil
+            )
+            let systemAudioFailure: Bool
+            if #available(macOS 14.2, *),
+               let dualCapture = activeDictationAudioCapture as? DualAudioCapture {
+                systemAudioFailure = !dualCapture.isSystemAudioStreamHealthy
+            } else {
+                systemAudioFailure = false
+            }
+            let dictationAudioCapture = activeDictationAudioCapture
+            activeDictationAudioCapture = nil
+            await dictationAudioCapture?.stopRecording()
             await AudioEngineHost.shared.release(lease)
             activeAudioLease = nil
+            if systemAudioFailure {
+                await providerAudioTask?.value
+                providerAudioTask = nil
+                await AudioEngineHost.shared.teardown()
+                let captureError = DualAudioCaptureError.systemAudioUnavailable(
+                    "The system-audio tap stopped delivering buffers."
+                )
+                self.error = RecordingCopy.systemAudioCaptureUnavailableMessage(
+                    language: LanguageManager.shared.current
+                )
+                instrumentationSession?.failure(captureError, extras: [
+                    "stage": "system_audio_finalize",
+                ])
+                instrumentationSession = nil
+                await providerSession?.cancel()
+                await cleanup()
+                return false
+            }
         }
         await providerAudioTask?.value
         providerAudioTask = nil
         await AudioEngineHost.shared.teardown()
+        return true
     }
 
-    private func waitForFinalCaptureTail(lease: AudioEngineHost.Lease) async {
+    private func waitForFinalCaptureTail(
+        lease: AudioEngineHost.Lease,
+        includesSystemAudio: Bool
+    ) async {
         guard !Task.isCancelled else { return }
         let delay = DictationFinalizationPolicy.captureTailDelay(
             tapBufferFrames: Int(AudioEngineHost.tapBufferFrames),
-            sampleRate: lease.nativeInputFormat?.sampleRate ?? 16_000
+            sampleRate: lease.nativeInputFormat?.sampleRate ?? 16_000,
+            includesSystemAudio: includesSystemAudio
         )
+        // DualAudioCapture flushes aligned mic/system frames every 160 ms.
+        // Give it one complete flush interval plus scheduling margin so the
+        // other speaker's last word is not cut when the hotkey is released.
         try? await Task.sleep(for: delay)
     }
 
@@ -1892,6 +1968,9 @@ final class DictationManager: ObservableObject {
         cleanupPreview = ""
         liveTranscriptCandidate = ""
         await activeProviderSession?.cancel()
+        let dictationAudioCapture = activeDictationAudioCapture
+        activeDictationAudioCapture = nil
+        await dictationAudioCapture?.stopRecording()
         if let lease = activeAudioLease {
             await AudioEngineHost.shared.release(lease)
             activeAudioLease = nil

@@ -1,4 +1,6 @@
 import XCTest
+import AVFoundation
+@testable import WaiComputerKit
 
 final class SystemAudioWarningPolicyTests: XCTestCase {
     func testOnboardingPrimaryActionPromptsFreshMicrophonePermission() {
@@ -47,7 +49,7 @@ final class SystemAudioWarningPolicyTests: XCTestCase {
         )
     }
 
-    func testOnboardingPrimaryActionContinuesWhenDictationPermissionsAreReady() {
+    func testOnboardingPrimaryActionKeepsSystemAudioSetupNonBlocking() {
         XCTAssertEqual(
             OnboardingPermissionPrimaryActionPolicy.primaryButtonTitle(
                 microphoneStatus: .granted,
@@ -57,7 +59,34 @@ final class SystemAudioWarningPolicyTests: XCTestCase {
                 language: .english
             ),
             "Continue",
-            "System audio setup is for meeting capture and must not block microphone dictation setup."
+            "The Core Audio prompt can still be completed from onboarding, Settings, or the first dual-source dictation."
+        )
+    }
+
+    func testOnboardingPrimaryActionContinuesWhenSystemAudioIsReady() {
+        XCTAssertEqual(
+            OnboardingPermissionPrimaryActionPolicy.primaryButtonTitle(
+                microphoneStatus: .granted,
+                accessibilityStatus: .granted,
+                systemAudioReadiness: .ready,
+                restartRecommended: false,
+                language: .english
+            ),
+            "Continue"
+        )
+    }
+
+    func testOnboardingPrimaryActionAllowsExplicitLegacyMicrophoneOnlyMode() {
+        XCTAssertEqual(
+            OnboardingPermissionPrimaryActionPolicy.primaryButtonTitle(
+                microphoneStatus: .granted,
+                accessibilityStatus: .granted,
+                systemAudioReadiness: .unsupported,
+                restartRecommended: false,
+                language: .english
+            ),
+            "Continue",
+            "macOS versions without Core Audio process taps must remain usable with explicit compatibility copy."
         )
     }
 
@@ -85,6 +114,38 @@ final class SystemAudioWarningPolicyTests: XCTestCase {
             RecordingCopy.systemAudioCaptureUnavailableMessage(language: .russian)
                 .contains("System audio capture")
         )
+    }
+
+    @available(macOS 14.2, *)
+    func testDualCaptureAcceptsTheSharedEngineLiveMicrophoneStream() {
+        let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
+        continuation.finish()
+
+        let capture = DualAudioCapture(liveMicrophoneBuffers: stream)
+
+        XCTAssertFalse(capture.isRecording)
+        XCTAssertTrue(capture.mixToMono)
+        XCTAssertFalse(capture.isSystemAudioStreamHealthy)
+    }
+
+    func testDictationManagerWiresSystemAudioWithoutReturningToPerPressMicrophoneCapture() throws {
+        let source = try repositorySource(
+            "macos/WaiComputer/WaiComputer/Features/Dictation/DictationManager.swift"
+        )
+
+        XCTAssertTrue(source.contains("DualAudioCapture(liveMicrophoneBuffers: lease.buffers)"))
+        XCTAssertTrue(source.contains("try await dualCapture.startRecording()"))
+        XCTAssertTrue(source.contains("activeDictationAudioCapture"))
+        XCTAssertFalse(source.contains("MicrophoneCapture()"))
+    }
+
+    func testSettingsPrivacyCopyNamesBothActiveDictationAudioSources() throws {
+        let source = try repositorySource(
+            "macos/WaiComputer/WaiComputer/Features/Settings/MacSettingsView.swift"
+        )
+
+        XCTAssertTrue(source.contains("microphone and system audio only while you are actively dictating"))
+        XCTAssertTrue(source.contains("микрофона и системный звук только во время активной диктовки"))
     }
 
     func testDoesNotShowCaptureWarningBeforeStallDetectorFires() {
@@ -216,6 +277,17 @@ final class SystemAudioWarningPolicyTests: XCTestCase {
                 finalTranscript: "hello world"
             ),
             "hello world hello world"
+        )
+    }
+
+    private func repositorySource(_ relativePath: String) throws -> String {
+        var repositoryRoot = URL(fileURLWithPath: #filePath)
+        for _ in 0..<4 {
+            repositoryRoot.deleteLastPathComponent()
+        }
+        return try String(
+            contentsOf: repositoryRoot.appendingPathComponent(relativePath),
+            encoding: .utf8
         )
     }
 }
