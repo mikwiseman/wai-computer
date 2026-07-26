@@ -554,6 +554,116 @@ final class DualAudioCaptureTests: XCTestCase {
         }
     }
 
+    // MARK: - Stop must not swallow the tail of the utterance
+
+    /// Collect every frame the dual capture emits until its stream finishes.
+    private func collectEmittedFrames(
+        from capture: DualAudioCapture
+    ) -> Task<Int, Never> {
+        let buffers = capture.audioBuffers
+        return Task {
+            var frames = 0
+            for await buffer in buffers {
+                frames += Int(buffer.frameLength)
+            }
+            return frames
+        }
+    }
+
+    /// A tail shorter than the 80 ms steady-state minimum flush is still the
+    /// user's last word. Before the final-drain fix it stayed in the buffer
+    /// and was wiped by `resetBufferedState()` — the dictation ended mid-word.
+    func testStopFlushesTailShorterThanTheMinimumFlushSize() async throws {
+        let mic = MockAudioCapture(emitInterval: 60)
+        let system = PausableSystemAudioCapture()
+        let capture = DualAudioCapture(mic: mic, system: system)
+        // 1000 frames @16 kHz = 62.5 ms — under the 1280-frame (80 ms) minimum.
+        let tailFrames: UInt32 = 1000
+        guard let tail = MockAudioCapture.constantBuffer(
+            value: 0.4,
+            channelCount: 1,
+            frameCount: tailFrames
+        ) else {
+            return XCTFail("Could not build the tail buffer")
+        }
+        mic.injectBuffers([tail])
+
+        let collector = collectEmittedFrames(from: capture)
+        try await capture.startRecording()
+        await waitUntil { mic.producedBufferCount >= 1 }
+        await capture.stopRecording()
+
+        let emitted = await collector.value
+        XCTAssertEqual(
+            emitted,
+            Int(tailFrames),
+            "Stopping must flush the sub-80 ms tail instead of discarding the last word."
+        )
+    }
+
+    /// The steady-state flush keeps channels in sync by emitting only
+    /// `min(mic, system)` frames. On stop that rule truncated the microphone
+    /// tail whenever system audio lagged behind — the periodic "end of the
+    /// text is cut off" report. The final drain must emit every mic frame,
+    /// padding the system channel with silence.
+    func testStopDrainsFullMicTailWhenSystemAudioLagsBehind() async throws {
+        let mic = MockAudioCapture(emitInterval: 60)
+        let system = PausableSystemAudioCapture()
+        let capture = DualAudioCapture(mic: mic, system: system)
+        let micFrames: UInt32 = 8000  // 500 ms of speech
+        guard let speech = MockAudioCapture.constantBuffer(
+            value: 0.4,
+            channelCount: 1,
+            frameCount: micFrames
+        ) else {
+            return XCTFail("Could not build the microphone buffer")
+        }
+        mic.injectBuffers([speech])
+
+        let collector = collectEmittedFrames(from: capture)
+        try await capture.startRecording()
+        await waitUntil { mic.producedBufferCount >= 1 }
+        // System audio delivered only 160 frames (10 ms) against 500 ms of mic.
+        system.emitBuffer(value: 0.2)
+        await capture.stopRecording()
+
+        let emitted = await collector.value
+        XCTAssertEqual(
+            emitted,
+            Int(micFrames),
+            "Every captured microphone frame must survive stop, even when the system channel lags."
+        )
+    }
+
+    /// Microphone-only dual capture (system audio never started) must drain
+    /// its tail too — the final flush used to be skipped entirely.
+    func testStopFlushesTailWhenSystemAudioNeverStarted() async throws {
+        let mic = MockAudioCapture(emitInterval: 60)
+        let system = PausableSystemAudioCapture()
+        let capture = DualAudioCapture(mic: mic, system: system)
+        let micFrames: UInt32 = 3000
+        guard let speech = MockAudioCapture.constantBuffer(
+            value: 0.4,
+            channelCount: 1,
+            frameCount: micFrames
+        ) else {
+            return XCTFail("Could not build the microphone buffer")
+        }
+        mic.injectBuffers([speech])
+
+        let collector = collectEmittedFrames(from: capture)
+        try await capture.startRecording()
+        await waitUntil { mic.producedBufferCount >= 1 }
+        await capture.stopRecording()
+
+        let emitted = await collector.value
+        XCTAssertEqual(
+            emitted,
+            Int(micFrames),
+            "A silent system channel must not cost the user the end of their dictation."
+        )
+    }
+
     private func waitUntil(
         timeout: Duration = .seconds(1),
         condition: @escaping @Sendable () -> Bool

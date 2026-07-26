@@ -295,16 +295,28 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         flushTask = nil
         earlySystemAudioCheckTask?.cancel()
         earlySystemAudioCheckTask = nil
+
+        // Stop the SOURCES before tearing down the accumulator tasks: cancelling
+        // the consumers first discards every buffer still in flight, which is
+        // exactly the last word of the utterance. The live-microphone wrapper
+        // can never finish its stream (the audio-engine lease owns it), so the
+        // hand-off is a bounded wait rather than an await on the tasks.
+        await mic.stopRecording()
+        if hasSystemAudio {
+            await system.stopRecording()
+        }
+        await drainInFlightSourceBuffers()
+
         micTask?.cancel()
         micTask = nil
         systemTask?.cancel()
         systemTask = nil
 
-        await mic.stopRecording()
-        if hasSystemAudio {
-            await system.stopRecording()
-            flushDualBuffers()
-        }
+        // Whatever is still buffered is the tail the user just spoke, and
+        // resetBufferedState() below destroys it. Emit it all, ignoring the
+        // steady-state pacing rules that exist only to keep live flushes
+        // channel-aligned.
+        flushDualBuffers(final: true)
 
         resetBufferedState()
 
@@ -318,10 +330,44 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         continuationLock.deallocate()
     }
 
+    /// Wait, briefly, for buffers the sources already emitted to reach the
+    /// accumulator tasks. Returns as soon as the buffered frame count stops
+    /// growing (typically one 5 ms poll) and is bounded at 50 ms so a stream
+    /// that never finishes can never stall a stop.
+    private func drainInFlightSourceBuffers() async {
+        var previous = -1
+        for _ in 0..<10 {
+            let current = bufferedFrameCount()
+            if current == previous { return }
+            previous = current
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    private func bufferedFrameCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return micBuffer.count + systemBuffer.count
+    }
+
     /// Flush accumulated mic + system samples into a 2-channel non-interleaved PCM buffer.
     /// Uses the minimum of both buffers when both have data, to keep channels in sync.
     /// Pads the system channel with silence if an already-started system stream stalls.
-    private func flushDualBuffers() {
+    ///
+    /// `final` is the stop-time drain: it empties the microphone buffer in
+    /// one-second chunks regardless of the minimum-flush and channel-sync rules,
+    /// because at that point there is no later flush to catch the remainder.
+    private func flushDualBuffers(final: Bool = false) {
+        guard final else {
+            _ = flushOnce(final: false)
+            return
+        }
+        while flushOnce(final: true) {}
+    }
+
+    /// Emit at most one buffer. Returns `true` when samples were flushed.
+    @discardableResult
+    private func flushOnce(final: Bool) -> Bool {
         lock.lock()
         let micCount = micBuffer.count
         let sysCount = systemBuffer.count
@@ -334,7 +380,16 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         // If system audio is stalling (has zero samples), use mic with silence padding
         // to avoid blocking the entire pipeline.
         let frames: Int
-        if sysCount >= minFlushSize && micCount >= minFlushSize {
+        if final {
+            // Stop-time drain: take everything the microphone captured, one
+            // second at a time. The channel-sync and minimum-size rules pace
+            // the live stream; applying them here would delete the tail.
+            guard micCount > 0 else {
+                lock.unlock()
+                return false
+            }
+            frames = min(micCount, Int(config.sampleRate))
+        } else if sysCount >= minFlushSize && micCount >= minFlushSize {
             // Both have enough — use minimum to keep in sync
             frames = min(micCount, sysCount)
         } else if micCount >= minFlushSize && sysCount == 0 {
@@ -347,12 +402,12 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         } else {
             // Not enough mic data yet
             lock.unlock()
-            return
+            return false
         }
 
         guard frames > 0 else {
             lock.unlock()
-            return
+            return false
         }
 
         let micSamples = Array(micBuffer.prefix(frames))
@@ -390,15 +445,15 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
                 sampleRate: config.sampleRate,
                 channels: 1,
                 interleaved: false
-            ) else { return }
+            ) else { return false }
 
             guard let outBuffer = AVAudioPCMBuffer(
                 pcmFormat: format,
                 frameCapacity: AVAudioFrameCount(frames)
-            ) else { return }
+            ) else { return false }
             outBuffer.frameLength = AVAudioFrameCount(frames)
 
-            guard let outData = outBuffer.floatChannelData else { return }
+            guard let outData = outBuffer.floatChannelData else { return false }
             let mono = outData[0]
 
             for i in 0..<frames {
@@ -419,15 +474,15 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
                 sampleRate: config.sampleRate,
                 channels: 2,
                 interleaved: false
-            ) else { return }
+            ) else { return false }
 
             guard let outBuffer = AVAudioPCMBuffer(
                 pcmFormat: format,
                 frameCapacity: AVAudioFrameCount(frames)
-            ) else { return }
+            ) else { return false }
             outBuffer.frameLength = AVAudioFrameCount(frames)
 
-            guard let outData = outBuffer.floatChannelData else { return }
+            guard let outData = outBuffer.floatChannelData else { return false }
             let ch0 = outData[0] // mic
             let ch1 = outData[1] // system
 
@@ -440,6 +495,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
             continuation?.yield(outBuffer)
             os_unfair_lock_unlock(continuationLock)
         }
+        return true
     }
 
     static func bufferContainsAudibleSamples(_ buffer: AVAudioPCMBuffer) -> Bool {

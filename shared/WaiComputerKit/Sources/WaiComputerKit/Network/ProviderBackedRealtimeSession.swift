@@ -204,7 +204,10 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             try? await Task.sleep(for: .milliseconds(50))
         }
 
-        if await sendCloseStream(webSocket) {
+        if await sendCloseStream(webSocket),
+           RealtimeCloseDrainPolicy.shouldDrainAfterCloseStream(
+               finalizationMarkerReceived: finalizationMarkerReceived
+           ) {
             await drainCloseStreamWindow(timeout: timeout)
         }
         return collectedSegments
