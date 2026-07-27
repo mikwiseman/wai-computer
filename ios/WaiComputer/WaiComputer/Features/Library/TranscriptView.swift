@@ -17,25 +17,31 @@ struct TranscriptView: View {
         if segments.isEmpty {
             emptyState
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .center, spacing: Spacing.md) {
-                        Text(t("Transcript", "Расшифровка"))
-                            .waiSectionHeader()
-                        Spacer()
-                        copyTranscriptButton
-                    }
-
-                    ForEach(displayCache.turns(for: segments, languageCode: speakerLanguageCode)) { turn in
-                        SegmentView(
-                            segment: turn.displaySegment,
-                            recordingId: recordingId,
-                            onAssigned: onAssigned
-                        )
-                    }
+            // `List`, not `ScrollView { LazyVStack }`. A lazy stack creates rows
+            // on demand but never recycles them: on a long recording every row
+            // scrolled past stays realized, so each scroll re-measures the whole
+            // realized tree. macOS moved to `List` for exactly this reason; iOS
+            // was left behind.
+            List {
+                HStack(alignment: .center, spacing: Spacing.md) {
+                    Text(t("Transcript", "Расшифровка"))
+                        .waiSectionHeader()
+                    Spacer()
+                    copyTranscriptButton
                 }
-                .padding(24)
+                .transcriptListRow()
+
+                ForEach(displayCache.turns(for: segments, languageCode: speakerLanguageCode)) { turn in
+                    SegmentView(
+                        segment: turn.displaySegment,
+                        recordingId: recordingId,
+                        onAssigned: onAssigned
+                    )
+                    .transcriptListRow()
+                }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .accessibilityIdentifier("transcript-content")
         }
     }
@@ -252,4 +258,17 @@ struct SegmentView: View {
         Segment(id: "2", speaker: "Speaker 2", content: "This is another segment.", startMs: 5000),
     ])
     .environmentObject(LanguageManager.shared)
+}
+
+private extension View {
+    /// Row chrome for the transcript `List`: keep the reading measure and the
+    /// original 24pt gutters, and strip the separators and background so the
+    /// list reads as prose rather than as a table.
+    func transcriptListRow() -> some View {
+        self
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .listRowInsets(EdgeInsets(top: 8, leading: 24, bottom: 8, trailing: 24))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+    }
 }
