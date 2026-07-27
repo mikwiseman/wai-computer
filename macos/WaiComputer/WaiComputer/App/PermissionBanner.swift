@@ -34,7 +34,7 @@ struct PermissionBanner: View {
                     .foregroundStyle(Color.white)
                 Text(subtitle)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.white.opacity(0.55))
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -58,7 +58,7 @@ struct PermissionBanner: View {
             Button(action: onDismiss) {
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(0.12))
+                        .fill(.quaternary)
                         .frame(width: 22, height: 22)
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .bold))

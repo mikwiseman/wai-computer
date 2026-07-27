@@ -16,12 +16,12 @@ struct DictationOverlayView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(statusText)
                     .font(Typography.headingSmall)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
 
                 if !manager.interimTranscript.isEmpty {
                     Text(transcriptPreview)
                         .font(Typography.caption)
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         // Head truncation: during live dictation the freshest
                         // words are at the END — clip the oldest ones instead.
@@ -40,7 +40,7 @@ struct DictationOverlayView: View {
             if manager.state == .listening {
                 Text(formattedDuration)
                     .font(Typography.mono)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.secondary)
             }
 
             // Cancel button
@@ -49,9 +49,9 @@ struct DictationOverlayView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.secondary)
                     .frame(width: 20, height: 20)
-                    .background(.white.opacity(0.15))
+                    .background(.quaternary)
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
@@ -179,10 +179,10 @@ private struct TranslationTargetChip: View {
                         .font(.system(size: 7, weight: .bold))
                 }
             }
-            .foregroundStyle(.white.opacity(0.85))
+            .foregroundStyle(.primary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
-            .background(.white.opacity(0.15))
+            .background(.quaternary)
             .clipShape(Capsule())
         }
         .menuStyle(.borderlessButton)
@@ -204,7 +204,7 @@ struct DictationNoticeView: View {
                 .foregroundStyle(.yellow)
             Text(text)
                 .font(Typography.caption)
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
         }

@@ -310,7 +310,7 @@ struct AuthView: View {
         Button(action: submit) {
             Group {
                 if appState.isLoading {
-                    ProgressView().tint(.white)
+                    ProgressView().tint(Palette.onAccent)
                 } else {
                     Text(buttonTitle)
                         .lineLimit(1)

@@ -286,7 +286,7 @@ struct OnboardingView: View {
             HStack(spacing: Spacing.xs) {
                 if isRequestingPermission {
                     ProgressView()
-                        .tint(.white)
+                        .tint(Palette.onAccent)
                         .scaleEffect(0.8)
                 }
                 Text(primaryButtonTitle)
