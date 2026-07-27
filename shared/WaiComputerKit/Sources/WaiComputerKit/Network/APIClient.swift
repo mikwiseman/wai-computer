@@ -1929,12 +1929,14 @@ public actor APIClient {
     public func cleanupDictation(
         text: String,
         vocabulary: [String] = [],
-        context: DictationCleanupContext? = nil
+        context: DictationCleanupContext? = nil,
+        cleanupLevel: String? = nil
     ) async throws -> String {
         struct CleanupRequest: Encodable {
             let text: String
             let vocabulary: [String]?
             let context: DictationCleanupContext?
+            let cleanup_level: String?
         }
         struct CleanupResponse: Decodable {
             let text: String
@@ -1946,7 +1948,8 @@ public actor APIClient {
         let payload = CleanupRequest(
             text: text,
             vocabulary: cleaned.isEmpty ? nil : cleaned,
-            context: context
+            context: context,
+            cleanup_level: cleanupLevel
         )
         let response: CleanupResponse = try await request(
             .POST,
@@ -1960,18 +1963,23 @@ public actor APIClient {
     public func streamCleanupDictation(
         text: String,
         vocabulary: [String] = [],
-        context: DictationCleanupContext? = nil
+        context: DictationCleanupContext? = nil,
+        cleanupLevel: String? = nil
     ) async throws -> AsyncStream<DictationCleanupStreamEvent> {
         struct CleanupRequest: Encodable {
             let text: String
             let vocabulary: [String]?
             let context: DictationCleanupContext?
+            // The level lives in this Mac's settings, so it travels with the
+            // request; the account-wide setting is only the fallback.
+            let cleanup_level: String?
         }
         let cleaned = normalizedDictationVocabulary(vocabulary)
         let payload = CleanupRequest(
             text: text,
             vocabulary: cleaned.isEmpty ? nil : cleaned,
-            context: context
+            context: context,
+            cleanup_level: cleanupLevel
         )
         let path = "/api/dictation/cleanup/stream"
 

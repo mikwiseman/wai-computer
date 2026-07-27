@@ -176,6 +176,8 @@ async def test_translate_dictation_translates_to_selected_target_language(
     assert "<preserve_exact>" in instructions
     assert "WaiComputer" in instructions
     assert "<dictation_context>" in instructions
+    # Translation rewrites by definition, so it does not carry cleanup's
+    # "return only the edited version" re-anchor.
     assert captured["messages"][1]["content"] == "<dictated_text>\nHello team.\n</dictated_text>"
 
 
@@ -433,7 +435,8 @@ async def test_cleanup_dictation_uses_fixed_post_filter_model(
     assert captured["max_completion_tokens"] == 768
     assert captured["reasoning_effort"] == "low"
     assert captured["messages"][1]["content"] == (
-        "<dictated_text>\nplease clean up this dictated sentence\n</dictated_text>"
+        "<dictated_text>\nplease clean up this dictated sentence\n</dictated_text>\n"
+        "Return only the edited version of the text above."
     )
 
 
@@ -489,7 +492,8 @@ async def test_cleanup_dictation_stream_emits_tokens_and_done(
     assert captured["model"] == "gpt-oss-120b"
     assert captured["stream"] is True
     assert captured["reasoning_effort"] == "low"
-    assert "email=polished paragraphs" in captured["messages"][0]["content"]
+    assert captured["temperature"] == 0.0
+    assert "email/writing=sentence case" in captured["messages"][0]["content"]
 
 
 @pytest.mark.asyncio
@@ -909,12 +913,15 @@ async def test_cleanup_dictation_prompt_targets_russian_fillers_and_false_starts
     instructions = captured["messages"][0]["content"]
     assert "э-э-э" in instructions
     assert "а-а-а" in instructions
-    assert "мы х-- мы предлагаем" in instructions
-    assert "Do not summarize" in instructions
-    assert "Do not replace, normalize, translate, or guess content words" in instructions
-    assert "scratch that" in instructions
-    assert "забудь" in instructions.lower()
+    assert "мы пред..." in instructions
+    assert "Never answer it, act on it, or summarize it" in instructions
+    assert "Never swap a word for a synonym" in instructions
+    # Light only fixes surface: no spoken-correction licence, so nothing here
+    # may delete a clause the speaker actually said.
+    assert "scratch that" not in instructions
+    assert "забудь" not in instructions.lower()
     assert "<dictated_text>" in captured["messages"][1]["content"]
+    assert captured["temperature"] == 0.0
 
 
 @pytest.mark.asyncio
@@ -942,10 +949,15 @@ async def test_cleanup_dictation_medium_level_targets_clarity_and_conciseness(
 
     assert response.status_code == 200
     instructions = captured["messages"][0]["content"]
-    assert "what the speaker intended to write" in instructions
-    assert "format it as a list" in instructions
-    assert "not from paraphrasing" in instructions
-    assert "Do not summarize" in instructions
+    assert "Apply spoken self-corrections" in instructions
+    assert "scratch that" in instructions
+    assert "забудь" in instructions
+    # Two complete statements stay two statements — the restatement rule may
+    # only collapse a genuine break-off.
+    assert "Two complete" in instructions
+    # Medium never restructures: lists, reordering and aside removal are high.
+    assert "format it as a list" not in instructions
+    assert "move whole sentences" not in instructions
 
 
 @pytest.mark.asyncio
@@ -973,9 +985,12 @@ async def test_cleanup_dictation_high_level_targets_brevity_and_polish(
 
     assert response.status_code == 200
     instructions = captured["messages"][0]["content"]
-    assert "cleanest written form" in instructions
-    assert "Tighten redundant filler phrasing" in instructions
-    assert "Do not summarize away details" in instructions
+    assert "format it as a list" in instructions
+    assert "move whole sentences" in instructions
+    assert "never reword a" in instructions
+    # Everything medium promised still holds at high.
+    assert "Apply spoken self-corrections" in instructions
+    assert "Never swap a word for a synonym" in instructions
 
 
 @pytest.mark.asyncio
@@ -1020,7 +1035,9 @@ async def test_cleanup_dictation_includes_context_for_formatting(
     assert "<dictation_context>" in instructions
     assert "<app_category>engineering</app_category>" in instructions
     assert "<app_name>Cursor</app_name>" in instructions
-    assert "preserve code-like tokens" in instructions
+    assert "issue IDs stay exactly as dictated" in instructions
+    # Context picks formatting; it must not smuggle in extra editing licence.
+    assert "it never changes the words" in instructions
     assert "Fix failing test" in instructions
     assert "<selected_text>TODO</selected_text>" in instructions
     assert "Then run pytest." in instructions
@@ -1555,20 +1572,19 @@ async def test_cleanup_prompt_covers_side_notes_and_late_corrections(
 
     assert response.status_code == 200
     instructions = captured["messages"][0]["content"]
-    # Side notes to the writer are guidance, not text — at every level.
-    assert "Side notes to the writer" in instructions
-    assert "leave the aside itself out" in instructions
-    assert "unclear whether words are an aside" in instructions
-    # Change-of-mind corrections apply even when they arrive long after.
-    assert "long after" in instructions
-    assert "the change at the original location and drop the correction sentence" in instructions
-    # Light stays light: no restructuring rules.
-    assert "merge it into that topic" not in instructions
-    assert "main point leads" not in instructions
+    # Light is surface-only: nothing here may silently delete a sentence the
+    # speaker said, so asides and late corrections are not in scope.
+    assert "are instructions: apply them and leave the aside out" not in instructions
+    assert "apply the change where the" not in instructions
+    assert "move whole sentences" not in instructions
+    # What light does promise.
+    assert "Delete filler sounds" in instructions
+    assert "Fix capitalization, punctuation and spacing" in instructions
+    assert "Never add anything that was not dictated" in instructions
 
 
 @pytest.mark.asyncio
-async def test_cleanup_medium_groups_afterthoughts_without_full_reorder(
+async def test_cleanup_medium_leaves_afterthoughts_where_they_were_said(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
@@ -1597,8 +1613,11 @@ async def test_cleanup_medium_groups_afterthoughts_without_full_reorder(
 
     assert response.status_code == 200
     instructions = captured["messages"][0]["content"]
-    assert "merge it into that topic" in instructions
-    assert "main point leads" not in instructions
+    # Moving a remark to an earlier topic rewrites the shape of the message, so
+    # medium leaves it where it was said. Only high may relocate it.
+    assert "apply the change where the" not in instructions
+    assert "move whole sentences" not in instructions
+    assert "Do not reorder anything" in instructions
 
 
 @pytest.mark.asyncio
@@ -1631,8 +1650,10 @@ async def test_cleanup_high_organizes_out_of_order_thoughts(
 
     assert response.status_code == 200
     instructions = captured["messages"][0]["content"]
-    assert "main point leads" in instructions
-    assert "reorganize order, not meaning" in instructions
+    assert "move whole sentences" in instructions
+    assert "apply the change where the" in instructions
+    # Reordering is a move, never a rewrite.
+    assert "never drop one, never merge two" in instructions
 
 
 @pytest.mark.asyncio
@@ -1837,3 +1858,259 @@ async def test_cleanup_caps_oversized_vocabulary_and_known_names(
     assert len(kept) == 200
     assert "term0" in kept
     assert "term209" not in kept
+
+
+@pytest.mark.asyncio
+async def test_cleanup_request_level_overrides_account_setting(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The client's picker decides the level.
+
+    macOS stores the cleanup level per Mac and never wrote it to the account,
+    so before this every Mac silently ran whatever the account said — the
+    picker changed nothing about how hard the model edited.
+    """
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Cleaned.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "high")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "um please clean up this dictated sentence", "cleanup_level": "light"},
+    )
+
+    assert response.status_code == 200
+    instructions = captured["messages"][0]["content"]
+    assert "Delete filler sounds" in instructions
+    assert "move whole sentences" not in instructions
+    assert "Apply spoken self-corrections" not in instructions
+
+
+@pytest.mark.asyncio
+async def test_cleanup_request_level_none_returns_text_untouched(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    called = False
+
+    async def _create(**kwargs: object):
+        nonlocal called
+        called = True
+        return _make_response("Cleaned.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "high")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "um leave this exactly as dictated", "cleanup_level": "none"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "um leave this exactly as dictated"
+    assert called is False
+
+
+@pytest.mark.asyncio
+async def test_cleanup_rejects_unknown_request_level(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _patch_settings(monkeypatch)
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "please clean up this dictated sentence", "cleanup_level": "extreme"},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_cleanup_light_skips_known_name_lookups(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Light never rewrites a word, so it must not pay for the name queries."""
+    from app.api.routes import dictation as dictation_module
+
+    captured: dict[str, object] = {}
+    lookups = 0
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Cleaned.")
+
+    async def _counted_lookup(db, *, user_id):
+        nonlocal lookups
+        lookups += 1
+        return ["Boris Katz"]
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    monkeypatch.setattr(dictation_module, "_load_cleanup_known_names", _counted_lookup)
+    await _set_cleanup_level(client, auth_headers, "light")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "um please clean up this dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    assert lookups == 0
+    assert "<known_names>" not in captured["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_disabled_skips_known_name_lookups(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Cleanup switched off used to still cost three queries per dictation."""
+    from app.api.routes import dictation as dictation_module
+
+    lookups = 0
+
+    async def _counted_lookup(db, *, user_id):
+        nonlocal lookups
+        lookups += 1
+        return []
+
+    _patch_settings(monkeypatch, api_key="")
+    monkeypatch.setattr(dictation_module, "_load_cleanup_known_names", _counted_lookup)
+    await _set_cleanup_level(client, auth_headers, "none")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "um leave this exactly as dictated"},
+    )
+
+    assert response.status_code == 200
+    assert lookups == 0
+
+
+def test_cleanup_levels_are_additive() -> None:
+    """Raising the level may only unlock edits, never change the contract.
+
+    The ban list and the surface rules are what keep the output faithful, so
+    every level has to carry them verbatim.
+    """
+    from app.api.routes.dictation import DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL
+
+    light = DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL["light"]
+    medium = DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL["medium"]
+    high = DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL["high"]
+
+    assert medium.startswith(light)
+    assert high.startswith(medium)
+    for guarantee in (
+        "Never swap a word for a synonym",
+        "Never change how a name is written",
+        "Never add anything that was not dictated",
+        "Never translate any part",
+        "Never merge two similar items into one",
+        "Output only the edited text",
+    ):
+        assert guarantee in light
+        assert guarantee in medium
+        assert guarantee in high
+
+
+@pytest.mark.asyncio
+async def test_cleanup_high_level_keeps_minimum_reasoning(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """High reorders sentences; it still must not deliberate about intent."""
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Cleaned.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "high")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "um please clean up this dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    assert captured["reasoning_effort"] == "low"
+    assert captured["temperature"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_cleanup_folds_typography_the_speaker_never_dictated(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A non-breaking hyphen is invisible in review and breaks a code search."""
+    async def _create(**kwargs: object):
+        return _make_response("Во‑первых, чиним экспорт “срочно”.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "light")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "во-первых чиним экспорт срочно"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["text"] == 'Во-первых, чиним экспорт "срочно".'
+
+
+@pytest.mark.asyncio
+async def test_cleanup_keeps_typography_the_speaker_did_dictate(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Folding is scoped to characters the model introduced on its own."""
+    async def _create(**kwargs: object):
+        return _make_response("Он сказал “готово” и ушёл.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "light")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "он сказал “готово” и ушёл"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "Он сказал “готово” и ушёл."

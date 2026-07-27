@@ -1151,7 +1151,8 @@ final class DictationManager: ObservableObject {
         let stream = try await apiClient.streamCleanupDictation(
             text: rawText,
             vocabulary: vocabulary,
-            context: context
+            context: context,
+            cleanupLevel: cleanupLevel
         )
         var accumulated = ""
         for await event in stream {

@@ -1055,6 +1055,9 @@ final class APIClientTests: XCTestCase {
             let app = context?["app"] as? [String: Any]
             XCTAssertEqual(app?["name"] as? String, "Gmail")
             XCTAssertEqual(app?["category"] as? String, "email")
+            // The level lives on this Mac, so the server can only honour the
+            // picker if it travels with the request.
+            XCTAssertEqual(body?["cleanup_level"] as? String, "light")
 
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -1083,7 +1086,8 @@ final class APIClientTests: XCTestCase {
         let stream = try await client.streamCleanupDictation(
             text: "raw dictated text",
             vocabulary: ["WaiComputer", "waicomputer", ""],
-            context: context
+            context: context,
+            cleanupLevel: "light"
         )
 
         var events: [DictationCleanupStreamEvent] = []
