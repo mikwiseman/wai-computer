@@ -934,7 +934,21 @@ async def test_recover_missing_summary_generation_jobs_keeps_stale_failed_enqueu
 @pytest.mark.asyncio
 async def test_apply_and_persist_summary_result_replaces_generated_outputs(
     db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Pin the extractor. Without this the test calls Cerebras for real whenever
+    # a CEREBRAS_API_KEY happens to be in the environment, so it made a paid
+    # network call and its result depended on what the model returned that day;
+    # with no key it passed only because the missing-key error took the
+    # seed-from-summary fallback this test asserts. Raising states that
+    # intent outright.
+    async def _extractor_unavailable(_transcript: str):
+        raise RuntimeError("entity extraction unavailable")
+
+    monkeypatch.setattr(
+        "app.core.summary_generation.extract_entities", _extractor_unavailable
+    )
+
     user = await _user(db_session)
     recording = await _recording(db_session, user)
     existing_summary = Summary(
