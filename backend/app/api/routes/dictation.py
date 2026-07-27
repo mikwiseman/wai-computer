@@ -440,14 +440,22 @@ def _normalized_terms(
 
 
 def _build_vocabulary_block(vocabulary: list[str] | None) -> str:
-    """Render the user's dictionary as the spelling authority for the pass.
+    """Render the user's dictionary as a tagged preserve block.
 
-    Asking only that these spellings be "preserved" does nothing, because the
-    words are not in the transcript to preserve: speech recognition writes an
-    English term spoken inside Russian as "пул реквест", and a passive rule
-    gives the model no licence to put it back. Measured on that exact sentence,
-    the passive wording recovered 0 of 5 terms and this one recovered 5 of 5.
-    The bounded exception is the last sentence — no clear match, no change.
+    This block is deliberately passive, and that costs something real: speech
+    recognition writes an English term spoken inside Russian as "пул реквест",
+    and a preserve-only rule gives the model no licence to put "pull request"
+    back. Wording that did grant that licence recovered 5 of 5 such terms — and
+    then over-fired: it rewrote the adjective "линейный" into the tracker name
+    "Linear", the Russian "го" ("давай") into the language "Go", and completed
+    "вай скул" into the unrelated host "wai.computer". Four rounds of tightening
+    left the last two failing intermittently, which is the wrong shape of bug to
+    ship: silent, plausible, and pointed at a hostname.
+
+    Fuzzy matching belongs in the deterministic replacement path instead, which
+    already runs on every transcript in the realtime bridge and on the client,
+    and cannot over-fire because it matches whole words literally. The fixtures
+    for both directions are kept so this stays measured rather than assumed.
 
     Caps avoid pathological lists drowning out the cleanup instructions.
     """
@@ -456,16 +464,11 @@ def _build_vocabulary_block(vocabulary: list[str] | None) -> str:
         return ""
     joined = "\n".join(cleaned)
     return (
-        "\n\nThe list below holds the canonical spelling of the names, product "
-        "names, technical terms, commands and code symbols this user dictates. "
-        "Speech recognition often gets them wrong: an English term spoken inside "
-        "Russian comes back transliterated (\"пул реквест\", \"мейн\", \"ревью\"), "
-        "or as a similar-sounding wrong word. When a run of the dictation clearly "
-        "refers to one of these entries, write the entry exactly as listed, "
-        "including its case and punctuation — judge by sound and by context. This "
-        "is the one place you may change a word that was not a filler or a spoken "
-        "correction. If no entry clearly matches, change nothing: never force an "
-        "entry in, and never add one the speaker did not say.\n"
+        "\n\nThe user maintains a dictionary of words and phrases that must be "
+        "preserved exactly as written. Use these spellings whenever the dictated "
+        "text already matches them — even if you would normally autocorrect or "
+        "rephrase. Do not substitute an entry for a word that merely sounds like "
+        "it, and do not invent occurrences that are not there.\n"
         f"<preserve_exact>\n{joined}\n</preserve_exact>"
     )
 

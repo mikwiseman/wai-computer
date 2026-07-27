@@ -543,7 +543,8 @@
       "never": [],
       "min_retention": 0.35,
       "max_addition": 0.7,
-      "note": "The failure this block exists for: speech recognition transliterates English terms inside Russian, and only the dictionary can put them back. Retention/addition bounds are slack by construction: every recovered term is a token that was not in the transcript."
+      "note": "The failure this block exists for: speech recognition transliterates English terms inside Russian, and only the dictionary can put them back. Retention/addition bounds are slack by construction: every recovered term is a token that was not in the transcript.",
+      "known_issue": "The cleanup pass does NOT recover transliterated terms: the prompt wording that did (0/5 -> 5/5) also over-fired onto ordinary words and completed \"вай скул\" into \"wai.computer\", intermittently, after four rounds of tightening (2026-07-27). Fuzzy matching belongs in the deterministic replacement path. Reported, not gated."
     },
     {
       "id": "ru-dictionary-stays-inert-without-a-match",
@@ -579,6 +580,134 @@
         "review"
       ],
       "note": "Ordinary speech that sounds near a dictionary entry (\"в центре\" vs \"Sentry\") must be left alone. This is the over-firing guard."
+    },
+    {
+      "id": "ru-dictionary-skips-ordinary-words",
+      "language": "ru",
+      "levels": [
+        "light",
+        "medium",
+        "high"
+      ],
+      "raw": "сейчас там линейный поиск по всему массиву, а тикет заведи в лайнере чтобы не потерялось",
+      "vocabulary": [
+        "Linear",
+        "Go",
+        "main",
+        "rebase",
+        "merge",
+        "wai.computer",
+        "Sentry",
+        "MFC-482",
+        "hash map"
+      ],
+      "must_keep": [
+        "линейный поиск"
+      ],
+      "must_drop": [],
+      "never": [
+        "Linear поиск"
+      ],
+      "min_retention": 0.7,
+      "max_addition": 0.3,
+      "note": "\"линейный\" is an adjective sitting next to a real Linear reference. Only the tracker may be replaced."
+    },
+    {
+      "id": "ru-dictionary-skips-russian-slang",
+      "language": "ru",
+      "levels": [
+        "light",
+        "medium",
+        "high"
+      ],
+      "raw": "го созвонимся после стендапа, покажу где течёт память, го минут через двадцать",
+      "vocabulary": [
+        "Linear",
+        "Go",
+        "main",
+        "rebase",
+        "merge",
+        "wai.computer",
+        "Sentry",
+        "MFC-482",
+        "hash map"
+      ],
+      "must_keep": [
+        "о созвонимся"
+      ],
+      "must_drop": [],
+      "never": [
+        "Go созвонимся",
+        "Go минут"
+      ],
+      "min_retention": 0.7,
+      "max_addition": 0.3,
+      "note": "\"го\" is \"давай\". The memory-leak context makes the Go language look plausible; it is not."
+    },
+    {
+      "id": "ru-dictionary-skips-partial-matches",
+      "language": "ru",
+      "levels": [
+        "light",
+        "medium",
+        "high"
+      ],
+      "raw": "мейнтейнер апстрима говорит что такой подход уже мейнстрим, давай отребейзим ветку на мейн и смержим",
+      "vocabulary": [
+        "Linear",
+        "Go",
+        "main",
+        "rebase",
+        "merge",
+        "wai.computer",
+        "Sentry",
+        "MFC-482",
+        "hash map"
+      ],
+      "must_keep": [
+        "ейнтейнер",
+        "ейнстрим",
+        "требейзим",
+        "мержим"
+      ],
+      "must_drop": [],
+      "never": [
+        "Linear"
+      ],
+      "min_retention": 0.6,
+      "max_addition": 0.4,
+      "note": "\"мейн\" hides inside two unrelated words, and the entries hide inside Russian verbs. Only standalone \"на мейн\" is a target."
+    },
+    {
+      "id": "ru-dictionary-skips-near-misses",
+      "language": "ru",
+      "levels": [
+        "light",
+        "medium",
+        "high"
+      ],
+      "raw": "этот статик залей на вай скул, там отдельный домен под детские проекты, основной прод не трогаем",
+      "vocabulary": [
+        "Linear",
+        "Go",
+        "main",
+        "rebase",
+        "merge",
+        "wai.computer",
+        "Sentry",
+        "MFC-482",
+        "hash map"
+      ],
+      "must_keep": [
+        "скул"
+      ],
+      "must_drop": [],
+      "never": [
+        "wai.computer"
+      ],
+      "min_retention": 0.7,
+      "max_addition": 0.3,
+      "note": "Near-miss on a shared brand prefix. Completing it would deploy a child project at the production host."
     }
   ]
 }
