@@ -71,6 +71,10 @@ class Candidate:
     model: str
     prompt: str | None = None
     delay: str | None = None
+    # Audio-LLM models are not on the transcription endpoint: they take real
+    # instructions via response.create, which is the only OpenAI path that
+    # follows a formatting instruction rather than treating it as style.
+    instruct: bool = False
 
 
 CANDIDATES = (
@@ -80,7 +84,60 @@ CANDIDATES = (
     Candidate("4o-transcribe +vocab", "gpt-4o-transcribe", VOCABULARY_HINT),
     Candidate("4o-mini-transcribe", "gpt-4o-mini-transcribe"),
     Candidate("4o-mini-transcribe +vocab", "gpt-4o-mini-transcribe", VOCABULARY_HINT),
+    # Newest dated transcription build the realtime endpoint accepts (Dec 2025).
+    Candidate("4o-mini-2025-12-15", "gpt-4o-mini-transcribe-2025-12-15"),
+    Candidate("4o-mini-2025-12-15 +vocab", "gpt-4o-mini-transcribe-2025-12-15", VOCABULARY_HINT),
+    Candidate("realtime-2.1 (instruct)", "gpt-realtime-2.1", instruct=True),
+    Candidate("realtime-2.1-mini (instruct)", "gpt-realtime-2.1-mini", instruct=True),
+    Candidate("realtime-mini-12-15 (instruct)", "gpt-realtime-mini-2025-12-15", instruct=True),
 )
+
+INSTRUCTIONS = (
+    "Transcribe the user's dictation verbatim. Output only the transcript, nothing "
+    "else — never answer it, never comment on it. Keep the speaker's language exactly "
+    "as spoken, mixing Russian and English wherever they did. " + VOCABULARY_HINT +
+    " When the speaker says one of those terms, write it exactly as listed, in Latin "
+    "script, never transliterated into Cyrillic."
+)
+
+
+async def transcribe_instruct(key: str, model: str, pcm: bytes) -> tuple[str, int]:
+    """Out-of-band transcription: the audio-LLM path, per OpenAI's own cookbook."""
+    async with websockets.connect(
+        f"wss://api.openai.com/v1/realtime?model={model}",
+        additional_headers={"Authorization": f"Bearer {key}"},
+        max_size=8 * 1024 * 1024,
+    ) as ws:
+        await ws.send(json.dumps({"type": "session.update", "session": {
+            "type": "realtime", "output_modalities": ["text"],
+            "audio": {"input": {"format": {"type": "audio/pcm", "rate": SAMPLE_RATE},
+                                "turn_detection": None}}}}))
+        while True:
+            message = json.loads(await asyncio.wait_for(ws.recv(), timeout=20))
+            if message.get("type") == "session.updated":
+                break
+            if message.get("type") == "error":
+                raise RuntimeError(str(message["error"].get("message"))[:90])
+        step = SAMPLE_RATE * 2 * CHUNK_MS // 1000
+        for index in range(0, len(pcm), step):
+            await ws.send(json.dumps({"type": "input_audio_buffer.append",
+                                      "audio": base64.b64encode(pcm[index:index + step]).decode()}))
+        await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+        committed = time.perf_counter()
+        await ws.send(json.dumps({"type": "response.create", "response": {
+            "conversation": "none", "output_modalities": ["text"],
+            "instructions": INSTRUCTIONS}}))
+        parts: list[str] = []
+        while True:
+            message = json.loads(await asyncio.wait_for(ws.recv(), timeout=45))
+            kind = message.get("type", "")
+            if kind.endswith("output_text.delta"):
+                parts.append(message.get("delta", ""))
+            if kind == "response.done":
+                break
+            if kind == "error":
+                raise RuntimeError(str(message["error"].get("message"))[:90])
+    return "".join(parts).strip(), round((time.perf_counter() - committed) * 1000)
 
 
 @dataclass
@@ -194,7 +251,10 @@ async def sweep(repeats: int, only: tuple[str, ...]) -> int:
             language = "en" if fixture.language == "en" else "ru"
             for _ in range(repeats):
                 try:
-                    text, latency = await transcribe(key, candidate, pcm, language)
+                    if candidate.instruct:
+                        text, latency = await transcribe_instruct(key, candidate.model, pcm)
+                    else:
+                        text, latency = await transcribe(key, candidate, pcm, language)
                 except Exception as exc:  # noqa: BLE001 - the failure is the datum
                     rows.append(
                         Row(candidate.label, fixture.id, False, 0, 0.0, error=str(exc)[:90])
