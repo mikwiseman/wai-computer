@@ -163,3 +163,45 @@ final class TranscriptRenderingTests: XCTestCase {
         XCTAssertEqual(display.rawLabel, "speaker_0")
     }
 }
+
+extension TranscriptRenderingTests {
+    private func longRun(count: Int) -> [Segment] {
+        (0..<count).map { index in
+            Segment(
+                id: "seg-\(index)",
+                speaker: "speaker_0",
+                rawLabel: "speaker_0",
+                personId: nil,
+                displayName: nil,
+                content: "Это довольно длинное предложение из живой диктовки.",
+                startMs: index * 1_000
+            )
+        }
+    }
+
+    /// Every dictation is one speaker across many segments. That used to merge
+    /// into a single turn holding the whole transcript — one `Text` to line-break
+    /// before anything paints, and nothing for `List` to recycle.
+    func testLongSingleSpeakerRunSplitsIntoBoundedTurns() {
+        let turns = TranscriptRendering.mergeTurns(longRun(count: 4_000), languageCode: "ru")
+
+        XCTAssertGreaterThan(turns.count, 120)
+        for turn in turns {
+            XCTAssertLessThan(turn.text.count, 2_000)
+        }
+        XCTAssertEqual(turns.reduce(0) { $0 + $1.segments.count }, 4_000)
+    }
+
+    /// Splitting must not change how ordinary short runs read.
+    func testShortSingleSpeakerRunStillMergesIntoOneTurn() {
+        let turns = TranscriptRendering.mergeTurns(longRun(count: 3), languageCode: "ru")
+
+        XCTAssertEqual(turns.count, 1)
+        XCTAssertEqual(
+            turns.first?.text,
+            "Это довольно длинное предложение из живой диктовки. "
+                + "Это довольно длинное предложение из живой диктовки. "
+                + "Это довольно длинное предложение из живой диктовки."
+        )
+    }
+}

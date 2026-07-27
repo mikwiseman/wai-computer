@@ -46,9 +46,23 @@ function joinFragments(existing: string, addition: string): string {
 }
 
 /**
+ * Longest text a single turn may accumulate before it is split.
+ *
+ * Merging is by speaker, so a recording with one speaker — every dictation, and
+ * any recording the provider did not diarise — used to collapse into a single
+ * turn holding the entire transcript. That turn then rendered as one paragraph,
+ * and because virtualization only engages above `VIRTUALIZE_AFTER_TURNS`, one
+ * turn meant it never engaged at all: the slowest case took the slowest path.
+ * Splitting long runs keeps rows small enough to virtualize and to lay out.
+ */
+const MAX_TURN_CHARS = 1_500;
+
+/**
  * Merge consecutive segments with the same resolved speaker into readable turns.
  * Segments are ordered by `start_ms` (missing timestamps sort last, stably) and
- * empty-content segments are dropped.
+ * empty-content segments are dropped. A run by one speaker is split once it
+ * grows past `MAX_TURN_CHARS`; continuation turns repeat the speaker label,
+ * which is what a long monologue looks like in print anyway.
  */
 export function mergeTurns(segments: Segment[], locale: AuthLocale = "en"): TranscriptTurn[] {
   const ordered = [...segments].sort((a, b) => {
@@ -64,7 +78,7 @@ export function mergeTurns(segments: Segment[], locale: AuthLocale = "en"): Tran
     const text = (seg.content ?? "").trim();
     if (!text) continue;
     const key = segmentSpeakerKey(seg);
-    if (current && key === current.key) {
+    if (current && key === current.key && current.text.length < MAX_TURN_CHARS) {
       current.text = joinFragments(current.text, text);
       current.segments.push(seg);
     } else {

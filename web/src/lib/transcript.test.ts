@@ -150,3 +150,44 @@ describe("transcriptText", () => {
     expect(transcriptText(MONOLOGUE, "plain")).toBe(MONOLOGUE_TEXT);
   });
 });
+
+describe("long single-speaker runs", () => {
+  it("splits a monologue into virtualizable turns", () => {
+    // Every dictation looks like this: one speaker, hundreds of segments. It
+    // used to collapse into a single turn, which is below the virtualization
+    // threshold, so the largest transcripts took the unvirtualized path.
+    const segments = Array.from({ length: 4_000 }, (_, index) => ({
+      id: `seg-${index}`,
+      recording_id: "rec-1",
+      speaker: "Speaker 1",
+      raw_label: "Speaker 1",
+      person_id: null,
+      display_name: null,
+      content: "Это довольно длинное предложение из живой диктовки.",
+      start_ms: index * 1000,
+      end_ms: index * 1000 + 900,
+      confidence: 0.9,
+    })) as unknown as Parameters<typeof mergeTurns>[0];
+
+    const turns = mergeTurns(segments);
+
+    // Above VIRTUALIZE_AFTER_TURNS (120), so the list actually virtualizes.
+    expect(turns.length).toBeGreaterThan(120);
+    for (const turn of turns) {
+      expect(turn.text.length).toBeLessThan(2_000);
+    }
+    // Splitting must not lose or duplicate a single segment.
+    expect(turns.reduce((total, turn) => total + turn.segments.length, 0)).toBe(4_000);
+  });
+
+  it("still merges a short run by one speaker into one turn", () => {
+    const segments = [
+      { id: "a", speaker: "Speaker 1", content: "Первая фраза.", start_ms: 0 },
+      { id: "b", speaker: "Speaker 1", content: "Вторая фраза.", start_ms: 1000 },
+    ] as unknown as Parameters<typeof mergeTurns>[0];
+
+    const turns = mergeTurns(segments);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]!.text).toBe("Первая фраза. Вторая фраза.");
+  });
+});
