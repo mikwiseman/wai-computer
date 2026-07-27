@@ -132,6 +132,7 @@ class Fixture:
     must_drop: tuple[str, ...]
     never: tuple[str, ...]
     note: str
+    vocabulary: tuple[str, ...] = ()
     min_retention: float = DEFAULT_MIN_RETENTION
     max_addition: float = DEFAULT_MAX_ADDITION
     # Set when a fixture tracks a defect we have measured but not fixed. It is
@@ -175,6 +176,7 @@ def load_fixtures(path: Path = FIXTURES_PATH) -> tuple[Fixture, ...]:
             must_drop=tuple(entry.get("must_drop", ())),
             never=tuple(entry.get("never", ())),
             note=entry.get("note", ""),
+            vocabulary=tuple(entry.get("vocabulary", ())),
             min_retention=entry.get("min_retention", DEFAULT_MIN_RETENTION),
             max_addition=entry.get("max_addition", DEFAULT_MAX_ADDITION),
             known_issue=entry.get("known_issue", ""),
@@ -370,7 +372,7 @@ async def run_fixture(
         response = await client.post(
             "/api/dictation/cleanup",
             headers=headers,
-            json={"text": fixture.raw},
+            json={"text": fixture.raw, "vocabulary": list(fixture.vocabulary) or None},
         )
         response.raise_for_status()
     except httpx.HTTPError as exc:

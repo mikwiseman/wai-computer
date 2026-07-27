@@ -506,6 +506,79 @@
       "max_addition": 0.06,
       "known_issue": "gpt-oss-120b drops the soft sign in \"в-третьих\" on this sentence: measured 3/5 runs at light, 1/5 at medium, 0/5 at high (2026-07-27). Meaning survives; the spelling does not. Reported, not gated, so a real regression elsewhere still fails the run.",
       "note": "Tracks a model-level spelling artifact that cleanup must not introduce."
+    },
+    {
+      "id": "ru-dictionary-recovers-english-terms",
+      "language": "mixed",
+      "levels": [
+        "light",
+        "medium",
+        "high"
+      ],
+      "raw": "короче я закинул пул реквест в мейн, надо чтобы Сергей сделал ревью до деплой, и ещё нам нужен фичер флаг на это",
+      "vocabulary": [
+        "pull request",
+        "main",
+        "realtime bridge",
+        "review",
+        "deploy",
+        "feature flag",
+        "WaiComputer",
+        "Sentry",
+        "Amplitude"
+      ],
+      "must_keep": [
+        "pull request",
+        "main",
+        "review",
+        "deploy",
+        "feature flag",
+        "Сергей"
+      ],
+      "must_drop": [
+        "пул реквест",
+        "мейн",
+        "фичер флаг"
+      ],
+      "never": [],
+      "min_retention": 0.35,
+      "max_addition": 0.7,
+      "note": "The failure this block exists for: speech recognition transliterates English terms inside Russian, and only the dictionary can put them back. Retention/addition bounds are slack by construction: every recovered term is a token that was not in the transcript."
+    },
+    {
+      "id": "ru-dictionary-stays-inert-without-a-match",
+      "language": "ru",
+      "levels": [
+        "light",
+        "medium",
+        "high"
+      ],
+      "raw": "в центре города открыли новую кофейню, зайдём после обеда, я угощаю",
+      "vocabulary": [
+        "pull request",
+        "main",
+        "realtime bridge",
+        "review",
+        "deploy",
+        "feature flag",
+        "WaiComputer",
+        "Sentry",
+        "Amplitude"
+      ],
+      "must_keep": [
+        "центре города",
+        "кофейню",
+        "после обеда",
+        "угощаю"
+      ],
+      "must_drop": [],
+      "never": [
+        "Sentry",
+        "main",
+        "deploy",
+        "review"
+      ],
+      "note": "Ordinary speech that sounds near a dictionary entry (\"в центре\" vs \"Sentry\") must be left alone. This is the over-firing guard."
     }
   ]
 }

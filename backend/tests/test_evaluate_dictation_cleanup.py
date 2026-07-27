@@ -192,9 +192,11 @@ def test_fixture_corpus_is_well_formed() -> None:
         assert fixture.must_keep or fixture.must_drop or fixture.never
         # keep/drop terms describe the dictation, so at least the as-spoken
         # alternative has to be in it — otherwise the assertion is a typo that
-        # can never be satisfied.
+        # can never be satisfied. A dictionary entry is the exception: it is
+        # expected to replace something the transcript got wrong.
+        sources = fixture.raw.casefold() + " " + " ".join(fixture.vocabulary).casefold()
         for term in (*fixture.must_keep, *fixture.must_drop):
-            assert module.term_present(term, fixture.raw.casefold()), (fixture.id, term)
+            assert module.term_present(term, sources), (fixture.id, term)
 
 
 def test_term_present_accepts_any_alternative() -> None:

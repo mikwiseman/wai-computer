@@ -440,22 +440,32 @@ def _normalized_terms(
 
 
 def _build_vocabulary_block(vocabulary: list[str] | None) -> str:
-    """Render the user's dictionary as a tagged preserve block.
+    """Render the user's dictionary as the spelling authority for the pass.
 
-    Vocabulary that must survive the cleanup pass goes inside an explicit
-    XML-style tag rather than inline prose — the model treats tagged content
-    as structured, not as suggestion. Caps avoid pathological lists drowning
-    out the cleanup instructions.
+    Asking only that these spellings be "preserved" does nothing, because the
+    words are not in the transcript to preserve: speech recognition writes an
+    English term spoken inside Russian as "пул реквест", and a passive rule
+    gives the model no licence to put it back. Measured on that exact sentence,
+    the passive wording recovered 0 of 5 terms and this one recovered 5 of 5.
+    The bounded exception is the last sentence — no clear match, no change.
+
+    Caps avoid pathological lists drowning out the cleanup instructions.
     """
     cleaned = _normalized_terms(vocabulary, cap=MAX_CLEANUP_VOCABULARY_ENTRIES)
     if not cleaned:
         return ""
     joined = "\n".join(cleaned)
     return (
-        "\n\nThe user maintains a dictionary of words and phrases that must be "
-        "preserved exactly as written. Use these spellings whenever the dictated "
-        "audio matches them — even if the model would normally autocorrect or "
-        "rephrase. Do not invent occurrences that aren't in the audio.\n"
+        "\n\nThe list below holds the canonical spelling of the names, product "
+        "names, technical terms, commands and code symbols this user dictates. "
+        "Speech recognition often gets them wrong: an English term spoken inside "
+        "Russian comes back transliterated (\"пул реквест\", \"мейн\", \"ревью\"), "
+        "or as a similar-sounding wrong word. When a run of the dictation clearly "
+        "refers to one of these entries, write the entry exactly as listed, "
+        "including its case and punctuation — judge by sound and by context. This "
+        "is the one place you may change a word that was not a filler or a spoken "
+        "correction. If no entry clearly matches, change nothing: never force an "
+        "entry in, and never add one the speaker did not say.\n"
         f"<preserve_exact>\n{joined}\n</preserve_exact>"
     )
 
