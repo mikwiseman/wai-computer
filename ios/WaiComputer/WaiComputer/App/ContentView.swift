@@ -517,7 +517,10 @@ private struct IOSWorkspaceSplitView: View {
                     .padding(.horizontal, Spacing.lg)
                     .padding(.vertical, Spacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .waiGlassChrome(cornerRadius: Radius.lg, interactive: true)
+                    // No glass here: the sidebar is already a Liquid Glass
+                    // surface, and Apple is explicit that glass must not be
+                    // layered on glass — it cannot sample itself, so the result
+                    // is a flat patch rather than a floating one.
                     .padding(.horizontal, Spacing.sm)
                     .padding(.bottom, Spacing.sm)
             }
@@ -1157,7 +1160,6 @@ struct IOSWorkspaceErrorBanner: View {
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
         .waiGlassChrome(cornerRadius: Radius.md, tint: Palette.danger.opacity(0.18))
-        .waiShadow(.raised)
         .accessibilityIdentifier("ios-workspace-error-banner")
     }
 }

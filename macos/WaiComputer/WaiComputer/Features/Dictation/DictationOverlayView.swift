@@ -65,23 +65,26 @@ struct DictationOverlayView: View {
         .padding(.vertical, Spacing.md)
         .frame(width: 360, height: 52)
         .background {
-            // Dark-tinted Liquid Glass HUD on Tahoe; dark ultra-thin material
-            // (the original look) on earlier systems.
+            // Liquid Glass HUD on Tahoe; dark ultra-thin material (the original
+            // look) on earlier systems.
+            //
+            // No black tint and no white stroke on the Tahoe path. Glass draws
+            // its own edge and adapts its luminosity to whatever is behind it;
+            // forcing a 50% black fill and a hairline border on top recreates
+            // the pre-Tahoe dark HUD and throws that away. The stroke used to
+            // sit outside this branch, so it landed on real glass too.
             if #available(macOS 26.0, *) {
-                Color.clear.glassEffect(
-                    .regular.tint(Color.black.opacity(0.5)),
-                    in: .rect(cornerRadius: Radius.lg)
-                )
+                Color.clear.glassEffect(.regular, in: .rect(cornerRadius: Radius.lg))
             } else {
                 RoundedRectangle(cornerRadius: Radius.lg)
                     .fill(.ultraThinMaterial)
                     .environment(\.colorScheme, .dark)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.lg)
+                            .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
+                    )
             }
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg)
-                .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
-        )
     }
 
     // MARK: - Subviews

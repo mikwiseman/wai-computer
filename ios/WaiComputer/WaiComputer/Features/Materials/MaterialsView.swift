@@ -711,7 +711,6 @@ private struct IOSInboxStatusBanner: View {
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
         .waiGlassChrome(cornerRadius: Radius.md, tint: Palette.accent.opacity(0.14))
-        .waiShadow(.raised)
         .accessibilityIdentifier("ios-inbox-status-banner")
     }
 }

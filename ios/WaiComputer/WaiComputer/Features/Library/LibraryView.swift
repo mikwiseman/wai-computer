@@ -1427,7 +1427,6 @@ private struct BulkOperationBanner: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .waiGlassChrome(cornerRadius: Radius.xl)
-        .waiShadow(.floating)
         .accessibilityIdentifier("library-bulk-operation-banner")
     }
 
@@ -1956,7 +1955,6 @@ private struct ImportUploadOverlay: View {
             }
             .padding(32)
             .waiGlassChrome(cornerRadius: Radius.xl)
-            .waiShadow(.floating)
         }
     }
 

@@ -73,24 +73,25 @@ struct PermissionBanner: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background {
-            // Liquid Glass on Tahoe keeps the dark-HUD register via a dark
-            // tint (white copy stays readable); earlier systems keep the
-            // original near-black fill.
+            // Plain Liquid Glass on Tahoe; earlier systems keep the original
+            // near-black fill with its hairline and shadow.
+            //
+            // The Tahoe path carries no black tint, no stroke and no shadow.
+            // Glass supplies all three itself and adapts them to the content
+            // behind the banner; forcing a 60% black fill under a white border
+            // and a drop shadow rebuilt the old opaque HUD on top of it.
             if #available(macOS 26.0, *) {
-                Color.clear.glassEffect(
-                    .regular.tint(Color.black.opacity(0.6)),
-                    in: .rect(cornerRadius: Radius.xl)
-                )
+                Color.clear.glassEffect(.regular, in: .rect(cornerRadius: Radius.xl))
             } else {
                 RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                     .fill(Color.black.opacity(0.92))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                    )
+                    .waiShadow(.floating)
             }
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
-        )
-        .waiShadow(.floating)
         .accessibilityIdentifier("permission-banner-\(kind.identifierSuffix)")
     }
 

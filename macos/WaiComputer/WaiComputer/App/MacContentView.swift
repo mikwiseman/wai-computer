@@ -344,7 +344,6 @@ struct MacMainView: View {
             }
             .padding(Spacing.lg)
             .waiGlassChrome(cornerRadius: Radius.lg)
-            .waiShadow(.floating)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .padding(.bottom, Spacing.xl)
         }
@@ -2513,7 +2512,6 @@ private struct RecordingRecoveryNoticeBanner: View {
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
         .waiGlassChrome(cornerRadius: Radius.md)
-        .waiShadow(.raised)
         .accessibilityIdentifier("recording-recovery-banner")
     }
 }

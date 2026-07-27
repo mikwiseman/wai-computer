@@ -89,18 +89,20 @@ struct AskAnythingAnswerView: View {
         }
         .frame(width: 820, height: 440)
         .background {
-            // Liquid Glass panel on Tahoe; regular material below.
+            // Liquid Glass panel on Tahoe; regular material below. The white
+            // hairline belongs only to the pre-Tahoe path — glass already draws
+            // its own edge, and the stroke used to sit outside this branch.
             if #available(macOS 26.0, *) {
                 Color.clear.glassEffect(.regular, in: .rect(cornerRadius: Radius.xxl))
             } else {
                 RoundedRectangle(cornerRadius: Radius.xxl)
                     .fill(.regularMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.xxl)
+                            .strokeBorder(.white.opacity(0.26), lineWidth: 0.7)
+                    )
             }
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.xxl)
-                .strokeBorder(.white.opacity(0.26), lineWidth: 0.7)
-        )
     }
 
     private var header: some View {

@@ -68,7 +68,6 @@ struct WaiHomeView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .waiGlassChrome(cornerRadius: Radius.md)
-            .waiShadow(.raised)
             .padding(.horizontal, Spacing.md)
             .padding(.top, Spacing.sm)
             .accessibilityIdentifier("wai-citation-load-error")
