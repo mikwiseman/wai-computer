@@ -27,6 +27,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_RATE = 16_000
 BYTES_PER_SAMPLE = 2
 SILENCE_MS = 450
+# Registration has required legal acceptance since 2026-05-22. Without it the
+# API answers 422 and this whole eval dies before it transcribes anything —
+# which is how it went unnoticed that the recording path had no live check.
+LEGAL_ACCEPTANCE = {
+    "accepted_legal_terms": True,
+    "legal_terms_version": "2026-05-22",
+    "legal_privacy_version": "2026-05-22",
+}
 
 
 @dataclass(frozen=True)
@@ -265,7 +273,10 @@ def ensure_fixture(scenario: Scenario) -> Path:
 async def register_user(client: httpx.AsyncClient) -> dict[str, str]:
     email = f"long-recording-eval-{uuid.uuid4().hex[:12]}@example.com"
     password = f"eval-{uuid.uuid4().hex}"
-    response = await client.post("/api/auth/register", json={"email": email, "password": password})
+    response = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": password, **LEGAL_ACCEPTANCE},
+    )
     response.raise_for_status()
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
@@ -277,17 +288,32 @@ async def patch_settings(
     candidate: ModelCandidate,
     scenario: Scenario,
 ) -> None:
+    """Set what a user may set, and assert what the server now owns.
+
+    Transcription models became server-managed: PATCHing `file_stt_provider`
+    answers 400 "Transcription models are managed by WaiComputer". This eval
+    kept pinning them and had been dying on that call, so the recording path
+    has had no live check at all. Now it verifies the deployed model instead of
+    trying to choose one — if production moves off the candidate, that is the
+    finding, not a crash.
+    """
     response = await client.patch(
         "/api/settings",
         headers=headers,
         json={
-            "file_stt_provider": candidate.provider,
-            "file_stt_model": candidate.model,
             "default_language": scenario.language,
             "summary_language": scenario.summary_language,
         },
     )
     response.raise_for_status()
+
+    settings = (await client.get("/api/settings", headers=headers)).json()
+    actual = (settings.get("file_stt_provider"), settings.get("file_stt_model"))
+    if actual != (candidate.provider, candidate.model):
+        raise RuntimeError(
+            f"Production file STT is {actual[0]}/{actual[1]}, "
+            f"expected {candidate.provider}/{candidate.model}."
+        )
 
 
 async def create_recording(
@@ -529,8 +555,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--candidates",
-        default="all",
-        help="Comma-separated provider:model ids, provider names, or 'all'.",
+        default="deployed",
+        help="Comma-separated provider:model ids, provider names, 'all', or "
+             "'deployed' to follow whatever production currently serves.",
     )
     parser.add_argument(
         "--output",
@@ -574,11 +601,20 @@ def result_is_ok(result: dict[str, Any], scenario: Scenario) -> bool:
 async def main() -> int:
     args = parse_args()
     scenario = SCENARIOS[args.scenario]
-    candidates = selected_candidates(args.candidates)
+    candidates = [] if args.candidates == "deployed" else selected_candidates(args.candidates)
     fixture_path = ensure_fixture(scenario)
 
     async with httpx.AsyncClient(base_url=args.base_url, timeout=900.0) as client:
         headers = await register_user(client)
+        if not candidates:
+            # Follow the deployed model rather than a hardcoded guess. The
+            # hardcoded default had drifted to deepgram/nova-3 while production
+            # moved to elevenlabs/scribe_v2, so the eval could only ever fail.
+            settings = (await client.get("/api/settings", headers=headers)).json()
+            provider = settings.get("file_stt_provider")
+            model = settings.get("file_stt_model")
+            candidates = (ModelCandidate(provider, model, f"{provider} {model}"),)
+            print(f"Evaluating the deployed file STT model: {provider}/{model}")
         results = [
             await evaluate_candidate(
                 client,

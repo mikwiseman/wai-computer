@@ -28,7 +28,7 @@ from app.core.content import with_title_context
 from app.core.deepgram_usage import (
     effective_billable_seconds,
     provider_error_code,
-    record_deepgram_usage_event,
+    record_deepgram_usage_event_standalone,
 )
 from app.core.embeddings import generate_embedding, generate_embeddings
 from app.core.error_sanitizer import sanitize_failure_message
@@ -962,8 +962,7 @@ async def process_staged_recording_upload(
                 usage_purpose="recording",
             )
         except TranscriptionGuardError as exc:
-            await record_deepgram_usage_event(
-                db,
+            await record_deepgram_usage_event_standalone(
                 user_id=user_id,
                 recording_id=recording_id,
                 operation="file_stt",
@@ -985,8 +984,7 @@ async def process_staged_recording_upload(
             )
             raise
         except httpx.HTTPStatusError as exc:
-            await record_deepgram_usage_event(
-                db,
+            await record_deepgram_usage_event_standalone(
                 user_id=user_id,
                 recording_id=recording_id,
                 operation="file_stt",
@@ -1010,8 +1008,7 @@ async def process_staged_recording_upload(
             )
             raise
         except Exception as exc:
-            await record_deepgram_usage_event(
-                db,
+            await record_deepgram_usage_event_standalone(
                 user_id=user_id,
                 recording_id=recording_id,
                 operation="file_stt",
@@ -1033,8 +1030,7 @@ async def process_staged_recording_upload(
             )
             raise
         else:
-            await record_deepgram_usage_event(
-                db,
+            await record_deepgram_usage_event_standalone(
                 user_id=user_id,
                 recording_id=recording_id,
                 operation="file_stt",

@@ -271,3 +271,24 @@ def test_float_or_none_rounds_and_rejects_unparseable_values() -> None:
     assert _float_or_none(7.23456) == 7.235
     assert _float_or_none("not-a-number") is None  # ValueError
     assert _float_or_none(object()) is None  # TypeError
+
+
+def test_recording_path_meters_outside_the_caller_transaction():
+    """Metering must not be able to poison the recording transaction.
+
+    Production, 2026-07-27: ElevenLabs had already returned a full transcript
+    when the usage insert failed. Because that write shared the recording's
+    session, the session was left rollback-pending, the next attribute read
+    raised MissingGreenlet, and the recording was marked failed — a metering
+    row cost a good transcript. The recording path therefore uses the
+    standalone helper, which owns its own session.
+    """
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[1] / "app/core/recording_audio_processing.py"
+    text = source.read_text(encoding="utf-8")
+
+    assert "record_deepgram_usage_event_standalone(" in text
+    # The session-bound helper takes `db` as its first argument; no call in the
+    # recording path may pass one.
+    assert "record_deepgram_usage_event(\n" not in text
