@@ -446,6 +446,30 @@ def summary_counts(recording: dict[str, Any], summary: dict[str, Any] | None) ->
     }
 
 
+async def wait_until_settled(
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    recording_id: str,
+    audio_duration_seconds: float,
+) -> dict[str, Any]:
+    """Poll until the recording is ready or failed, scaling the wait to length.
+
+    Returns the recording with `_processing_ms` attached: upload latency says
+    nothing about transcription speed, so the speed factor is measured from
+    audio staged to transcript settled.
+    """
+    deadline_seconds = max(120.0, audio_duration_seconds * 8)
+    started = time.perf_counter()
+    recording: dict[str, Any] = {}
+    while time.perf_counter() - started < deadline_seconds:
+        recording = await get_json(client, headers, f"/api/recordings/{recording_id}")
+        if recording.get("status") in {"ready", "failed"}:
+            break
+        await asyncio.sleep(3)
+    recording["_processing_ms"] = elapsed_ms(started)
+    return recording
+
+
 async def evaluate_candidate(
     client: httpx.AsyncClient,
     headers: dict[str, str],
@@ -471,12 +495,23 @@ async def evaluate_candidate(
     try:
         recording, upload_ms = await upload_recording(client, headers, recording_id, fixture_path)
         result["upload_ms"] = upload_ms
-        result["speed_factor"] = round(audio_duration_seconds / (upload_ms / 1000), 2)
+
+        # Uploading is not transcribing. The upload response returns as soon as
+        # the audio is staged and answers `processing`; reading status from it
+        # meant the eval graded a recording that had not been transcribed yet,
+        # and reported every run as a failure regardless of what production did.
+        recording = await wait_until_settled(
+            client, headers, recording_id, audio_duration_seconds
+        )
+        result["processing_ms"] = recording.pop("_processing_ms", None)
+        if result["processing_ms"]:
+            result["speed_factor"] = round(
+                audio_duration_seconds / (result["processing_ms"] / 1000), 2
+            )
         result["status"] = recording.get("status")
         result["failure_code"] = recording.get("failure_code")
         result["failure_message"] = recording.get("failure_message")
 
-        recording = await get_json(client, headers, f"/api/recordings/{recording_id}")
         text = transcript_text(recording)
         result["hypothesis_text"] = text
         result.update(text_metrics(scenario.reference_text, text))
