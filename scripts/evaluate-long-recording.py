@@ -583,6 +583,14 @@ def selected_candidates(value: str) -> list[ModelCandidate]:
     return candidates
 
 
+# Transcription quality gates. WER and CER were computed on every run and
+# never checked, so two provider migrations shipped without anyone being able
+# to tell whether the words got worse. These are deliberately loose — they are
+# a regression tripwire on synthesised speech, not an accuracy target.
+MAX_WER = 0.15
+MAX_CER = 0.08
+
+
 def result_is_ok(result: dict[str, Any], scenario: Scenario) -> bool:
     if result.get("status") != "ready" or result.get("error"):
         return False
@@ -592,6 +600,14 @@ def result_is_ok(result: dict[str, Any], scenario: Scenario) -> bool:
         return False
     if result.get("speaker_label_count", 0) < min(2, scenario.expected_speakers):
         return False
+
+    wer = result.get("wer")
+    cer = result.get("cer")
+    if wer is None or cer is None:
+        return False
+    if wer > MAX_WER or cer > MAX_CER:
+        return False
+
     export_lengths = result.get("export_lengths")
     if not isinstance(export_lengths, dict) or any(value <= 0 for value in export_lengths.values()):
         return False
