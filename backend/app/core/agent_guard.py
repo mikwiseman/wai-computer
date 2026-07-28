@@ -60,8 +60,10 @@ def get_redis() -> aioredis.Redis:
         settings = get_settings()
         _client = aioredis.from_url(
             settings.redis_url,
-            socket_timeout=2,
-            socket_connect_timeout=2,
+            # Advisory fail-open reads against a same-host Redis; keep the
+            # worst-case stall well under a second (see transcription_guard).
+            socket_timeout=0.5,
+            socket_connect_timeout=0.5,
             decode_responses=True,
         )
     return _client

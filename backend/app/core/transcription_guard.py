@@ -86,8 +86,12 @@ def get_redis() -> aioredis.Redis:
         settings = get_settings()
         _client = aioredis.from_url(
             settings.redis_url,
-            socket_timeout=2,
-            socket_connect_timeout=2,
+            # Every guard read is advisory and fails open, and Redis is on the
+            # same host — but these reads sit on the user-facing mint path, so
+            # a Redis stall must not cost seconds (prod 2026-07-27: a 2s wait
+            # pushed session mint to 3.0s). 500ms is still ~500x the normal RTT.
+            socket_timeout=0.5,
+            socket_connect_timeout=0.5,
             decode_responses=True,
         )
         _client_loop = loop
