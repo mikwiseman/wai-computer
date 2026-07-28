@@ -980,7 +980,6 @@ async def process_staged_recording_upload(
                 billing_mode="pre_recorded",
                 language_mode="multilingual",
                 addons=deepgram_addons,
-                commit=True,
             )
             raise
         except httpx.HTTPStatusError as exc:
@@ -1004,7 +1003,6 @@ async def process_staged_recording_upload(
                 billing_mode="pre_recorded",
                 language_mode="multilingual",
                 addons=deepgram_addons,
-                commit=True,
             )
             raise
         except Exception as exc:
@@ -1026,7 +1024,6 @@ async def process_staged_recording_upload(
                 billing_mode="pre_recorded",
                 language_mode="multilingual",
                 addons=deepgram_addons,
-                commit=True,
             )
             raise
         else:
@@ -1050,7 +1047,6 @@ async def process_staged_recording_upload(
                 billing_mode="pre_recorded",
                 language_mode="multilingual",
                 addons=deepgram_addons,
-                commit=True,
             )
         transcript_results = transcription.segments
         _recording_lifecycle_breadcrumb(

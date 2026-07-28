@@ -292,3 +292,19 @@ def test_recording_path_meters_outside_the_caller_transaction():
     # The session-bound helper takes `db` as its first argument; no call in the
     # recording path may pass one.
     assert "record_deepgram_usage_event(\n" not in text
+
+    # The standalone wrapper owns its commit. Passing commit= through **kwargs
+    # duplicated the keyword, raised TypeError inside the wrapper, and silently
+    # dropped every recording STT usage event (production, 2026-07-28).
+    for chunk in text.split("record_deepgram_usage_event_standalone(")[1:]:
+        depth = 1
+        call_args = []
+        for ch in chunk:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            call_args.append(ch)
+        assert "commit=" not in "".join(call_args)
