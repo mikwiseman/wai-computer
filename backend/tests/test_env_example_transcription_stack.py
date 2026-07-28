@@ -28,7 +28,16 @@ def test_active_code_exposes_only_current_speech_to_text_stack():
         "coverage.xml",
         "dist",
     }
-    ignored_names = {".env", ".env.local"}
+    # Model-comparison harnesses name retired and alternative models on
+    # purpose — that is the whole point of a bake-off. The guard exists to keep
+    # retired models out of the code that runs in production, not out of the
+    # scripts that measure whether a swap would be an improvement.
+    ignored_names = {
+        ".env",
+        ".env.local",
+        "compare-dictation-asr-models.py",
+        "compare-dictation-raw-vs-cleanup.py",
+    }
     ignored_subpaths = {
         ("backend", "app", "db", "migrations", "versions"),
     }
