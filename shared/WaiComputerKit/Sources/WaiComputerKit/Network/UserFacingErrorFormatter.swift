@@ -100,7 +100,39 @@ public enum UserFacingErrorFormatter {
         return String(normalized.prefix(maxLength - 1)) + "…"
     }
 
+    /// The user's chosen interface language.
+    ///
+    /// These strings reach a Russian-speaking user inside an otherwise fully
+    /// Russian UI — the library banner read "We couldn't load your library
+    /// right now" on a screen where every other word was Russian. The formatter
+    /// is a stateless enum called from a dozen views, so it resolves the
+    /// language itself rather than threading a parameter through all of them.
+    private static var isRussian: Bool {
+        // Read the persisted pick rather than `LanguageManager.shared`, which is
+        // main-actor isolated while this formatter is called from background
+        // contexts. Falling back to the system language matches what
+        // LanguageManager itself does on first launch.
+        if let stored = UserDefaults.standard.string(forKey: "waiUserLanguage") {
+            return stored.lowercased().hasPrefix("ru")
+        }
+        return (Locale.preferredLanguages.first ?? "en").lowercased().hasPrefix("ru")
+    }
+
     private static func genericMessage(for context: UserFacingErrorContext) -> String {
+        if isRussian {
+            switch context {
+            case .library:
+                return "Не удалось загрузить библиотеку. Попробуй ещё раз через минуту."
+            case .recording:
+                return "Не удалось сохранить запись. Попробуй ещё раз через минуту."
+            case .dictation:
+                return "Не удалось завершить диктовку. Попробуй ещё раз."
+            case .authentication:
+                return "Не удалось выполнить вход. Попробуй ещё раз."
+            case .generic:
+                return "Что-то пошло не так. Попробуй ещё раз через минуту."
+            }
+        }
         switch context {
         case .library:
             return "We couldn't load your library right now. Please try again in a moment."
@@ -116,6 +148,20 @@ public enum UserFacingErrorFormatter {
     }
 
     private static func networkMessage(for context: UserFacingErrorContext) -> String {
+        if isRussian {
+            switch context {
+            case .recording:
+                return "Пропала связь во время записи. Проверь интернет и попробуй ещё раз."
+            case .dictation:
+                return "Пропала связь во время диктовки. Проверь интернет и попробуй ещё раз."
+            case .library:
+                return "Не удалось связаться с Wai, чтобы загрузить библиотеку. Проверь интернет."
+            case .authentication:
+                return "Не удалось связаться с Wai для входа. Проверь интернет и попробуй ещё раз."
+            case .generic:
+                return "Не удалось связаться с Wai. Проверь интернет и попробуй ещё раз."
+            }
+        }
         switch context {
         case .recording:
             return "We couldn't keep the live recording connected. Check your internet connection and try again."
