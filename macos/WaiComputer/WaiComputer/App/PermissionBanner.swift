@@ -31,7 +31,10 @@ struct PermissionBanner: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.white)
+                    // Adaptive on the glass path: white-on-glass vanished in
+                    // light mode. The legacy HUD is always near-black, so it
+                    // keeps its original white.
+                    .foregroundStyle(titleColor)
                 Text(subtitle)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -44,12 +47,12 @@ struct PermissionBanner: View {
             Button(action: onPrimaryTap) {
                 Text(actionLabel)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.black)
+                    .foregroundStyle(actionTextColor)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(Color.white.opacity(0.95))
+                            .fill(actionFillColor)
                     )
             }
             .buttonStyle(.plain)
@@ -62,7 +65,7 @@ struct PermissionBanner: View {
                         .frame(width: 22, height: 22)
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.85))
+                        .foregroundStyle(closeColor)
                 }
                 .contentShape(Rectangle())
             }
@@ -93,6 +96,28 @@ struct PermissionBanner: View {
             }
         }
         .accessibilityIdentifier("permission-banner-\(kind.identifierSuffix)")
+    }
+
+    // Foregrounds match the background branch above: adaptive over Liquid
+    // Glass (which follows the appearance), fixed over the legacy black HUD.
+    private var titleColor: Color {
+        if #available(macOS 26.0, *) { return .primary }
+        return .white
+    }
+
+    private var closeColor: Color {
+        if #available(macOS 26.0, *) { return Color.primary.opacity(0.85) }
+        return Color.white.opacity(0.85)
+    }
+
+    private var actionTextColor: Color {
+        if #available(macOS 26.0, *) { return Color(nsColor: .windowBackgroundColor) }
+        return .black
+    }
+
+    private var actionFillColor: Color {
+        if #available(macOS 26.0, *) { return Color.primary.opacity(0.9) }
+        return Color.white.opacity(0.95)
     }
 
     private var title: String {
