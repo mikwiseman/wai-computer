@@ -1146,10 +1146,18 @@ async def import_media_as_recording(
                     override_instructions=_speaker_roster_instructions(speaker_names),
                 ),
             )
-            if not explicit_title:
+            # Gate on the recording's own flag, not the local ``title``
+            # parameter: file uploads pre-create the recording with the
+            # filename as its identity (title_auto_generated=False) and pass
+            # title=None here — renaming those post-transcription loses the
+            # name the user knows the file by.
+            if recording.title_auto_generated:
                 generated_title = summary_result.title.strip()
                 if generated_title:
                     recording.title = generated_title[:500]
+                # One automatic rename is enough (mirrors the live-recording
+                # pipeline); a later summary regenerate must not rename again.
+                recording.title_auto_generated = False
             summary = await _persist_summary(
                 db=db,
                 recording=recording,

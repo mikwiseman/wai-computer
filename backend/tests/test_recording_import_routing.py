@@ -345,3 +345,97 @@ async def test_import_prefers_known_media_duration_over_provider_timestamp_drift
 
     assert result.recording.status == RecordingStatus.READY.value
     assert result.recording.duration_seconds == 35 * 60
+
+
+def _summary_stack(monkeypatch: pytest.MonkeyPatch, title: str) -> None:
+    async def fake_transcribe(*_args, **_kwargs):
+        return FileTranscription(words=[], segments=[_speech("обсуждение системы")])
+
+    async def fake_embedding(_text: str, **_: object):
+        return None
+
+    async def fake_identify(**_kwargs):
+        return {}
+
+    async def fake_summary(_transcript: str, **_kwargs):
+        return SummaryResult(
+            title=title,
+            summary="Саммари.",
+            key_points=[],
+            decisions=[],
+            action_items=[],
+            topics=[],
+            people_mentioned=[],
+            follow_up_questions=[],
+            sentiment="neutral",
+            highlights=[],
+        )
+
+    monkeypatch.setattr("app.core.recording_import.transcribe_audio_file", fake_transcribe)
+    monkeypatch.setattr("app.core.recording_import.generate_embedding", fake_embedding)
+    monkeypatch.setattr("app.core.recording_import.identify_speakers_for_recording", fake_identify)
+    monkeypatch.setattr("app.core.recording_import.summarize_transcript", fake_summary)
+
+
+@pytest.mark.asyncio
+async def test_import_keeps_filename_title_after_summary(
+    db_session: AsyncSession, monkeypatch, tmp_path
+):
+    """A file upload keeps its filename identity: the summary title must not
+    rename it post-transcription (the upload route pre-creates the recording
+    with title_auto_generated=False and hands title=None to the worker)."""
+    user = await _user(db_session, "routing-filename-title@example.com")
+    recording = Recording(
+        user_id=user.id,
+        title="эксперты 2",
+        title_auto_generated=False,
+        type="note",
+        status=RecordingStatus.PROCESSING.value,
+    )
+    db_session.add(recording)
+    await db_session.commit()
+    monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
+    _summary_stack(monkeypatch, title="Обсуждение системы обработки")
+
+    result = await import_media_as_recording(
+        db=db_session,
+        user=user,
+        data=b"fake wav",
+        filename="эксперты 2.mp3",
+        content_type="audio/mpeg",
+        title=None,
+        source_label="upload",
+        language="ru",
+        recording=recording,
+    )
+
+    assert result.recording.status == RecordingStatus.READY.value
+    assert result.recording.title == "эксперты 2"
+    assert result.recording.title_auto_generated is False
+
+
+@pytest.mark.asyncio
+async def test_import_auto_titles_once_and_drops_the_flag(
+    db_session: AsyncSession, monkeypatch, tmp_path
+):
+    """A caption-less Telegram voice note gets exactly one automatic title;
+    the dropped flag keeps later summary regenerates from renaming again."""
+    user = await _user(db_session, "routing-auto-title@example.com")
+    await db_session.commit()
+    monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
+    _summary_stack(monkeypatch, title="Система рубрикатора")
+
+    result = await import_media_as_recording(
+        db=db_session,
+        user=user,
+        data=b"fake wav",
+        filename="voice.wav",
+        content_type="audio/wav",
+        title=None,
+        source_label="telegram",
+        language="ru",
+    )
+
+    assert result.recording.status == RecordingStatus.READY.value
+    assert result.recording.title == "Система рубрикатора"
+    assert result.recording.title_auto_generated is False
