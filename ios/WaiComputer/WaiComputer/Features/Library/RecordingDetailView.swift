@@ -1192,27 +1192,25 @@ private struct RecordingDetailInlineErrorBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "wifi.exclamationmark")
-                .foregroundStyle(.white)
+                .foregroundStyle(Palette.warning)
 
             Text(message)
                 .font(.caption)
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .lineLimit(2)
 
             Spacer(minLength: 8)
 
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(OnboardingL10n.text("Dismiss", "Закрыть", language: languageManager.current))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Palette.warning)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
+        .waiGlassChrome(cornerRadius: Radius.md, tint: Palette.warning.opacity(0.18))
         .accessibilityIdentifier("recording-detail-inline-error")
     }
 }

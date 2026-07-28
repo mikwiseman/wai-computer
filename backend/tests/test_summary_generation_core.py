@@ -1762,3 +1762,56 @@ def test_summary_generation_celery_task_retries_retryable_failure(monkeypatch) -
         task_module.generate_recording_summary.run(job_id=str(uuid4()))
 
     assert len(retry_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_apply_summary_result_survives_a_concurrent_insert(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Losing the race for `summaries.recording_id` must not fail the request.
+
+    Production, 2026-07-27: processing generates a summary automatically while
+    the user can ask for one from the detail view. The route eager-loads the
+    relationship, so the loser holds `recording.summary is None`, inserts, and
+    hits `summaries_recording_id_key` — surfacing as a 503 on every regenerate.
+    """
+    from sqlalchemy import text
+
+    async def _extractor_unavailable(_transcript: str):
+        raise RuntimeError("entity extraction unavailable")
+
+    monkeypatch.setattr(
+        "app.core.summary_generation.extract_entities", _extractor_unavailable
+    )
+
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    await db_session.refresh(recording, ["summary", "segments", "action_items", "highlights"])
+    assert recording.summary is None
+
+    # The other writer wins the race after this session loaded the recording.
+    # Raw SQL so it lands in the table without entering this session's identity
+    # map — exactly what a concurrent worker looks like from here.
+    await db_session.execute(
+        text(
+            "INSERT INTO summaries (id, recording_id, summary, key_points, decisions,"
+            " topics, people_mentioned, sentiment)"
+            " VALUES (gen_random_uuid(), :rid, 'Written by the automatic job',"
+            " '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, 'neutral')"
+        ),
+        {"rid": recording.id},
+    )
+
+    summary = await apply_summary_result(
+        db_session, recording=recording, summary_result=_summary_result()
+    )
+    await db_session.flush()
+
+    assert summary.summary == "Generated summary."
+    rows = (
+        (await db_session.execute(select(Summary).where(Summary.recording_id == recording.id)))
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1

@@ -222,16 +222,17 @@ async def apply_summary_result(
     entity_extractor=None,
     enrich_entities: bool = True,
 ) -> Summary:
-    if recording.summary:
-        recording.summary.summary = summary_result.summary
-        recording.summary.key_points = summary_result.key_points
-        recording.summary.decisions = summary_result.decisions
-        recording.summary.topics = summary_result.topics
-        recording.summary.people_mentioned = summary_result.people_mentioned
-        recording.summary.sentiment = summary_result.sentiment
-        summary = recording.summary
-    else:
-        summary = Summary(
+    # `summaries.recording_id` is unique, and two writers race for it: processing
+    # generates a summary automatically while the user can ask for one from the
+    # detail view. Whoever loaded the recording first sees `recording.summary`
+    # as None, inserts, and gets `duplicate key value violates unique constraint
+    # "summaries_recording_id_key"` — which surfaced as a 503 on every
+    # regenerate. Claim the row inside a SAVEPOINT so losing the race costs the
+    # insert and not the caller's transaction, then fall back to updating what
+    # the winner wrote.
+    summary = recording.summary
+    if summary is None:
+        candidate = Summary(
             recording_id=recording.id,
             summary=summary_result.summary,
             key_points=summary_result.key_points,
@@ -240,8 +241,24 @@ async def apply_summary_result(
             people_mentioned=summary_result.people_mentioned,
             sentiment=summary_result.sentiment,
         )
-        db.add(summary)
-        recording.summary = summary
+        try:
+            async with db.begin_nested():
+                db.add(candidate)
+                await db.flush()
+        except IntegrityError:
+            summary = (
+                await db.execute(select(Summary).where(Summary.recording_id == recording.id))
+            ).scalar_one()
+        else:
+            summary = candidate
+            recording.summary = candidate
+
+    summary.summary = summary_result.summary
+    summary.key_points = summary_result.key_points
+    summary.decisions = summary_result.decisions
+    summary.topics = summary_result.topics
+    summary.people_mentioned = summary_result.people_mentioned
+    summary.sentiment = summary_result.sentiment
 
     # Legacy/system-owned titles may still reach summary generation without a
     # completed title pass. Resolve them once; filenames and manual names carry
