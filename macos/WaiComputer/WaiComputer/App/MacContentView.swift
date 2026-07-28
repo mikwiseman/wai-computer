@@ -107,7 +107,19 @@ struct MacMainView: View {
     @AppStorage("desktopComputerUseEnabled") private var computerUseEnabled = false
     @AppStorage(MacThemePreferences.appearanceKey) private var appearanceModeRawValue = MacThemePreferences.defaultAppearance.rawValue
     @AppStorage(MacThemePreferences.accentKey) private var accentChoiceRawValue = MacThemePreferences.defaultAccent.rawValue
-    @State private var selectedSection: SidebarSection? = .inbox
+    @State private var selectedSection: SidebarSection? = MacMainView.initialSection
+
+    /// UI-test-only escape hatch: sections are @State and the offscreen smoke
+    /// harness cannot click the sidebar, so let it choose the launch section.
+    private static var initialSection: SidebarSection? {
+        #if DEBUG
+        if MacTestingMode.current != .live,
+           ProcessInfo.processInfo.environment["WAI_UITEST_INITIAL_SECTION"] == "trash" {
+            return .trash
+        }
+        #endif
+        return .inbox
+    }
     @State private var selectedRecordingIds: Set<String> = []
     @State private var prefetchedRecordingDetail: RecordingDetail?
     @State private var pendingTitleEditId: String?
@@ -246,6 +258,7 @@ struct MacMainView: View {
                         ideal: MacMainLayoutMetrics.listIdealWidth,
                         max: MacMainLayoutMetrics.listMaxWidth
                     )
+                    .toolbar { listToolbarContent }
             } detail: {
                 // No .id(detailPhaseKey) here: it forced a full rebuild of the
                 // detail subtree on every record start/stop and replaced (instead
@@ -271,49 +284,50 @@ struct MacMainView: View {
         }
     }
 
-    private var listHeaderActions: some View {
-        HStack(spacing: Spacing.sm) {
+    /// Real toolbar items (attached to the list column) instead of a hand-built
+    /// header row: on macOS 26 these sit on the window's Liquid Glass toolbar.
+    @ToolbarContentBuilder
+    private var listToolbarContent: some ToolbarContent {
+        if !isTrashSection {
             // The record action reads as "record", not a generic "+", and has
             // no business in Trash next to Restore / Delete Permanently.
-            if !isTrashSection {
+            ToolbarItem {
                 Button {
                     startRecording(type: .meeting, inputSource: .dual, folderId: currentFolderId)
                 } label: {
-                    MainToolbarIconLabel(title: t("New Recording", "Новая запись"), systemImage: "waveform")
+                    Label(t("New Recording", "Новая запись"), systemImage: "waveform")
                 }
-                .buttonStyle(.plain)
                 .disabled(isRecordingHandoffActive || isLibraryOperationActive || !appState.isAuthenticated)
                 .help(t("New Recording", "Новая запись"))
                 .accessibilityIdentifier("new-recording-toolbar-button")
             }
 
-            if !isTrashSection {
+            ToolbarItem {
                 Button {
                     moveSelectedRecordingsToTrash()
                 } label: {
-                    MainToolbarIconLabel(title: t("Move to Trash", "Переместить в корзину"), systemImage: "trash")
+                    Label(t("Move to Trash", "Переместить в корзину"), systemImage: "trash")
                 }
-                .buttonStyle(.plain)
                 .help(t("Move to Trash", "Переместить в корзину"))
                 .disabled(selectedRecordingIds.isEmpty || isLibraryOperationActive)
             }
-
-            if isTrashSection {
+        } else {
+            ToolbarItem {
                 Button {
                     restoreSelectedRecordings()
                 } label: {
-                    MainToolbarIconLabel(title: t("Restore", "Восстановить"), systemImage: "arrow.uturn.backward")
+                    Label(t("Restore", "Восстановить"), systemImage: "arrow.uturn.backward")
                 }
-                .buttonStyle(.plain)
                 .help(t("Restore", "Восстановить"))
                 .disabled(selectedRecordingIds.isEmpty || isLibraryOperationActive)
+            }
 
+            ToolbarItem {
                 Button {
                     requestPermanentDelete(Array(selectedRecordingIds))
                 } label: {
-                    MainToolbarIconLabel(title: t("Delete Permanently", "Удалить навсегда"), systemImage: "trash.slash", color: Palette.recording)
+                    Label(t("Delete Permanently", "Удалить навсегда"), systemImage: "trash.slash")
                 }
-                .buttonStyle(.plain)
                 .help(t("Delete Permanently", "Удалить навсегда"))
                 .disabled(selectedRecordingIds.isEmpty || isLibraryOperationActive)
             }
@@ -387,8 +401,10 @@ struct MacMainView: View {
     /// Base layout split out of `body` so the modifier chain below stays
     /// within the type-checker's budget.
     private var mainSplitBase: some View {
+        // No opaque background behind the split view: painting the window
+        // canvas here flattened the sidebar's translucent material (and on
+        // macOS 26 the Liquid Glass chrome) into a solid slab.
         mainSplitView
-        .background(Palette.canvas)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 appearanceQuickMenu
@@ -433,7 +449,8 @@ struct MacMainView: View {
             Label(t("Appearance", "Оформление"), systemImage: "circle.lefthalf.filled")
                 .labelStyle(.iconOnly)
         }
-        .menuStyle(.borderlessButton)
+        // No custom menu style: the toolbar gives the item its platform chrome
+        // (the Liquid Glass capsule on macOS 26).
         .help(t("Choose theme and accent", "Выбрать тему и акцент"))
         .accessibilityIdentifier("appearance-quick-menu")
     }
@@ -1086,9 +1103,6 @@ struct MacMainView: View {
                         ProgressView()
                             .controlSize(.small)
                     }
-
-                    listHeaderActions
-                        .fixedSize(horizontal: true, vertical: false)
                 }
                 .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, Spacing.md)
@@ -1872,26 +1886,6 @@ private struct FolderNameSheet: View {
         .frame(width: MacMainLayoutMetrics.folderNameSheetWidth)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("folder-name-sheet")
-    }
-}
-
-private struct MainToolbarIconLabel: View {
-    let title: String
-    let systemImage: String
-    var color: Color = Palette.textSecondary
-
-    var body: some View {
-        Label(title, systemImage: systemImage)
-            .labelStyle(.iconOnly)
-            .font(Typography.headingMedium)
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(color)
-            .frame(
-                width: MacMainLayoutMetrics.toolbarIconFrame,
-                height: MacMainLayoutMetrics.toolbarIconFrame
-            )
-            .contentShape(Rectangle())
-            .accessibilityLabel(title)
     }
 }
 

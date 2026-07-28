@@ -545,7 +545,6 @@ enum MacMainLayoutMetrics {
     static let listMaxWidth: CGFloat = 560
     static let recordingRowMinHeight: CGFloat = 48
     static let recordingRowFailureMinHeight: CGFloat = 68
-    static let toolbarIconFrame: CGFloat = 28
     static let folderNameSheetWidth: CGFloat = 720
     static let folderNameSheetActionWidth: CGFloat = 200
     static let recordingTitleEditMinWidth: CGFloat = 440

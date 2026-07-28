@@ -165,7 +165,9 @@ struct WaiComputerMacApp: App {
                 .handlesExternalEvents(preferring: Set(["main"]), allowing: Set(["main"]))
         }
         .handlesExternalEvents(matching: Set(["main"]))
-        .windowStyle(.hiddenTitleBar)
+        // Standard title bar: on macOS 26 the unified toolbar is the platform's
+        // main Liquid Glass surface — hiding it forfeited the material and left
+        // the window with a hand-built header row instead of real toolbar items.
         .defaultSize(width: 1200, height: 800)
         .commands {
             // Replace default Cmd+N (new window) with Inbox-first creation commands.

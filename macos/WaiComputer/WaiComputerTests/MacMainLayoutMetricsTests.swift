@@ -20,7 +20,8 @@ final class MacMainLayoutMetricsTests: XCTestCase {
     }
 
     func testToolbarAndRenameSheetUseStableDimensions() {
-        XCTAssertEqual(MacMainLayoutMetrics.toolbarIconFrame, 28)
+        // toolbarIconFrame is gone: list actions are real ToolbarItems now, so
+        // the system owns their sizing.
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.folderNameSheetWidth, 600)
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.folderNameSheetActionWidth, 168)
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.recordingTitleEditMinWidth, 420)
