@@ -87,9 +87,18 @@ final class MacInboxViewModel: ObservableObject {
     private var folderId: String?
     private var selectedUploadFileHasScopedAccess = false
     private var processingRefreshTask: Task<Void, Never>?
+    // Waking from sleep fires a refresh before the network is back; those
+    // failures resolve themselves in seconds, so retry silently and keep the
+    // error banner for failures that persist (or were never transient).
+    private var transientRetryTask: Task<Void, Never>?
+    private var transientRetryAttempt = 0
+    private static let transientRetryDelays: [Duration] = [
+        .seconds(2), .seconds(5), .seconds(10),
+    ]
 
     deinit {
         processingRefreshTask?.cancel()
+        transientRetryTask?.cancel()
     }
 
     init(apiClient: APIClient, sourceKind: InboxSourceKind? = nil, folderId: String? = nil) {
@@ -105,6 +114,8 @@ final class MacInboxViewModel: ObservableObject {
         self.folderId = folderId
         nextCursor = nil
         processingRefreshTask?.cancel()
+        transientRetryTask?.cancel()
+        transientRetryAttempt = 0
         await load()
     }
 
@@ -132,14 +143,34 @@ final class MacInboxViewModel: ObservableObject {
             )
             guard generation == loadGeneration else { return }
             errorMessage = nil
+            transientRetryAttempt = 0
             rowsRevision = rowsRevision.replacingRows()
             rows = Self.visibleRows(response.rows)
             nextCursor = response.nextCursor
             scheduleProcessingRefreshIfNeeded()
         } catch {
             guard generation == loadGeneration else { return }
+            if scheduleTransientRetryIfPossible(after: error) { return }
             errorMessage = error.userFacingMessage(context: .library)
         }
+    }
+
+    /// Silent-retry gate for transient network failures. Returns true when a
+    /// retry was scheduled (no banner); once the delays are exhausted the
+    /// failure surfaces normally.
+    private func scheduleTransientRetryIfPossible(after error: any Error) -> Bool {
+        guard error.isTransientNetworkError,
+              transientRetryAttempt < Self.transientRetryDelays.count
+        else { return false }
+        let delay = Self.transientRetryDelays[transientRetryAttempt]
+        transientRetryAttempt += 1
+        transientRetryTask?.cancel()
+        transientRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            await self?.load()
+        }
+        return true
     }
 
     func loadMore() async {

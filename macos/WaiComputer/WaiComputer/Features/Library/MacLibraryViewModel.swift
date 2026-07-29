@@ -43,9 +43,18 @@ class MacLibraryViewModel: ObservableObject {
     private(set) var foldersRevision = 0
     private var loadGeneration = 0
     private var processingRefreshTask: Task<Void, Never>?
+    // Waking from sleep fires a refresh before the network is back; those
+    // failures resolve themselves in seconds, so retry silently and keep the
+    // error banner for failures that persist (or were never transient).
+    private var transientRetryTask: Task<Void, Never>?
+    private var transientRetryAttempt = 0
+    private static let transientRetryDelays: [Duration] = [
+        .seconds(2), .seconds(5), .seconds(10),
+    ]
 
     deinit {
         processingRefreshTask?.cancel()
+        transientRetryTask?.cancel()
     }
 
     func filteredRecordings(type: RecordingType? = nil, folderId: String? = nil, trashed: Bool = false) -> [Recording] {
@@ -92,6 +101,7 @@ class MacLibraryViewModel: ObservableObject {
             }.value
             guard generation == loadGeneration else { return }
 
+            transientRetryAttempt = 0
             recordings = activeRecordings
             trashedRecordings = trashedItems
             folders = folderItems
@@ -121,6 +131,9 @@ class MacLibraryViewModel: ObservableObject {
             }
         } catch {
             guard generation == loadGeneration else { return }
+            if scheduleTransientRetryIfPossible(after: error, apiClient: apiClient) {
+                return
+            }
             if hasExistingContent {
                 NSLog("[Library] Background refresh failed: %@", error.localizedDescription)
                 let stillRefreshing = recordings.contains(where: shouldBackgroundRefresh)
@@ -137,6 +150,27 @@ class MacLibraryViewModel: ObservableObject {
                 self.error = error.userFacingMessage(context: .library)
             }
         }
+    }
+
+    /// Silent-retry gate for transient network failures. Returns true when a
+    /// retry was scheduled (no banner); once the delays are exhausted the
+    /// failure surfaces normally.
+    private func scheduleTransientRetryIfPossible(
+        after error: any Error,
+        apiClient: APIClient
+    ) -> Bool {
+        guard error.isTransientNetworkError,
+              transientRetryAttempt < Self.transientRetryDelays.count
+        else { return false }
+        let delay = Self.transientRetryDelays[transientRetryAttempt]
+        transientRetryAttempt += 1
+        transientRetryTask?.cancel()
+        transientRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            await self?.loadLibrary(apiClient: apiClient)
+        }
+        return true
     }
 
     func setRecordings(_ recordings: [Recording]) {
