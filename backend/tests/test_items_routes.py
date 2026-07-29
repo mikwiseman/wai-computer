@@ -436,6 +436,28 @@ async def test_upload_video_enqueues_recording(client, auth_headers, db_session)
     assert recording.title_auto_generated is False
 
 
+async def test_upload_media_with_placeholder_filename_keeps_auto_title(
+    client, auth_headers, db_session
+) -> None:
+    """A filename that yields no usable title ("untitled") must leave
+    title_auto_generated up — otherwise the recording stays nameless forever
+    now that the pipeline respects the flag."""
+    with patch("app.tasks.media_import.import_uploaded_media_task.delay"):
+        resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("untitled.mp3", b"ID3 fake audio body", "audio/mpeg")},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 202, resp.text
+    recording = (
+        await db_session.execute(
+            select(Recording).where(Recording.id == UUID(resp.json()["recording_id"]))
+        )
+    ).scalar_one()
+    assert recording.title is None
+    assert recording.title_auto_generated is True
+
+
 async def test_upload_media_with_valid_folder_creates_foldered_recording(
     client, auth_headers, db_session
 ) -> None:

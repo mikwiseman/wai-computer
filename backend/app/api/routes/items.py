@@ -385,7 +385,10 @@ async def _handle_media_upload(
         title=display_title,
         # The filename is user-provided identity, not an AI placeholder. File
         # imports keep it just like an explicit title or a manual rename.
-        title_auto_generated=False,
+        # But when the filename yields no usable title (placeholder names like
+        # "untitled"), leave the flag up so the pipeline titles it — otherwise
+        # the recording would stay nameless forever.
+        title_auto_generated=display_title is None,
         type="note",
         status=RecordingStatus.PROCESSING.value,
         uploaded_at=datetime.now(timezone.utc),
