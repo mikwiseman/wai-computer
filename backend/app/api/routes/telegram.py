@@ -3942,7 +3942,15 @@ async def _import_telegram_media_and_reply(
     if chat_id is None:
         return
     caption = str(message.get("caption") or "").strip()
-    title = caption[:500] if caption else None
+    # Same contract as the upload endpoints: a media FILE keeps its filename
+    # as user-provided identity and is never auto-renamed. Only file_name
+    # counts — voice notes carry none (source_filename is Telegram's storage
+    # path, not a name the sender knows), so they keep automatic titles.
+    title = (
+        caption[:500]
+        if caption
+        else title_from_filename(str(media.get("file_name") or ""))
+    )
     action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
 
     async def _report_import_stage(stage: str) -> None:

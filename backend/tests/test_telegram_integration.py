@@ -2343,6 +2343,46 @@ async def test_handle_media_message_marks_pending_context_before_import(
 
 
 @pytest.mark.asyncio
+async def test_handle_media_message_uses_audio_filename_as_title(
+    db_session: AsyncSession,
+    monkeypatch,
+    tmp_path,
+):
+    """An audio FILE keeps its filename as identity (same contract as the
+    upload endpoints), so the summary can never rename it post-factum.
+    Voice notes have no file_name and keep automatic titles (asserted by
+    test_handle_media_message_imports_and_replies)."""
+    user = await _user(db_session, "telegram-media-filename@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=53, telegram_chat_id=53)
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+    pending = _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path)
+    seen_titles: list[str | None] = []
+
+    async def fake_import(**kwargs):
+        seen_titles.append(kwargs["title"])
+        return SimpleNamespace(
+            recording=SimpleNamespace(id=uuid4(), title="эксперты 2"),
+            summary=None,
+            transcript="",
+        )
+
+    monkeypatch.setattr(telegram_routes, "import_media_as_recording", fake_import)
+
+    await telegram_routes._handle_media_message(
+        db_session,
+        capture,
+        message={"message_id": 23, "chat": {"id": 53}},
+        account=account,
+        media={"kind": "audio", "file_id": "file-id", "file_name": "эксперты 2.mp3"},
+    )
+    await asyncio.gather(*pending)
+
+    assert seen_titles == ["эксперты 2"]
+
+
+@pytest.mark.asyncio
 async def test_handle_media_message_surfaces_unexpected_import_crash(
     db_session: AsyncSession,
     monkeypatch,
