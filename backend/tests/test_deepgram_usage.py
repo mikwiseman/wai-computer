@@ -293,18 +293,30 @@ def test_recording_path_meters_outside_the_caller_transaction():
     # recording path may pass one.
     assert "record_deepgram_usage_event(\n" not in text
 
-    # The standalone wrapper owns its commit. Passing commit= through **kwargs
-    # duplicated the keyword, raised TypeError inside the wrapper, and silently
-    # dropped every recording STT usage event (production, 2026-07-28).
-    for chunk in text.split("record_deepgram_usage_event_standalone(")[1:]:
-        depth = 1
-        call_args = []
-        for ch in chunk:
-            if ch == "(":
-                depth += 1
-            elif ch == ")":
-                depth -= 1
-                if depth == 0:
-                    break
-            call_args.append(ch)
-        assert "commit=" not in "".join(call_args)
+    # The standalone wrappers own their commit. Passing commit= through
+    # **kwargs duplicated the keyword, raised TypeError inside the wrapper's
+    # blanket except, and silently dropped every recording STT usage event
+    # (production, 2026-07-28). Sweep every caller of both wrappers, app-wide.
+    app_root = Path(__file__).resolve().parents[1] / "app"
+    wrappers = (
+        "record_deepgram_usage_event_standalone(",
+        "record_ai_usage_event_standalone(",
+    )
+    offenders: list[str] = []
+    for source_file in app_root.rglob("*.py"):
+        file_text = source_file.read_text(encoding="utf-8")
+        for wrapper in wrappers:
+            for chunk in file_text.split(wrapper)[1:]:
+                depth = 1
+                call_args = []
+                for ch in chunk:
+                    if ch == "(":
+                        depth += 1
+                    elif ch == ")":
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    call_args.append(ch)
+                if "commit=" in "".join(call_args):
+                    offenders.append(f"{source_file.name}: {wrapper}")
+    assert offenders == []
