@@ -3,6 +3,7 @@
 from functools import lru_cache
 from ipaddress import ip_address
 from tempfile import gettempdir
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -49,10 +50,15 @@ class Settings(BaseSettings):
     # Voice provider
     realtime_voice_provider: str = "elevenlabs"
 
-    # OpenAI — Companion, OCR, comparisons, memory tasks, embeddings, and live
-    # dictation STT (gpt-realtime-whisper through the realtime proxy).
+    # OpenAI — Companion, recording summaries, OCR, comparisons, memory tasks,
+    # embeddings, and live dictation STT (gpt-realtime-whisper through the
+    # realtime proxy).
     openai_api_key: str = ""
     openai_llm_model: str = "gpt-5.5"
+    recording_summary_model: str = "gpt-5.6-sol"
+    recording_summary_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = (
+        "medium"
+    )
     # Transcription delay for gpt-realtime-whisper dictation sessions:
     # minimal|low|medium|high|xhigh. Higher = more context = better accuracy;
     # deltas still stream live. "high" measured ≈0.6 s commit→final.
@@ -65,7 +71,8 @@ class Settings(BaseSettings):
     ocr_enabled: bool = True
     ocr_max_pages: int = 10
 
-    # Cerebras — translation, summary generation, and legacy cleanup endpoints.
+    # Cerebras — translation, saved-content/digest summaries, entity extraction,
+    # and legacy cleanup endpoints.
     cerebras_api_key: str = ""
     cerebras_api_base_url: str = "https://api.cerebras.ai/v1"
     cerebras_llm_model: str = "gpt-oss-120b"

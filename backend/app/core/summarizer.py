@@ -1,4 +1,4 @@
-"""Cerebras-backed summarization, title generation, and entity extraction."""
+"""OpenAI recording summaries plus Cerebras content processing and extraction."""
 
 import asyncio
 import logging
@@ -20,6 +20,8 @@ from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_exception,
 )
+from app.core.openai_client import get_openai_client
+from app.core.openai_responses import OpenAIResponseError, ensure_response_completed
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -170,9 +172,9 @@ MAP_REDUCE_OVERLAP_LINES = 2
 MAP_REDUCE_MAX_CONCURRENCY = 4
 MAP_REDUCE_CHUNK_RETRY_DELAY_SECONDS = 2.0
 
-# gpt-oss reasoning tokens count against max_completion_tokens; 4096 starved
-# long-recording summaries (finish_reason=length killed the reduce pass on a
-# 74-minute meeting, prod 2026-07-08). Generous base + a one-shot retry ceiling.
+# Both OpenAI Responses and Cerebras count reasoning tokens inside their output
+# budgets. A 4096-token budget starved long structured summaries in production,
+# so both paths share a generous base and one-shot retry ceiling.
 SUMMARY_MAX_COMPLETION_TOKENS = 8192
 SUMMARY_RETRY_MAX_COMPLETION_TOKENS = 24576
 
@@ -180,6 +182,11 @@ SUMMARY_RETRY_MAX_COMPLETION_TOKENS = 24576
 def _require_cerebras_key() -> None:
     if not settings.cerebras_api_key:
         raise ValueError("CEREBRAS_API_KEY not configured")
+
+
+def _require_openai_key() -> None:
+    if not settings.openai_api_key:
+        raise ValueError("OPENAI_API_KEY not configured")
 
 
 def _summary_messages(instructions: str, content: str) -> list[dict[str, str]]:
@@ -256,38 +263,36 @@ async def _summarize_transcript_once(
     instructions: str | None = None,
     name: str = "recording_summary",
 ) -> SummaryResult:
-    """One Cerebras strict-structured-output summarization pass.
+    """One OpenAI Responses API structured-output summarization pass.
 
-    gpt-oss reasoning tokens count against ``max_completion_tokens``, and a rich
-    structured summary of a long recording can exceed the base budget — the
-    completion then stops with ``finish_reason=length`` and the whole summary
-    fails (prod 2026-07-08: a 74-minute meeting died on the reduce pass). Retry
-    once with a much larger budget before failing.
+    Reasoning and visible output both count against ``max_output_tokens``. Retry
+    once with a larger budget only when OpenAI explicitly reports that limit.
     """
-    _require_cerebras_key()
+    _require_openai_key()
 
     prompt = build_summary_prompt(language=language, style=style, instructions=instructions)
-    client = get_cerebras_client()
+    client = get_openai_client()
+    operation = f"Summarization ({name})"
 
-    async def _attempt(max_completion_tokens: int) -> _SummarySchema:
-        response = await client.chat.completions.create(
-            model=settings.cerebras_llm_model,
-            messages=_summary_messages(prompt, transcript),
-            response_format=strict_json_response_format(_SummarySchema, name=name),
-            reasoning_effort="medium",
-            max_completion_tokens=max_completion_tokens,
+    async def _attempt(max_output_tokens: int) -> _SummarySchema:
+        response = await client.responses.parse(
+            model=settings.recording_summary_model,
+            input=_summary_messages(prompt, transcript),
+            text_format=_SummarySchema,
+            reasoning={"effort": settings.recording_summary_reasoning_effort},
+            max_output_tokens=max_output_tokens,
         )
-        return chat_completion_parsed(
-            response,
-            _SummarySchema,
-            operation="Summarization",
-        )
+        ensure_response_completed(response, operation=operation)
+        parsed = response.output_parsed
+        if parsed is None:
+            raise OpenAIResponseError(f"{operation} returned no parsed output")
+        return parsed
 
     try:
         try:
             parsed = await _attempt(SUMMARY_MAX_COMPLETION_TOKENS)
-        except CerebrasResponseError as exc:
-            if "length" not in str(exc):
+        except OpenAIResponseError as exc:
+            if "max_output_tokens" not in str(exc):
                 raise
             add_sentry_breadcrumb(
                 category="summarizer",
@@ -648,7 +653,7 @@ async def summarize_transcript(
     style: str = DEFAULT_SUMMARY_STYLE,
     instructions: str | None = None,
 ) -> SummaryResult:
-    """Summarize a transcript via Cerebras strict structured outputs.
+    """Summarize a transcript via OpenAI Responses structured outputs.
 
     Transcripts longer than ``MAP_REDUCE_CHAR_THRESHOLD`` are summarized
     map-reduce (chunk -> per-chunk summary -> merge) so a multi-hour recording

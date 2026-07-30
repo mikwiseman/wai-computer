@@ -26,6 +26,13 @@ def test_telegram_download_default_allows_one_gib_imports(make_settings):
     assert settings.telegram_download_max_bytes == 1024 * 1024 * 1024
 
 
+def test_recording_summary_defaults_to_gpt_56_sol_medium(make_settings):
+    settings = make_settings()
+
+    assert settings.recording_summary_model == "gpt-5.6-sol"
+    assert settings.recording_summary_reasoning_effort == "medium"
+
+
 class TestAuthCookieDomainResolved:
     """Tests for Settings.auth_cookie_domain_resolved property."""
 

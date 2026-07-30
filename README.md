@@ -58,7 +58,8 @@ An ecosystem for task-centric dialogue, realtime voice, transcription, app gener
 - OpenAI gpt-realtime-whisper streaming speech-to-text for live dictation; Deepgram Nova-3 for recording captions
 - ElevenLabs Scribe v2 file transcription for full recording processing
 - ElevenLabs realtime voice sessions
-- Cerebras gpt-oss-120b for summarization, entity extraction, and dictation cleanup
+- OpenAI gpt-5.6-sol (medium reasoning) for recording summaries
+- Cerebras gpt-oss-120b for saved-content/digest summaries, entity extraction, and dictation cleanup
 - OpenAI Responses API for Companion and embeddings
 - PostgreSQL with pgvector for hybrid search
 - Redis for agent scheduling and deploy/runtime coordination
@@ -240,7 +241,7 @@ To capture audio from Zoom/Meet/etc:
 - **Backend**: Python 3.11+, FastAPI
 - **Database**: PostgreSQL 16 + pgvector
 - **Transcription**: OpenAI `gpt-realtime-whisper` for dictation live STT, Deepgram `nova-3` for recording live STT, ElevenLabs `scribe_v2` for full file STT
-- **AI**: Cerebras `gpt-oss-120b` for summaries/dictation cleanup; OpenAI Responses API for Companion and embeddings
+- **AI**: OpenAI `gpt-5.6-sol` with medium reasoning for recording summaries; Cerebras `gpt-oss-120b` for saved-content/digest summaries, entities, and dictation cleanup; OpenAI Responses API for Companion and embeddings
 - **Audio Codec**: Opus (16kHz, mono)
 - **Deploy**: Cloudflare Pages + Workers
 

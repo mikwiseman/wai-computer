@@ -15,16 +15,15 @@ from app.models.recording import Segment
 
 
 def _make_model_response(parsed: _SummarySchema):
-    """Create a mock Chat Completions result with the given parsed payload."""
-    response = MagicMock()
-    response.model = "gpt-oss-120b"
-    response.choices = [
-        SimpleNamespace(
-            finish_reason="stop",
-            message=SimpleNamespace(content=parsed.model_dump_json()),
-        )
-    ]
-    return response
+    """Create a mock Responses API result with the given parsed payload."""
+    return SimpleNamespace(
+        model="gpt-5.6-sol",
+        status="completed",
+        output=[],
+        output_parsed=parsed,
+        incomplete_details=None,
+        error=None,
+    )
 
 
 def _summary_result_with_highlights(highlights: list[dict]) -> SummaryResult:
@@ -93,6 +92,13 @@ def mock_settings():
     with (
         patch.object(summarizer_module.settings, "cerebras_api_key", "sk-test"),
         patch.object(summarizer_module.settings, "cerebras_llm_model", "gpt-oss-120b"),
+        patch.object(summarizer_module.settings, "openai_api_key", "sk-test"),
+        patch.object(summarizer_module.settings, "recording_summary_model", "gpt-5.6-sol"),
+        patch.object(summarizer_module.settings, "recording_summary_reasoning_effort", "medium"),
+        patch(
+            "app.core.summarizer.get_openai_client",
+            side_effect=AssertionError("test must provide an explicit OpenAI client"),
+        ),
     ):
         yield
 
@@ -115,9 +121,9 @@ async def test_highlight_extraction_from_summary():
 
     mock_response = _make_model_response(_SummarySchema(**response_data))
     mock_client = MagicMock()
-    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    mock_client.responses.parse = AsyncMock(return_value=mock_response)
 
-    with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
+    with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
         result = await summarize_transcript("Some transcript")
 
     assert hasattr(result, "highlights")
