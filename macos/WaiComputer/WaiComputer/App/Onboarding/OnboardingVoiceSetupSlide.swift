@@ -63,14 +63,7 @@ struct OnboardingVoiceSetupSlide: View {
             .lineSpacing(6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(Spacing.lg)
-            .background(
-                RoundedRectangle(cornerRadius: Radius.lg)
-                    .fill(Palette.surfaceSubtle)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.lg)
-                            .strokeBorder(Palette.border, lineWidth: 1)
-                    )
-            )
+            .waiGlassChrome(cornerRadius: Radius.lg, interactive: false)
     }
 
     private var promptText: String {

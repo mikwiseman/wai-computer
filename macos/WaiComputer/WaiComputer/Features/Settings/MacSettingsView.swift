@@ -260,15 +260,20 @@ struct MacSettingsView: View {
     }
 
     var body: some View {
-        // Category navigation is a fixed tab-bar header above the form — real
-        // navigation chrome, not a labeled picker row inside the form. The tab
-        // names carry the meaning; no caption row needed.
+        // Category navigation is a fixed segmented control above the form —
+        // real navigation chrome, not a labeled picker row inside the form.
+        // On macOS 26 the segmented picker renders as Liquid Glass.
         VStack(spacing: 0) {
-            WaiTabBar(
-                tabs: MacSettingsCategory.allCases.map { (label: settingsCategoryTitle($0), value: $0) },
-                selection: $selectedSettingsCategory
-            )
+            Picker("", selection: $selectedSettingsCategory) {
+                ForEach(MacSettingsCategory.allCases) { category in
+                    Text(settingsCategoryTitle(category)).tag(category)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, Spacing.lg)
             .padding(.top, Spacing.sm)
+            .padding(.bottom, Spacing.xs)
             .accessibilityIdentifier("settings-category-tabs")
 
             Form {

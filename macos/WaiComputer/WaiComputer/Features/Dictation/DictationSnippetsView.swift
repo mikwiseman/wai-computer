@@ -49,8 +49,11 @@ struct DictationSnippetsView: View {
                         .textFieldStyle(.plain)
                         .font(Typography.body)
                 }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .waiGlassChrome(cornerRadius: Radius.md, interactive: false)
                 .padding(.horizontal, Spacing.xl)
-                .padding(.vertical, Spacing.md)
+                .padding(.vertical, Spacing.sm)
 
                 WaiDivider()
             }
@@ -128,7 +131,7 @@ struct DictationSnippetsView: View {
                     Label(t("Add", "Добавить"), systemImage: "plus")
                         .font(Typography.headingSmall)
                 }
-                .buttonStyle(.borderedProminent)
+                .waiGlassButton(prominent: true, controlSize: .regular)
                 .disabled(
                     newTrigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                     newExpansion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -267,7 +270,7 @@ private struct SnippetEditSheet: View {
                         showDuplicateWarning = true
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .waiGlassButton(prominent: true, controlSize: .regular)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     trigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||

@@ -210,10 +210,15 @@ struct DictationNoticeView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .fill(Color.black.opacity(0.85))
-        )
+        .background {
+            // Liquid Glass on Tahoe; the legacy dark HUD below.
+            if #available(macOS 26.0, *) {
+                Color.clear.glassEffect(.regular, in: .rect(cornerRadius: Radius.lg))
+            } else {
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .fill(Color.black.opacity(0.85))
+            }
+        }
         .frame(maxWidth: 360)
     }
 }

@@ -91,59 +91,58 @@ struct MenuBarView: View {
             .padding(.horizontal, Spacing.lg)
             .padding(.top, Spacing.lg)
 
-            // Quick actions
-            VStack(spacing: Spacing.xs) {
+            // Quick actions — glass capsule cluster (Control Center idiom on
+            // macOS 26); bordered system buttons on earlier systems.
+            VStack(spacing: Spacing.sm) {
                 if recordingVM.shouldPresentLiveView {
-                    Button {
-                        Task {
-                            if recordingVM.canResumeRecording {
-                                await appState.resumeRecording()
-                            } else {
-                                await appState.pauseRecording()
+                    WaiGlassEffectGroup(spacing: Spacing.sm) {
+                        VStack(spacing: Spacing.sm) {
+                            Button {
+                                Task {
+                                    if recordingVM.canResumeRecording {
+                                        await appState.resumeRecording()
+                                    } else {
+                                        await appState.pauseRecording()
+                                    }
+                                }
+                            } label: {
+                                HStack {
+                                    Label(
+                                        recordingVM.canResumeRecording ? t("Resume Recording", "Продолжить запись") : t("Pause Recording", "Приостановить запись"),
+                                        systemImage: recordingVM.canResumeRecording ? "play.fill" : "pause.fill"
+                                    )
+                                    Spacer()
+                                    Text("\u{21E7}\u{2318}P")
+                                        .font(Typography.caption)
+                                        .foregroundStyle(Palette.textTertiary)
+                                }
+                                .frame(maxWidth: .infinity)
                             }
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: recordingVM.canResumeRecording ? "play.circle.fill" : "pause.circle")
-                                .foregroundStyle(Palette.textSecondary)
-                            Text(recordingVM.canResumeRecording ? t("Resume Recording", "Продолжить запись") : t("Pause Recording", "Приостановить запись"))
-                                .font(Typography.body)
-                            Spacer()
-                            Text("\u{21E7}\u{2318}P")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
-                        }
-                        .contentShape(Rectangle())
-                        .padding(.vertical, Spacing.sm)
-                        .padding(.horizontal, Spacing.lg)
-                    }
-                    .buttonStyle(.plain)
-                    .menuRowHover()
-                    .disabled(!recordingVM.canPauseRecording && !recordingVM.canResumeRecording)
+                            .waiGlassButton()
+                            .disabled(!recordingVM.canPauseRecording && !recordingVM.canResumeRecording)
 
-                    Button {
-                        Task {
-                            await appState.stopRecording()
-                            await loadRecentRecordings()
+                            Button {
+                                Task {
+                                    await appState.stopRecording()
+                                    await loadRecentRecordings()
+                                }
+                            } label: {
+                                HStack {
+                                    Label(
+                                        recordingVM.canStopRecording ? t("Stop Recording", "Остановить запись") : recordingVM.statusText,
+                                        systemImage: recordingVM.canStopRecording ? "stop.fill" : "hourglass"
+                                    )
+                                    Spacer()
+                                    Text("\u{2318}.")
+                                        .font(Typography.caption)
+                                        .foregroundStyle(Palette.textTertiary)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .waiGlassButton(prominent: true, tint: Palette.recording, controlSize: .regular)
+                            .disabled(!recordingVM.canStopRecording)
                         }
-                    } label: {
-                        HStack {
-                            Image(systemName: recordingVM.canStopRecording ? "stop.circle.fill" : "hourglass.circle")
-                                .foregroundStyle(recordingVM.canStopRecording ? Palette.recording : Palette.textSecondary)
-                            Text(recordingVM.canStopRecording ? t("Stop Recording", "Остановить запись") : recordingVM.statusText)
-                                .font(Typography.body)
-                            Spacer()
-                            Text("\u{2318}.")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
-                        }
-                        .contentShape(Rectangle())
-                        .padding(.vertical, Spacing.sm)
-                        .padding(.horizontal, Spacing.lg)
                     }
-                    .buttonStyle(.plain)
-                    .menuRowHover()
-                    .disabled(!recordingVM.canStopRecording)
                 } else if appState.completedRecordingContext != nil {
                     HStack {
                         Image(systemName: "hourglass.circle")
@@ -155,69 +154,56 @@ struct MenuBarView: View {
                     .padding(.vertical, Spacing.sm)
                     .padding(.horizontal, Spacing.lg)
                 } else {
-                    Button {
-                        appState.pendingMainWindowAction = .inboxCommand(.contextualNew)
-                        openMainWindow()
-                    } label: {
-                        HStack {
-                            Image(systemName: "tray.full")
-                                .foregroundStyle(Palette.textSecondary)
-                            Text(t("New Inbox Item", "Новый объект в Инбоксе"))
-                                .font(Typography.body)
-                            Spacer()
-                            Text("\u{2318}N")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
-                        }
-                        .contentShape(Rectangle())
-                        .padding(.vertical, Spacing.sm)
-                        .padding(.horizontal, Spacing.lg)
-                    }
-                    .buttonStyle(.plain)
-                    .menuRowHover()
+                    WaiGlassEffectGroup(spacing: Spacing.sm) {
+                        VStack(spacing: Spacing.sm) {
+                            Button {
+                                Task { await appState.startRecording(type: .meeting, inputSource: .dual) }
+                            } label: {
+                                HStack {
+                                    Label(t("Record", "Записать"), systemImage: "waveform")
+                                    Spacer()
+                                    Text("\u{21E7}\u{2318}R")
+                                        .font(Typography.caption)
+                                        .foregroundStyle(Palette.textTertiary)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .waiGlassButton(prominent: true, controlSize: .regular)
 
-                    Button {
-                        Task { await appState.startRecording(type: .meeting, inputSource: .dual) }
-                    } label: {
-                        HStack {
-                            Image(systemName: "waveform")
-                                .foregroundStyle(Palette.textSecondary)
-                            Text(t("Record", "Записать"))
-                                .font(Typography.body)
-                            Spacer()
-                            Text("\u{21E7}\u{2318}R")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
-                        }
-                        .contentShape(Rectangle())
-                        .padding(.vertical, Spacing.sm)
-                        .padding(.horizontal, Spacing.lg)
-                    }
-                    .buttonStyle(.plain)
-                    .menuRowHover()
+                            Button {
+                                appState.pendingMainWindowAction = .inboxCommand(.contextualNew)
+                                openMainWindow()
+                            } label: {
+                                HStack {
+                                    Label(t("New Inbox Item", "Новый объект в Инбоксе"), systemImage: "tray.full")
+                                    Spacer()
+                                    Text("\u{2318}N")
+                                        .font(Typography.caption)
+                                        .foregroundStyle(Palette.textTertiary)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .waiGlassButton()
 
-                    Button {
-                        appState.pendingMainWindowAction = .inboxCommand(.uploadFile)
-                        openMainWindow()
-                    } label: {
-                        HStack {
-                            Image(systemName: "square.and.arrow.down")
-                                .foregroundStyle(Palette.textSecondary)
-                            Text(t("Upload File", "Загрузить файл"))
-                                .font(Typography.body)
-                            Spacer()
-                            Text("\u{2325}\u{2318}U")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
+                            Button {
+                                appState.pendingMainWindowAction = .inboxCommand(.uploadFile)
+                                openMainWindow()
+                            } label: {
+                                HStack {
+                                    Label(t("Upload File", "Загрузить файл"), systemImage: "square.and.arrow.down")
+                                    Spacer()
+                                    Text("\u{2325}\u{2318}U")
+                                        .font(Typography.caption)
+                                        .foregroundStyle(Palette.textTertiary)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .waiGlassButton()
                         }
-                        .contentShape(Rectangle())
-                        .padding(.vertical, Spacing.sm)
-                        .padding(.horizontal, Spacing.lg)
                     }
-                    .buttonStyle(.plain)
-                    .menuRowHover()
                 }
             }
+            .padding(.horizontal, Spacing.lg)
 
             WaiDivider()
                 .padding(.horizontal, Spacing.lg)

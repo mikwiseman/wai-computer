@@ -53,7 +53,16 @@ struct OnboardingView: View {
                 .padding(.top, Spacing.md)
         }
         .frame(minWidth: 960, minHeight: 640)
-        .background(Palette.canvas.ignoresSafeArea())
+        .background {
+            // On Tahoe keep the window transparent so the default window
+            // material and titlebar glass show through; earlier systems
+            // keep the opaque canvas fill.
+            if #available(macOS 26.0, *) {
+                Color.clear
+            } else {
+                Palette.canvas.ignoresSafeArea()
+            }
+        }
         .onAppear {
             currentPage = Self.clampedPageIndex(currentPage, pageCount: pages.count)
             persistCurrentPage()
@@ -769,14 +778,7 @@ private struct OnboardingPermissionSlide: View {
             }
         }
         .padding(22)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                .fill(Palette.surfaceSubtle)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                .strokeBorder(Palette.border, lineWidth: 1)
-        )
+        .waiGlassChrome(cornerRadius: Radius.xl, interactive: false)
     }
 
     @ViewBuilder
@@ -978,14 +980,7 @@ private struct PermissionRow: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .fill(Color(NSColor.windowBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(Palette.border, lineWidth: 1)
-        )
+        .waiGlassChrome(cornerRadius: Radius.lg, interactive: false)
     }
 
     @ViewBuilder

@@ -14,12 +14,9 @@ struct NewRecordingView: View {
             VStack(spacing: Spacing.md) {
                 ZStack {
                     RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        .fill(Palette.surfaceSubtle)
+                        .fill(Color.clear)
                         .frame(width: 64, height: 64)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                                .strokeBorder(Palette.border, lineWidth: 1)
-                        )
+                        .waiGlassChrome(cornerRadius: Radius.lg)
                     Image(systemName: "waveform")
                         .font(.system(size: 30, weight: .semibold))
                         .foregroundStyle(Palette.accent)
@@ -45,8 +42,7 @@ struct NewRecordingView: View {
                 )
                 .accessibilityIdentifier("start-recording-button")
             }
-            .background(Palette.surfaceSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            .waiGlassChrome(cornerRadius: Radius.md, interactive: true)
 
             // Import card (separate)
             VStack(spacing: 0) {
@@ -63,8 +59,7 @@ struct NewRecordingView: View {
                 )
                 .accessibilityIdentifier("import-audio-button")
             }
-            .background(Palette.surfaceSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            .waiGlassChrome(cornerRadius: Radius.md, interactive: true)
             .disabled(isImporting)
             .opacity(isImporting ? 0.5 : 1.0)
 
@@ -119,10 +114,19 @@ private struct RecordingOptionRow: View {
             }
             .padding(.vertical, Spacing.md)
             .padding(.horizontal, Spacing.lg)
-            .background(isHovered ? Palette.surfaceHover : .clear)
+            .background(hoverFill)
         }
         .buttonStyle(.plain)
         .keyboardShortcut(keyEquivalent)
         .onHover { isHovered = $0 }
+    }
+
+    /// On macOS 26 the interactive glass card supplies the hover/press response;
+    /// painting our own fill on top would flatten it. Pre-26 keeps the tint.
+    private var hoverFill: Color {
+        if #available(macOS 26.0, *) {
+            return .clear
+        }
+        return isHovered ? Palette.surfaceHover : .clear
     }
 }

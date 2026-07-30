@@ -12,79 +12,74 @@ struct LiveRecordingView: View {
         VStack(spacing: 0) {
             recordingHeader
 
-            WaiDivider()
-
             if let reason = recordingVM.conversationEndPromptReason {
                 conversationEndBanner(reason: reason)
             }
 
             recordingStatusBody
 
-            WaiDivider()
+            // Stop + Discard buttons. One GlassEffectContainer lets the three
+            // capsules merge/morph as a single glass cluster on macOS 26.
+            WaiGlassEffectGroup(spacing: Spacing.md) {
+                HStack(spacing: Spacing.md) {
+                    Spacer()
 
-            // Stop + Discard buttons
-            HStack(spacing: Spacing.md) {
-                Spacer()
+                    Button {
+                        // While still preparing nothing has been captured yet, so
+                        // abort immediately (no confirmation) — this is the escape
+                        // hatch from a stalled "Preparing recording…".
+                        if recordingVM.phase == .preparing {
+                            discardRecording()
+                        } else {
+                            showingDiscardConfirm = true
+                        }
+                    } label: {
+                        Label {
+                            Text(recordingVM.phase == .preparing
+                                 ? t("Cancel", "Отмена")
+                                 : t("Discard", "Не сохранять"))
+                        } icon: {
+                            Image(systemName: "trash")
+                        }
+                        .font(Typography.headingSmall)
+                    }
+                    .waiGlassButton(controlSize: .large)
+                    .disabled(!recordingVM.canStopRecording && recordingVM.phase != .preparing)
+                    .accessibilityIdentifier("discard-recording-button")
 
-                Button {
-                    // While still preparing nothing has been captured yet, so
-                    // abort immediately (no confirmation) — this is the escape
-                    // hatch from a stalled "Preparing recording…".
-                    if recordingVM.phase == .preparing {
-                        discardRecording()
-                    } else {
-                        showingDiscardConfirm = true
+                    Button(action: togglePause) {
+                        Label {
+                            Text(recordingVM.canResumeRecording ? t("Resume", "Продолжить") : t("Pause", "Пауза"))
+                                .lineLimit(1)
+                        } icon: {
+                            Image(systemName: recordingVM.canResumeRecording ? "play.fill" : "pause.fill")
+                        }
+                        .font(Typography.headingSmall)
+                        .frame(minWidth: 120)
                     }
-                } label: {
-                    Label {
-                        Text(recordingVM.phase == .preparing
-                             ? t("Cancel", "Отмена")
-                             : t("Discard", "Не сохранять"))
-                    } icon: {
-                        Image(systemName: "trash")
+                    .waiGlassButton(controlSize: .large)
+                    .disabled(!recordingVM.canPauseRecording && !recordingVM.canResumeRecording)
+                    .accessibilityIdentifier(recordingVM.canResumeRecording ? "resume-recording-button" : "pause-recording-button")
+
+                    Button(action: stopRecording) {
+                        Label {
+                            // Fixed label: phase status lives in the header only.
+                            // Morphing the button into a second status line made
+                            // the same string render twice and the button resize.
+                            Text(t("Stop", "Остановить"))
+                                .lineLimit(1)
+                        } icon: {
+                            Image(systemName: "stop.fill")
+                        }
+                        .font(Typography.headingSmall)
+                        .frame(minWidth: 150)
                     }
-                    .font(Typography.headingSmall)
+                    .waiGlassButton(prominent: true, tint: Palette.recording)
+                    .disabled(!recordingVM.canStopRecording)
+                    .accessibilityIdentifier("stop-recording-button")
+
+                    Spacer()
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .disabled(!recordingVM.canStopRecording && recordingVM.phase != .preparing)
-                .accessibilityIdentifier("discard-recording-button")
-
-                Button(action: togglePause) {
-                    Label {
-                        Text(recordingVM.canResumeRecording ? t("Resume", "Продолжить") : t("Pause", "Пауза"))
-                            .lineLimit(1)
-                    } icon: {
-                        Image(systemName: recordingVM.canResumeRecording ? "play.fill" : "pause.fill")
-                    }
-                    .font(Typography.headingSmall)
-                    .frame(minWidth: 120)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .disabled(!recordingVM.canPauseRecording && !recordingVM.canResumeRecording)
-                .accessibilityIdentifier(recordingVM.canResumeRecording ? "resume-recording-button" : "pause-recording-button")
-
-                Button(action: stopRecording) {
-                    Label {
-                        // Fixed label: phase status lives in the header only.
-                        // Morphing the button into a second status line made
-                        // the same string render twice and the button resize.
-                        Text(t("Stop", "Остановить"))
-                            .lineLimit(1)
-                    } icon: {
-                        Image(systemName: "stop.fill")
-                    }
-                    .font(Typography.headingSmall)
-                    .frame(minWidth: 150)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(Palette.recording)
-                .disabled(!recordingVM.canStopRecording)
-                .accessibilityIdentifier("stop-recording-button")
-
-                Spacer()
             }
             .padding(.horizontal, Spacing.xxl)
             .padding(.vertical, Spacing.xl)
@@ -141,18 +136,22 @@ struct LiveRecordingView: View {
             } label: {
                 Text(t("Keep recording", "Продолжить запись"))
             }
-            .buttonStyle(.bordered)
+            .waiGlassButton()
             .accessibilityIdentifier("conversation-end-continue-button")
 
             Button(action: stopRecording) {
                 Text(t("Stop now", "Остановить сейчас"))
             }
-            .buttonStyle(.borderedProminent)
+            .waiGlassButton(prominent: true, controlSize: .regular)
             .accessibilityIdentifier("conversation-end-stop-button")
         }
-        .padding(.horizontal, Spacing.xxl)
+        .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
-        .background(Palette.warning.opacity(0.12))
+        // Floating warning-tinted glass card instead of a full-width opaque
+        // strip — floating chrome is exactly what Liquid Glass is for.
+        .waiGlassChrome(cornerRadius: Radius.lg, tint: Palette.warning)
+        .padding(.horizontal, Spacing.xxl)
+        .padding(.top, Spacing.sm)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("conversation-end-banner")
     }

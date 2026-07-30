@@ -63,8 +63,11 @@ struct DictationDictionaryView: View {
                         .textFieldStyle(.plain)
                         .font(Typography.body)
                 }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .waiGlassChrome(cornerRadius: Radius.md, interactive: false)
                 .padding(.horizontal, Spacing.xl)
-                .padding(.vertical, Spacing.md)
+                .padding(.vertical, Spacing.sm)
 
                 WaiDivider()
             }
@@ -259,7 +262,7 @@ struct DictationDictionaryView: View {
                         .foregroundStyle(Palette.textSecondary)
                 }
                 Button(editingWord == nil ? t("Add", "Добавить") : t("Save", "Сохранить")) { commitWord() }
-                    .buttonStyle(.borderedProminent)
+                    .waiGlassButton(prominent: true, controlSize: .regular)
                     .disabled(newWord.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if let duplicate = duplicateWord {

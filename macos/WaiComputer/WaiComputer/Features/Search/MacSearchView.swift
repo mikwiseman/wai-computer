@@ -130,13 +130,12 @@ struct MacSearchView: View {
                     )
                         .labelStyle(.titleAndIcon)
                 }
-                .buttonStyle(.borderedProminent)
+                .waiGlassButton(prominent: true, controlSize: .regular)
                 .disabled(viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isLoading)
                 .accessibilityIdentifier("search-submit-button")
             }
             .padding(Spacing.md)
-            .background(Palette.surfaceSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            .waiGlassChrome(cornerRadius: Radius.md, interactive: false)
             .accessibilityIdentifier("search-bar")
         }
         .frame(maxWidth: MacMainLayoutMetrics.searchContentMaxWidth, alignment: .leading)
@@ -159,7 +158,7 @@ struct MacSearchView: View {
                     description: Text(searchError)
                 )
                 Button(t("Try Again", "Повторить")) { performSearch() }
-                    .buttonStyle(.bordered)
+                    .waiGlassButton()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("search-error-state")

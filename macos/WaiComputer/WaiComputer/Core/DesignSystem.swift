@@ -484,9 +484,15 @@ struct WaiQuietButtonStyle: ButtonStyle {
 
 /// Native Liquid Glass buttons on macOS 26, with an explicit opaque system
 /// control when Reduce Transparency is enabled and a native pre-26 fallback.
+/// `tint` overrides the accent for prominent buttons (e.g. the red Stop).
 private struct WaiGlassButtonModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     let prominent: Bool
+    let tint: Color?
+
+    private var resolvedTint: Color? {
+        tint ?? (prominent ? Palette.accent : nil)
+    }
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -494,7 +500,7 @@ private struct WaiGlassButtonModifier: ViewModifier {
             if prominent {
                 content
                     .buttonStyle(.borderedProminent)
-                    .tint(Palette.accent)
+                    .tint(resolvedTint)
             } else {
                 content.buttonStyle(.bordered)
             }
@@ -502,14 +508,19 @@ private struct WaiGlassButtonModifier: ViewModifier {
             if prominent {
                 content
                     .buttonStyle(.glassProminent)
-                    .tint(Palette.accent)
+                    .tint(resolvedTint)
             } else {
-                content.buttonStyle(.glass)
+                // `.tint(nil)` shields the neutral glass from the app-level
+                // accent tint: secondary capsules must not fill with accent —
+                // color stays reserved for the one prominent action.
+                content
+                    .buttonStyle(.glass)
+                    .tint(nil)
             }
         } else if prominent {
             content
                 .buttonStyle(.borderedProminent)
-                .tint(Palette.accent)
+                .tint(resolvedTint)
         } else {
             content.buttonStyle(.bordered)
         }
@@ -673,10 +684,17 @@ extension View {
         ))
     }
 
-    /// Use for controls that float above content or navigation.
-    func waiGlassButton(prominent: Bool = false) -> some View {
-        modifier(WaiGlassButtonModifier(prominent: prominent))
-            .controlSize(prominent ? .large : .regular)
+    /// Use for controls that float above content or navigation. `controlSize`
+    /// defaults to `.large` for prominent and `.regular` otherwise — pass it
+    /// explicitly instead of stacking `.controlSize` at the call site (the
+    /// inner modifier would win).
+    func waiGlassButton(
+        prominent: Bool = false,
+        tint: Color? = nil,
+        controlSize: ControlSize? = nil
+    ) -> some View {
+        modifier(WaiGlassButtonModifier(prominent: prominent, tint: tint))
+            .controlSize(controlSize ?? (prominent ? .large : .regular))
     }
 
     func waiTextField(isActive: Bool = false) -> some View {
@@ -695,42 +713,6 @@ extension View {
         modifier(WaiSectionHeaderModifier())
     }
 }
-
-// MARK: - Tab Bar Component
-
-/// Text-based tab bar with accent underline animation
-struct WaiTabBar<T: Hashable>: View {
-    let tabs: [(label: String, value: T)]
-    @Binding var selection: T
-
-    var body: some View {
-        HStack(spacing: Spacing.xl) {
-            ForEach(tabs, id: \.value) { tab in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        selection = tab.value
-                    }
-                } label: {
-                    VStack(spacing: Spacing.xs) {
-                        Text(tab.label)
-                            .font(Typography.headingSmall)
-                            .foregroundStyle(selection == tab.value ? Palette.accent : Palette.textSecondary)
-
-                        Capsule()
-                            .fill(selection == tab.value ? Palette.accent : Color.clear)
-                            .frame(height: 2)
-                    }
-                    .fixedSize(horizontal: true, vertical: false)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("tab-\(tab.label.lowercased().replacingOccurrences(of: " ", with: "-"))")
-            }
-        }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.sm)
-    }
-}
-
 
 // MARK: - Thin Divider Replacement
 

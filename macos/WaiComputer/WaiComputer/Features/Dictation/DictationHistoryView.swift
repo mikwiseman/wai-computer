@@ -48,8 +48,11 @@ struct DictationHistoryView: View {
                     .textFieldStyle(.plain)
                     .font(Typography.body)
             }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .waiGlassChrome(cornerRadius: Radius.md, interactive: false)
             .padding(.horizontal, Spacing.xl)
-            .padding(.vertical, Spacing.md)
+            .padding(.vertical, Spacing.sm)
 
             WaiDivider()
 

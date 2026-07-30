@@ -261,7 +261,7 @@ struct MacInboxView: View {
                     .font(.system(size: 15, weight: .semibold))
                     .frame(width: 30, height: 30)
             }
-            .buttonStyle(.borderless)
+            .waiGlassButton()
             .help(contextualNewHelpText)
             .accessibilityLabel(t("New inbox item", "Новый объект в Инбоксе"))
             .accessibilityIdentifier("mac-inbox-contextual-new")
@@ -495,7 +495,7 @@ struct MacInboxView: View {
             } label: {
                 Label(t("Add to This Folder", "Добавить в эту папку"), systemImage: "plus")
             }
-            .buttonStyle(.bordered)
+            .waiGlassButton()
             .accessibilityIdentifier("mac-folder-add")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -560,7 +560,7 @@ struct MacInboxView: View {
                                 Image(systemName: "xmark")
                                     .font(.system(size: 13, weight: .semibold))
                             }
-                            .buttonStyle(.borderless)
+                            .waiGlassButton()
                             .help(t("Done", "Готово"))
                             .accessibilityLabel(t("Close add panel", "Закрыть панель добавления"))
                         }
@@ -966,7 +966,7 @@ private struct MacInboxBulkSelectionDetailView: View {
                     Label(t("Delete Selected", "Удалить выбранное"), systemImage: "trash")
                 }
             }
-            .buttonStyle(.bordered)
+            .waiGlassButton()
             .disabled(isDeleting)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1024,7 +1024,7 @@ private struct MacInboxFileComposer: View {
                             Text(t("Upload", "Загрузить"))
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .waiGlassButton(prominent: true)
                     .keyboardShortcut(.defaultAction)
                     .disabled(phase.isWorking || isAdding)
                     .accessibilityIdentifier("mac-inbox-upload-primary-button")
@@ -1032,7 +1032,7 @@ private struct MacInboxFileComposer: View {
                     Button(action: onChoose) {
                         Text(t("Choose Another…", "Выбрать другой…"))
                     }
-                    .buttonStyle(.bordered)
+                    .waiGlassButton()
                     .disabled(isAdding)
 
                     Spacer()
@@ -1040,12 +1040,7 @@ private struct MacInboxFileComposer: View {
             }
         }
         .padding(Spacing.lg)
-        .background(Palette.surfaceSubtle)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .stroke(Palette.border, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .waiGlassChrome(cornerRadius: Radius.md)
     }
 
     /// The drop zone doubles as the chooser button — one hero affordance
@@ -1190,7 +1185,7 @@ private struct MacInboxInlineActionComposer: View {
                         Text(primaryTitle)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .waiGlassButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(isWorking)
                 .optionalAccessibilityIdentifier(primaryAccessibilityIdentifier)
@@ -1198,12 +1193,7 @@ private struct MacInboxInlineActionComposer: View {
             Spacer()
         }
         .padding(Spacing.lg)
-        .background(Palette.surfaceSubtle)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .stroke(Palette.border, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .waiGlassChrome(cornerRadius: Radius.md)
     }
 }
 
@@ -1298,17 +1288,17 @@ private struct MacInboxEmptyState: View {
                     Button(action: onRecord) {
                         Label(t("Record", "Записать"), systemImage: "waveform")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .waiGlassButton(prominent: true)
                 case .item?:
                     Button(action: onUpload) {
                         Label(t("Upload", "Загрузить"), systemImage: "square.and.arrow.down")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .waiGlassButton(prominent: true)
                 case .chat?, nil:
                     Button(action: onRecord) {
                         Label(t("Record", "Записать"), systemImage: "waveform")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .waiGlassButton(prominent: true)
                 }
             }
         }

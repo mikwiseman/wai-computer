@@ -41,14 +41,7 @@ struct OnboardingLanguagesSlide: View {
             }
             .frame(maxWidth: 520, maxHeight: 360)
             .padding(20)
-            .background(
-                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                    .fill(Color(NSColor.windowBackgroundColor))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-                    .strokeBorder(Palette.border, lineWidth: 1)
-            )
+            .waiGlassChrome(cornerRadius: Radius.xl, interactive: false)
 
             Spacer(minLength: 0)
         }
