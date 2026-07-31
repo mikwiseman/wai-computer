@@ -129,6 +129,13 @@ Rules:
 - For action_items, set `owner` to the person responsible when the transcript
   makes it clear (a named speaker who is assigned or commits to the task);
   otherwise leave owner null. Never guess an owner.
+- Never put a diarization label (speaker_0, "Speaker 1", «спикер 2») in any
+  `owner` or `speaker` field. Those are anonymous placeholders, not names: work
+  out the real name from how participants address each other, and leave the
+  field null when the transcript never names that speaker.
+- Attribute roles and responsibilities only where the transcript states them.
+  When one participant summarizes who does what, follow that division exactly —
+  do not swap people around or merge two participants' responsibilities.
 - The top-level title and each highlight title MUST be plain text: no markdown
   formatting (no **bold**, no *italics*, no _underscores_, no `code`, no #
   headings), and no surrounding quotes. Just the words.
@@ -163,14 +170,37 @@ STYLE_INSTRUCTIONS = {
 DEFAULT_SUMMARY_LANGUAGE = "auto"
 DEFAULT_SUMMARY_STYLE = "medium"
 
-# Long transcripts that would overflow a single completion's context/budget are
+# Long content that would overflow a single completion's context/budget is
 # summarized map-reduce: chunk -> per-chunk structured summary -> merge. Below the
-# threshold the original single pass is used unchanged.
+# threshold the original single pass is used unchanged. These limits are sized
+# for the Cerebras content paths (saved content, digests, key moments).
 MAP_REDUCE_CHAR_THRESHOLD = 40_000
 MAP_REDUCE_CHUNK_CHARS = 28_000
 MAP_REDUCE_OVERLAP_LINES = 2
 MAP_REDUCE_MAX_CONCURRENCY = 4
 MAP_REDUCE_CHUNK_RETRY_DELAY_SECONDS = 2.0
+
+# Recording summaries run on the OpenAI recording_summary_model (GPT-5.6 Sol,
+# ~1M-token context), so a whole multi-hour meeting fits in one pass. Chunking
+# a meeting loses global speaker/role context: chunks after the first can't see
+# who is who, and the deterministic merge keeps contradictory per-chunk
+# "decisions" (prod 2026-07-30: a 58k-char meeting crossed the 40k threshold
+# and shipped a summary with misattributed roles and "Speaker 2" owners).
+# 300k chars ≈ 85-100k tokens — comfortably below the model's 272k-token
+# long-context pricing tier. Map-reduce remains for extreme recordings only,
+# with chunks sized for the same large-context model.
+RECORDING_SINGLE_PASS_CHAR_LIMIT = 300_000
+RECORDING_CHUNK_CHARS = 150_000
+
+# Recordings this long used to go through map-reduce, whose merged per-chunk
+# lists always produced section-shaped coverage regardless of the user's style.
+# Now that they run in one pass, a sentence-count style ("medium" = 2-3
+# sentences) would silently halve the coverage of a 90-minute meeting. Keep the
+# structure-first style for exactly the recordings that were map-reduced before,
+# so the fix improves accuracy without shrinking the result. Shorter recordings
+# keep the user's chosen style untouched. Measured on the 2026-07-30 meeting
+# (64k chars): "medium" 412-char summary / 7 key points, "structured" 832 / 15.
+RECORDING_STRUCTURED_STYLE_CHAR_THRESHOLD = 40_000
 
 # Both OpenAI Responses and Cerebras count reasoning tokens inside their output
 # budgets. A 4096-token budget starved long structured summaries in production,
@@ -565,7 +595,7 @@ async def _map_reduce_summarize(
     instructions: str | None,
 ) -> SummaryResult:
     """Summarize a long transcript by chunk (map) then merge (reduce)."""
-    chunks = _chunk_transcript(transcript)
+    chunks = _chunk_transcript(transcript, max_chars=RECORDING_CHUNK_CHARS)
     add_sentry_breadcrumb(
         category="summarizer",
         message="Map-reduce summarization",
@@ -655,16 +685,18 @@ async def summarize_transcript(
 ) -> SummaryResult:
     """Summarize a transcript via OpenAI Responses structured outputs.
 
-    Transcripts longer than ``MAP_REDUCE_CHAR_THRESHOLD`` are summarized
+    Transcripts longer than ``RECORDING_SINGLE_PASS_CHAR_LIMIT`` are summarized
     map-reduce (chunk -> per-chunk summary -> merge) so a multi-hour recording
     doesn't overflow a single completion; shorter ones use one pass.
     """
+    if len(transcript) > RECORDING_STRUCTURED_STYLE_CHAR_THRESHOLD:
+        style = "structured"
     add_sentry_breadcrumb(
         category="summarizer",
         message="Summarizing transcript",
         data={"transcript_length": len(transcript), "language": language, "style": style},
     )
-    if len(transcript) > MAP_REDUCE_CHAR_THRESHOLD:
+    if len(transcript) > RECORDING_SINGLE_PASS_CHAR_LIMIT:
         result = await _map_reduce_summarize(
             transcript, language=language, style=style, instructions=instructions
         )

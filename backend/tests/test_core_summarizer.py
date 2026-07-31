@@ -659,6 +659,62 @@ async def test_summarize_transcript_single_pass_below_threshold(monkeypatch):
     assert calls == ["recording_summary"]
 
 
+async def test_summarize_transcript_keeps_user_style_for_short_recordings(monkeypatch):
+    """A voice note keeps the style the user chose — only long recordings, which
+    map-reduce used to force into section shape, are escalated."""
+    seen: list[str] = []
+
+    async def fake_once(transcript, **kwargs):
+        seen.append(kwargs["style"])
+        return _canned_summary()
+
+    monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
+    await summarizer_module.summarize_transcript("короткая заметка", style="brief")
+    assert seen == ["brief"]
+
+
+async def test_summarize_transcript_escalates_long_recordings_to_structured(monkeypatch):
+    """Long recordings used to be map-reduced, whose merged chunk lists gave
+    section-shaped coverage. Single-pass with a sentence-count style would halve
+    that, so the structure-first style is kept for the same length band."""
+    seen: list[str] = []
+
+    async def fake_once(transcript, **kwargs):
+        seen.append(kwargs["style"])
+        return _canned_summary()
+
+    monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
+
+    transcript = "\n".join(f"speaker_0: строка {i} длинного созвона" for i in range(3000))
+    assert len(transcript) > summarizer_module.RECORDING_STRUCTURED_STYLE_CHAR_THRESHOLD
+
+    await summarizer_module.summarize_transcript(transcript, style="medium")
+    assert seen == ["structured"]
+
+
+async def test_summarize_transcript_meeting_length_stays_single_pass(monkeypatch):
+    """A meeting-length transcript (60-100k chars) must NOT be chunked: chunking
+    loses global speaker context, and per-chunk summaries misattributed roles and
+    leaked "Speaker N" owners in prod (2026-07-30). GPT-5.6 Sol takes it whole."""
+    calls: list[str] = []
+
+    async def fake_once(transcript, **kwargs):
+        calls.append(kwargs.get("name", "recording_summary"))
+        return _canned_summary()
+
+    monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
+
+    transcript = "\n".join(f"speaker_0: строка {i} длинного созвона" for i in range(3000))
+    assert (
+        summarizer_module.MAP_REDUCE_CHAR_THRESHOLD
+        < len(transcript)
+        <= summarizer_module.RECORDING_SINGLE_PASS_CHAR_LIMIT
+    )
+
+    await summarizer_module.summarize_transcript(transcript)
+    assert calls == ["recording_summary"]
+
+
 def test_chunk_transcript_hard_splits_single_giant_line():
     """Extracted articles/PDFs can be one paragraph with no newlines; the
     chunker must still respect the budget instead of emitting one mega-chunk."""
@@ -786,10 +842,12 @@ async def test_map_reduce_retries_a_failed_chunk_once_instead_of_failing_all(mon
     monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
     monkeypatch.setattr(summarizer_module, "_canonicalize_people_names", fake_canon)
     monkeypatch.setattr(summarizer_module, "MAP_REDUCE_CHUNK_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(summarizer_module, "RECORDING_SINGLE_PASS_CHAR_LIMIT", 40_000)
+    monkeypatch.setattr(summarizer_module, "RECORDING_CHUNK_CHARS", 28_000)
 
     # Unique lines so every chunk is a distinct string (distinct dict keys).
     long_transcript = "\n".join(f"строка {i} разговора о делах" for i in range(4000))
-    assert len(long_transcript) > summarizer_module.MAP_REDUCE_CHAR_THRESHOLD
+    assert len(long_transcript) > 40_000
 
     result = await summarizer_module.summarize_transcript(long_transcript)
     assert result.summary == "chunk summary"
@@ -809,6 +867,8 @@ async def test_map_reduce_fails_loudly_when_a_chunk_fails_twice(monkeypatch):
 
     monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
     monkeypatch.setattr(summarizer_module, "MAP_REDUCE_CHUNK_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(summarizer_module, "RECORDING_SINGLE_PASS_CHAR_LIMIT", 40_000)
+    monkeypatch.setattr(summarizer_module, "RECORDING_CHUNK_CHARS", 28_000)
 
     long_transcript = "\n".join("разговор о делах" for _ in range(4000))
     with pytest.raises(RuntimeError, match="provider down"):
@@ -841,6 +901,8 @@ async def test_map_reduce_consolidates_restated_key_points(monkeypatch):
     monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
     monkeypatch.setattr(summarizer_module, "_canonicalize_people_names", fake_canon)
     monkeypatch.setattr(summarizer_module, "_consolidate_key_points", fake_consolidate)
+    monkeypatch.setattr(summarizer_module, "RECORDING_SINGLE_PASS_CHAR_LIMIT", 40_000)
+    monkeypatch.setattr(summarizer_module, "RECORDING_CHUNK_CHARS", 28_000)
 
     long_transcript = "\n".join(f"строка {i} разговора" for i in range(4000))
     result = await summarizer_module.summarize_transcript(long_transcript)
@@ -908,9 +970,11 @@ async def test_map_reduce_canonicalizes_people_from_clean_union(monkeypatch):
 
     monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
     monkeypatch.setattr(summarizer_module, "_canonicalize_people_names", fake_canon)
+    monkeypatch.setattr(summarizer_module, "RECORDING_SINGLE_PASS_CHAR_LIMIT", 40_000)
+    monkeypatch.setattr(summarizer_module, "RECORDING_CHUNK_CHARS", 28_000)
 
     long_transcript = "\n".join("разговор о делах" for _ in range(4000))
-    assert len(long_transcript) > summarizer_module.MAP_REDUCE_CHAR_THRESHOLD
+    assert len(long_transcript) > 40_000
 
     result = await summarizer_module.summarize_transcript(long_transcript)
 
@@ -1055,7 +1119,9 @@ async def test_summarize_transcript_map_reduces_above_threshold(monkeypatch):
         return _canned_summary(summary=f"sum-{len(calls)}")
 
     monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
-    big = ("speaker: " + "x" * 100 + "\n") * 800  # ~88k chars > threshold
+    monkeypatch.setattr(summarizer_module, "RECORDING_SINGLE_PASS_CHAR_LIMIT", 40_000)
+    monkeypatch.setattr(summarizer_module, "RECORDING_CHUNK_CHARS", 28_000)
+    big = ("speaker: " + "x" * 100 + "\n") * 800  # ~88k chars > patched limit
     result = await summarizer_module.summarize_transcript(big)
 
     assert calls.count("recording_summary_chunk") >= 2
