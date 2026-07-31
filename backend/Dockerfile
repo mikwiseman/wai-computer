@@ -12,7 +12,10 @@ COPY pyproject.toml .
 COPY app/ app/
 COPY alembic.ini .
 
-RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu .
+# pip's 15s socket timeout aborts the whole install when a large wheel stalls
+# mid-download, which failed three consecutive prod deploys (2026-07-31).
+RUN pip install --no-cache-dir --timeout 120 --retries 10 \
+    --extra-index-url https://download.pytorch.org/whl/cpu .
 
 # Stage 2: Production
 FROM python:3.12-slim
