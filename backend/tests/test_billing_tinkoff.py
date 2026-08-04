@@ -132,6 +132,29 @@ def test_provider_requires_credentials(monkeypatch):
         provider._require_creds()
 
 
+def test_provider_selects_canonical_and_legacy_environment_pairs(monkeypatch):
+    monkeypatch.setattr(
+        "app.billing.providers.tinkoff_provider.get_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                "tinkoff_wai_computer_terminal_key": "canonical-terminal",
+                "tinkoff_wai_computer_password": "canonical-password",
+                "tinkoff_terminal_key": "legacy-terminal",
+                "tinkoff_password": "legacy-password",
+                "tinkoff_api_url": "https://test/",
+            },
+        )(),
+    )
+
+    canonical = TinkoffProvider()
+    legacy = TinkoffProvider(profile=TINKOFF_PROFILE_LEGACY)
+
+    assert canonical._require_creds() == ("canonical-terminal", "canonical-password")
+    assert legacy._require_creds() == ("legacy-terminal", "legacy-password")
+
+
 class _FakeTinkoffHTTPResponse:
     def __init__(self, *, status_code: int, text: str) -> None:
         self.status_code = status_code

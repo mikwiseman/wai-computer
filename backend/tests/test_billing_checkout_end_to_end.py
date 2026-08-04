@@ -32,8 +32,10 @@ class BillingTestSettings:
     stripe_webhook_secret = "whsec_endpoint"
     stripe_automatic_tax = False
     tinkoff_api_url = "https://securepay.tinkoff.ru/v2/"
-    tinkoff_terminal_key = "terminal"
-    tinkoff_password = "pw"
+    tinkoff_wai_computer_terminal_key = "terminal"
+    tinkoff_wai_computer_password = "pw"
+    tinkoff_terminal_key = "legacy-terminal"
+    tinkoff_password = "legacy-pw"
     billing_enforcement_enabled = False
 
 
@@ -258,10 +260,13 @@ async def test_tinkoff_checkout_webhook_updates_subscription_endpoint(
         "period": "year",
         "terminal_profile": TINKOFF_PROFILE_WAI_COMPUTER,
     }
-    assert verify_tinkoff_token(init_payload, BillingTestSettings.tinkoff_password)
+    assert verify_tinkoff_token(
+        init_payload,
+        BillingTestSettings.tinkoff_wai_computer_password,
+    )
 
     notification = {
-        "TerminalKey": BillingTestSettings.tinkoff_terminal_key,
+        "TerminalKey": BillingTestSettings.tinkoff_wai_computer_terminal_key,
         "OrderId": init_payload["OrderId"],
         "Status": "CONFIRMED",
         "Success": True,
@@ -269,7 +274,10 @@ async def test_tinkoff_checkout_webhook_updates_subscription_endpoint(
         "Amount": 799900,
         "RebillId": "rebill-endpoint",
     }
-    token = generate_tinkoff_token(notification, BillingTestSettings.tinkoff_password)
+    token = generate_tinkoff_token(
+        notification,
+        BillingTestSettings.tinkoff_wai_computer_password,
+    )
     webhook = await client.post(
         "/api/webhooks/tinkoff",
         content=json.dumps({**notification, "Token": token}).encode("utf-8"),
@@ -335,7 +343,7 @@ async def test_tinkoff_webhook_repairs_existing_subscription_endpoint(
     assert user.current_subscription_id is None
 
     notification = {
-        "TerminalKey": BillingTestSettings.tinkoff_terminal_key,
+        "TerminalKey": BillingTestSettings.tinkoff_wai_computer_terminal_key,
         "OrderId": "order-restore-pointer-e2e",
         "Status": "CONFIRMED",
         "Success": True,
@@ -344,7 +352,10 @@ async def test_tinkoff_webhook_repairs_existing_subscription_endpoint(
         "CustomerKey": user_id,
         "RebillId": "rebill-e2e-new",
     }
-    token = generate_tinkoff_token(notification, BillingTestSettings.tinkoff_password)
+    token = generate_tinkoff_token(
+        notification,
+        BillingTestSettings.tinkoff_wai_computer_password,
+    )
     webhook = await client.post(
         "/api/webhooks/tinkoff",
         content=json.dumps({**notification, "Token": token}).encode("utf-8"),

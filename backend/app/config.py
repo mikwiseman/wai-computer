@@ -279,12 +279,13 @@ class Settings(BaseSettings):
 
     # Billing — T-Bank acquiring (RU rail)
     tinkoff_api_url: str = "https://securepay.tinkoff.ru/v2/"
+    # Canonical Wai Computer store for every new checkout.
+    tinkoff_wai_computer_terminal_key: str = ""
+    tinkoff_wai_computer_password: str = ""
+    # Previous production terminal. Existing RebillId values remain bound to
+    # this credential pair until their subscriptions end.
     tinkoff_terminal_key: str = ""
     tinkoff_password: str = ""
-    # Existing recurrent mandates are terminal-bound. Keep the former terminal
-    # configured until its final subscription has expired or been cancelled.
-    tinkoff_legacy_terminal_key: str = ""
-    tinkoff_legacy_password: str = ""
 
     # Billing — generic
     billing_trial_days: int = 0

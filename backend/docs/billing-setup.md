@@ -113,10 +113,10 @@ In the sandbox terminal settings:
 
 ```
 TINKOFF_API_URL=https://securepay.tinkoff.ru/v2/
-TINKOFF_TERMINAL_KEY=...          # Wai Computer terminal for new checkouts
+TINKOFF_WAI_COMPUTER_TERMINAL_KEY=... # Wai Computer terminal for new checkouts
+TINKOFF_WAI_COMPUTER_PASSWORD=...
+TINKOFF_TERMINAL_KEY=...              # previous terminal; existing RebillId only
 TINKOFF_PASSWORD=...
-TINKOFF_LEGACY_TERMINAL_KEY=...   # previous terminal; existing RebillId only
-TINKOFF_LEGACY_PASSWORD=...
 ```
 
 `RebillId` comes from the parent payment and renewals must keep using that

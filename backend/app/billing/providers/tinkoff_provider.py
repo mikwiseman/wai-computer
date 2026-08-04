@@ -155,18 +155,22 @@ class TinkoffProvider(PaymentProvider):
             raise ValueError(f"Unknown T-Bank terminal profile: {profile}")
         settings = get_settings()
         current_terminal_key = (
-            terminal_key if terminal_key is not None else settings.tinkoff_terminal_key
+            terminal_key
+            if terminal_key is not None
+            else getattr(settings, "tinkoff_wai_computer_terminal_key", "")
         )
-        current_password = password if password is not None else settings.tinkoff_password
+        current_password = (
+            password
+            if password is not None
+            else getattr(settings, "tinkoff_wai_computer_password", "")
+        )
         configured_legacy_terminal_key = (
             legacy_terminal_key
             if legacy_terminal_key is not None
-            else getattr(settings, "tinkoff_legacy_terminal_key", "")
+            else settings.tinkoff_terminal_key
         )
         configured_legacy_password = (
-            legacy_password
-            if legacy_password is not None
-            else getattr(settings, "tinkoff_legacy_password", "")
+            legacy_password if legacy_password is not None else settings.tinkoff_password
         )
         self._credentials_by_profile = {
             TINKOFF_PROFILE_WAI_COMPUTER: (current_terminal_key, current_password),
