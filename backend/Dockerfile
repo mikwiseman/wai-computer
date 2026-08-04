@@ -34,6 +34,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     npm \
     && rm -rf /var/lib/apt/lists/*
 
+# T-Bank's production acquiring endpoint is served by the Russian Trusted
+# Root CA chain, which is not included in Debian's default trust store.
+COPY certs/russian_trusted_root_ca.crt /usr/local/share/ca-certificates/russian_trusted_root_ca.crt
+COPY certs/russian_trusted_sub_ca.crt /usr/local/share/ca-certificates/russian_trusted_sub_ca.crt
+RUN update-ca-certificates
+
 RUN npm install -g wrangler@4.79.0
 
 # Create non-root user
