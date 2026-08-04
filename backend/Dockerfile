@@ -39,6 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY certs/russian_trusted_root_ca.crt /usr/local/share/ca-certificates/russian_trusted_root_ca.crt
 COPY certs/russian_trusted_sub_ca.crt /usr/local/share/ca-certificates/russian_trusted_sub_ca.crt
 RUN update-ca-certificates
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 RUN npm install -g wrangler@4.79.0
 
