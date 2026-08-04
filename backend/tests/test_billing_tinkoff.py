@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.providers.base import ProviderEvent, ProviderUnavailableError
 from app.billing.providers.tinkoff_provider import (
+    TINKOFF_PROFILE_LEGACY,
+    TINKOFF_PROFILE_WAI_COMPUTER,
     TinkoffProvider,
     build_receipt,
     generate_tinkoff_token,
@@ -74,23 +76,35 @@ def test_verify_token_rejects_wrong_password():
     assert verify_tinkoff_token({**params, "Token": token}, "wrong") is False
 
 
-def test_build_receipt_shape_for_54fz():
+def test_build_receipt_shape_for_wai_computer_54fz():
     receipt = build_receipt(
         description="Pro month",
         amount_kopecks=99900,
         customer_email="user@example.test",
     )
     assert receipt["Email"] == "user@example.test"
-    assert receipt["Taxation"] == "usn_income"
+    assert receipt["Taxation"] == "osn"
     items = receipt["Items"]
     assert len(items) == 1
     item = items[0]
     assert item["Amount"] == 99900
     assert item["Price"] == 99900
     assert item["Quantity"] == 1
-    assert item["Tax"] == "vat22"  # НДС 22% effective 2026-01-01
+    assert item["Tax"] == "none"
     assert item["PaymentMethod"] == "full_prepayment"
     assert item["PaymentObject"] == "service"
+
+
+def test_build_receipt_preserves_legacy_terminal_fiscal_settings():
+    receipt = build_receipt(
+        description="Pro month",
+        amount_kopecks=99900,
+        customer_email="user@example.test",
+        terminal_profile=TINKOFF_PROFILE_LEGACY,
+    )
+
+    assert receipt["Taxation"] == "usn_income"
+    assert receipt["Items"][0]["Tax"] == "vat22"
 
 
 def test_build_receipt_truncates_long_description():
@@ -148,7 +162,9 @@ async def test_tinkoff_call_posts_json_and_returns_parsed_response(monkeypatch):
         "app.billing.providers.tinkoff_provider.httpx.AsyncClient",
         lambda timeout: _FakeTinkoffHTTPClient(response, calls),
     )
-    provider = TinkoffProvider(terminal_key="terminal", password="pw", api_url="https://pay.test/v2")
+    provider = TinkoffProvider(
+        terminal_key="terminal", password="pw", api_url="https://pay.test/v2"
+    )
 
     parsed = await provider._call("Init", {"TerminalKey": "terminal"})
 
@@ -169,7 +185,9 @@ async def test_tinkoff_call_rejects_non_json_response(monkeypatch):
         "app.billing.providers.tinkoff_provider.httpx.AsyncClient",
         lambda timeout: _FakeTinkoffHTTPClient(response, []),
     )
-    provider = TinkoffProvider(terminal_key="terminal", password="pw", api_url="https://pay.test/v2")
+    provider = TinkoffProvider(
+        terminal_key="terminal", password="pw", api_url="https://pay.test/v2"
+    )
 
     with pytest.raises(RuntimeError, match="non-JSON response HTTP 502"):
         await provider._call("Init", {"TerminalKey": "terminal"})
@@ -182,7 +200,9 @@ async def test_tinkoff_call_rejects_http_error_json_response(monkeypatch):
         "app.billing.providers.tinkoff_provider.httpx.AsyncClient",
         lambda timeout: _FakeTinkoffHTTPClient(response, []),
     )
-    provider = TinkoffProvider(terminal_key="terminal", password="pw", api_url="https://pay.test/v2")
+    provider = TinkoffProvider(
+        terminal_key="terminal", password="pw", api_url="https://pay.test/v2"
+    )
 
     with pytest.raises(RuntimeError, match="HTTP 400"):
         await provider._call("Init", {"TerminalKey": "terminal"})
@@ -246,6 +266,31 @@ async def test_parse_webhook_normalizes_status():
     assert event.customer_id_provider == "user-uuid"
     assert event.raw["rebill_id"] == "rb-1"
     assert event.raw["payment_id"] == "p1"
+    assert event.raw["terminal_profile"] == TINKOFF_PROFILE_WAI_COMPUTER
+
+
+@pytest.mark.asyncio
+async def test_parse_webhook_accepts_legacy_terminal_and_marks_profile():
+    provider = TinkoffProvider(
+        terminal_key="current",
+        password="current-pw",
+        legacy_terminal_key="legacy",
+        legacy_password="legacy-pw",
+    )
+    payload = {
+        "TerminalKey": "legacy",
+        "OrderId": "legacy-order",
+        "Status": "CONFIRMED",
+        "PaymentId": "legacy-payment",
+    }
+    token = generate_tinkoff_token(payload, "legacy-pw")
+
+    event = await provider.parse_webhook(
+        raw_body=json.dumps({**payload, "Token": token}).encode(),
+        headers={},
+    )
+
+    assert event.raw["terminal_profile"] == TINKOFF_PROFILE_LEGACY
 
 
 @pytest.mark.asyncio
@@ -366,6 +411,7 @@ async def test_create_checkout_marks_parent_recurrent_payment(monkeypatch):
         "user_id": "user-uuid",
         "plan_code": "pro",
         "period": "month",
+        "terminal_profile": TINKOFF_PROFILE_WAI_COMPUTER,
     }
     assert verify_tinkoff_token(payload, "pw") is True
 
@@ -456,6 +502,7 @@ async def test_due_tinkoff_renewal_task_charges_active_subscription(db_session):
         provider="tinkoff",
         billing_period="month",
         tinkoff_rebill_id="rebill-renewal",
+        tinkoff_terminal_profile=TINKOFF_PROFILE_LEGACY,
         tinkoff_next_charge_at=datetime.now(timezone.utc),
     )
     db_session.add(sub)
@@ -478,8 +525,14 @@ async def test_due_tinkoff_renewal_task_charges_active_subscription(db_session):
             }
 
     fake = FakeProvider()
+    selected_profiles: list[str] = []
+
+    def provider_factory(profile: str):
+        selected_profiles.append(profile)
+        return fake
+
     result = await charge_due_tinkoff_renewals(
-        provider_factory=lambda: fake,
+        provider_factory=provider_factory,
         db_session=db_session,
     )
 
@@ -487,6 +540,7 @@ async def test_due_tinkoff_renewal_task_charges_active_subscription(db_session):
     assert fake.calls[0]["rebill_id"] == "rebill-renewal"
     assert fake.calls[0]["order_id"] == expected_order_id
     assert fake.calls[0]["description"] == "WaiComputer PRO month"
+    assert selected_profiles == [TINKOFF_PROFILE_LEGACY]
 
     refreshed = (
         await db_session.execute(select(Subscription).where(Subscription.id == sub.id))
@@ -494,8 +548,10 @@ async def test_due_tinkoff_renewal_task_charges_active_subscription(db_session):
     assert refreshed.current_period_end is not None
     assert refreshed.tinkoff_next_charge_at is not None
     invoices = (
-        await db_session.execute(select(Invoice).where(Invoice.subscription_id == sub.id))
-    ).scalars().all()
+        (await db_session.execute(select(Invoice).where(Invoice.subscription_id == sub.id)))
+        .scalars()
+        .all()
+    )
     assert [invoice.provider_payment_id for invoice in invoices] == ["renewal-payment-1"]
 
 
@@ -538,7 +594,7 @@ async def test_due_tinkoff_renewal_task_skips_subscription_without_amount(
     fake = FakeProvider()
     monkeypatch.setattr(billing_renewals_module, "get_db_context", lambda: SessionContext())
 
-    result = await charge_due_tinkoff_renewals(provider_factory=lambda: fake)
+    result = await charge_due_tinkoff_renewals(provider_factory=lambda _profile: fake)
 
     assert result == {"charged": 0, "skipped": 1, "failed": 0}
     assert fake.calls == []
@@ -578,7 +634,7 @@ async def test_due_tinkoff_renewal_task_marks_past_due_when_charge_fails(
     )
 
     result = await charge_due_tinkoff_renewals(
-        provider_factory=FailingProvider,
+        provider_factory=lambda _profile: FailingProvider(),
         db_session=db_session,
     )
 
@@ -628,7 +684,7 @@ async def test_due_tinkoff_renewal_task_marks_past_due_when_charge_lacks_status(
             return {"Success": True, "PaymentId": "payment-no-status"}
 
     result = await charge_due_tinkoff_renewals(
-        provider_factory=NoStatusProvider,
+        provider_factory=lambda _profile: NoStatusProvider(),
         db_session=db_session,
     )
 
@@ -966,8 +1022,10 @@ async def test_apply_tinkoff_confirmed_is_idempotent_by_payment_id(
     await apply_tinkoff_event(db_session, event)
     await db_session.refresh(sub)
     invoices = (
-        await db_session.execute(select(Invoice).where(Invoice.subscription_id == sub.id))
-    ).scalars().all()
+        (await db_session.execute(select(Invoice).where(Invoice.subscription_id == sub.id)))
+        .scalars()
+        .all()
+    )
 
     assert len(invoices) == 1
     assert sub.current_period_end == original_period_end

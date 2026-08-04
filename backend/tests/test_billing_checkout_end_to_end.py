@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.billing.providers.base import ProviderUnavailableError
 from app.billing.providers.stripe_provider import StripeProvider
 from app.billing.providers.tinkoff_provider import (
+    TINKOFF_PROFILE_WAI_COMPUTER,
     TinkoffProvider,
     generate_tinkoff_token,
     verify_tinkoff_token,
@@ -216,9 +217,7 @@ async def test_tinkoff_checkout_webhook_updates_subscription_endpoint(
     email = "tinkoff.checkout.e2e@example.com"
     _, bearer = await _register(client, email)
     user_id = await _user_id(db_session, email)
-    ru_user = (
-        await db_session.execute(select(User).where(User.email == email))
-    ).scalar_one()
+    ru_user = (await db_session.execute(select(User).where(User.email == email))).scalar_one()
     ru_user.region = "ru"
     await db_session.flush()
 
@@ -257,6 +256,7 @@ async def test_tinkoff_checkout_webhook_updates_subscription_endpoint(
         "user_id": user_id,
         "plan_code": "pro",
         "period": "year",
+        "terminal_profile": TINKOFF_PROFILE_WAI_COMPUTER,
     }
     assert verify_tinkoff_token(init_payload, BillingTestSettings.tinkoff_password)
 
@@ -297,6 +297,7 @@ async def test_tinkoff_checkout_webhook_updates_subscription_endpoint(
     ).scalar_one()
     assert row.tinkoff_customer_key == user_id
     assert row.tinkoff_rebill_id == "rebill-endpoint"
+    assert row.tinkoff_terminal_profile == TINKOFF_PROFILE_WAI_COMPUTER
 
 
 @pytest.mark.asyncio
@@ -319,9 +320,7 @@ async def test_tinkoff_webhook_repairs_existing_subscription_endpoint(
 
     user = (await db_session.execute(select(User).where(User.email == email))).scalar_one()
     assert (await db_session.execute(select(Subscription))).scalars().first() is None
-    pro_plan = (
-        await db_session.execute(select(Plan).where(Plan.code == "pro"))
-    ).scalar_one()
+    pro_plan = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
     sub = Subscription(
         user_id=user.id,
         plan_id=pro_plan.id,

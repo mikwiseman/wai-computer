@@ -65,8 +65,10 @@ When ready to flip the live switch:
    STRIPE_WEBHOOK_SECRET=whsec_...
    STRIPE_AUTOMATIC_TAX=true
    TINKOFF_API_URL=https://securepay.tinkoff.ru/v2/
-   TINKOFF_TERMINAL_KEY=...        # live terminal
+   TINKOFF_TERMINAL_KEY=...        # Wai Computer terminal for new payments
    TINKOFF_PASSWORD=...
+   TINKOFF_LEGACY_TERMINAL_KEY=... # old subscriptions only
+   TINKOFF_LEGACY_PASSWORD=...
    BILLING_TRIAL_DAYS=0
    BILLING_REFUND_WINDOW_DAYS=7
    BILLING_DEFAULT_REGION=global

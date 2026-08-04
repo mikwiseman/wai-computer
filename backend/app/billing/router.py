@@ -173,9 +173,7 @@ async def get_usage(
     Respects the per-request Payment-mode override so a tester sees their
     real cap state while everyone else stays in uncapped compatibility mode.
     """
-    result = await WordQuota.check(
-        db, user, estimated_words=0, enforce_override=enforce_payment
-    )
+    result = await WordQuota.check(db, user, estimated_words=0, enforce_override=enforce_payment)
     return UsageResponse(
         words_used=result.words_used,
         words_cap=result.words_cap,
@@ -336,9 +334,9 @@ def _plan_payload(plan: Plan) -> PlanResponse:
     )
 
 
-def _next_charge_for(plan: Plan, sub: Subscription | None) -> tuple[
-    datetime | None, Decimal | None, str | None
-]:
+def _next_charge_for(
+    plan: Plan, sub: Subscription | None
+) -> tuple[datetime | None, Decimal | None, str | None]:
     """Resolve when the user is next charged, how much, and in what currency.
 
     Returns (None, None, None) when there is no upcoming charge — either no
@@ -497,6 +495,7 @@ async def create_checkout(
             promo_code_id=promo.id if promo is not None else None,
             tinkoff_order_id=result.provider_order_id,
             tinkoff_customer_key=str(user.id),
+            tinkoff_terminal_profile=provider.terminal_profile,
         )
         db.add(sub)
         await db.flush()
@@ -669,9 +668,11 @@ def _stripe_invoice_to_response(inv: dict) -> InvoiceResponse | None:
     if amount_cents in (None, 0):
         amount_cents = inv.get("amount_due") or 0
     amount = Decimal(int(amount_cents)) / Decimal(100)
-    paid_at_ts = inv.get("status_transitions", {}).get("paid_at") if isinstance(
-        inv.get("status_transitions"), dict
-    ) else None
+    paid_at_ts = (
+        inv.get("status_transitions", {}).get("paid_at")
+        if isinstance(inv.get("status_transitions"), dict)
+        else None
+    )
     period_start = None
     period_end = None
     # Stripe puts period info on each line item; fall back to the top-level
@@ -807,9 +808,7 @@ async def open_billing_portal(user: CurrentUser, db: Database) -> PortalResponse
     customer_id = user.stripe_customer_id
     if not customer_id:
         try:
-            customer_id = await provider.ensure_customer(
-                user_id=str(user.id), email=user.email
-            )
+            customer_id = await provider.ensure_customer(user_id=str(user.id), email=user.email)
         except ProviderUnavailableError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -831,9 +830,7 @@ async def open_billing_portal(user: CurrentUser, db: Database) -> PortalResponse
         await db.flush()
 
     try:
-        url = await provider.create_portal_session(
-            customer_id=customer_id, return_url=return_url
-        )
+        url = await provider.create_portal_session(customer_id=customer_id, return_url=return_url)
     except ProviderUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

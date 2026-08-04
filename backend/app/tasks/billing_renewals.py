@@ -13,7 +13,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.providers.base import ProviderEvent
-from app.billing.providers.tinkoff_provider import TinkoffProvider, _normalize_status
+from app.billing.providers.tinkoff_provider import (
+    TINKOFF_PROFILE_LEGACY,
+    TinkoffProvider,
+    _normalize_status,
+)
 from app.billing.service import apply_tinkoff_event
 from app.core.email import send_payment_failed_email, send_renewal_reminder_email
 from app.core.observability import capture_sentry_exception
@@ -32,7 +36,7 @@ RENEWAL_REMINDER_LEAD_DAYS = 3
 async def charge_due_tinkoff_renewals(
     *,
     limit: int = 50,
-    provider_factory: Callable[[], TinkoffProvider] = TinkoffProvider,
+    provider_factory: Callable[[str], TinkoffProvider] | None = None,
     db_session: AsyncSession | None = None,
 ) -> dict[str, int]:
     """Charge active T-Bank subscriptions whose renewal time has arrived."""
@@ -55,14 +59,12 @@ async def _charge_due_tinkoff_renewals_in_session(
     db: AsyncSession,
     *,
     limit: int,
-    provider_factory: Callable[[], TinkoffProvider],
+    provider_factory: Callable[[str], TinkoffProvider] | None,
 ) -> dict[str, int]:
     now = datetime.now(timezone.utc)
     charged = 0
     skipped = 0
     failed = 0
-    provider = provider_factory()
-
     rows = (
         await db.execute(
             select(Subscription, Plan, User)
@@ -83,6 +85,12 @@ async def _charge_due_tinkoff_renewals_in_session(
     ).all()
 
     for sub, plan, user in rows:
+        profile = sub.tinkoff_terminal_profile or TINKOFF_PROFILE_LEGACY
+        provider = (
+            provider_factory(profile)
+            if provider_factory is not None
+            else TinkoffProvider(profile=profile)
+        )
         result = await charge_tinkoff_subscription(db, sub, plan, user, provider)
         if result == "charged":
             charged += 1
@@ -177,11 +185,7 @@ async def charge_tinkoff_subscription(
 
 
 def _renewal_order_id(sub: Subscription) -> str:
-    anchor = (
-        sub.tinkoff_next_charge_at
-        or sub.current_period_end
-        or datetime.now(timezone.utc)
-    )
+    anchor = sub.tinkoff_next_charge_at or sub.current_period_end or datetime.now(timezone.utc)
     if anchor.tzinfo is None:
         anchor = anchor.replace(tzinfo=timezone.utc)
     return uuid5(NAMESPACE_URL, f"wai-tinkoff-renewal:{sub.id}:{anchor.isoformat()}").hex
@@ -248,13 +252,17 @@ async def _send_due_renewal_reminders_in_session(db: AsyncSession) -> dict[str, 
             continue
         # One reminder per (subscription, charge date) — re-run safe.
         prior = (
-            await db.execute(
-                select(BillingEvent).where(
-                    BillingEvent.subscription_id == sub.id,
-                    BillingEvent.type == "renewal_reminder_sent",
+            (
+                await db.execute(
+                    select(BillingEvent).where(
+                        BillingEvent.subscription_id == sub.id,
+                        BillingEvent.type == "renewal_reminder_sent",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if any((e.payload or {}).get("charge_at") == charge_at.isoformat() for e in prior):
             continue
         amount_rub = (

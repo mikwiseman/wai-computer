@@ -181,21 +181,15 @@ async def _handle_checkout_completed(db: AsyncSession, obj: dict) -> None:
     promo_code_id = _uuid_or_none(metadata.get("promo_code_id"))
 
     if not user_id or not provider_subscription_id:
-        logger.warning(
-            "checkout.session.completed missing client_reference_id or subscription"
-        )
+        logger.warning("checkout.session.completed missing client_reference_id or subscription")
         return
 
-    user = (
-        await db.execute(select(User).where(User.id == user_id))
-    ).scalar_one_or_none()
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if user is None:
         logger.warning("checkout.session.completed for unknown user_id=%s", user_id)
         return
 
-    plan = (
-        await db.execute(select(Plan).where(Plan.code == plan_code))
-    ).scalar_one_or_none()
+    plan = (await db.execute(select(Plan).where(Plan.code == plan_code))).scalar_one_or_none()
     if plan is None:
         plan = await _free_plan(db)
 
@@ -239,16 +233,12 @@ async def _handle_checkout_completed(db: AsyncSession, obj: dict) -> None:
     await db.flush()
 
 
-async def _handle_subscription_change(
-    db: AsyncSession, obj: dict, event: ProviderEvent
-) -> None:
+async def _handle_subscription_change(db: AsyncSession, obj: dict, event: ProviderEvent) -> None:
     sub_id = obj.get("id")
     if not sub_id:
         return
     sub = (
-        await db.execute(
-            select(Subscription).where(Subscription.stripe_subscription_id == sub_id)
-        )
+        await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == sub_id))
     ).scalar_one_or_none()
     if sub is None:
         # We may receive subscription.created before checkout.session.completed in
@@ -271,9 +261,7 @@ async def _handle_invoice_paid(db: AsyncSession, obj: dict) -> None:
     if not sub_id:
         return
     sub = (
-        await db.execute(
-            select(Subscription).where(Subscription.stripe_subscription_id == sub_id)
-        )
+        await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == sub_id))
     ).scalar_one_or_none()
     if sub is None:
         return
@@ -318,9 +306,7 @@ async def _handle_invoice_failed(db: AsyncSession, obj: dict) -> None:
     if not sub_id:
         return
     sub = (
-        await db.execute(
-            select(Subscription).where(Subscription.stripe_subscription_id == sub_id)
-        )
+        await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == sub_id))
     ).scalar_one_or_none()
     if sub is None:
         return
@@ -349,6 +335,7 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
     amount = raw.get("amount")
     raw_payload = raw.get("payload", {})
     promo_code_id = _uuid_or_none(raw.get("promo_code_id"))
+    terminal_profile = raw.get("terminal_profile")
 
     # Persist audit row regardless of dispatch outcome.
     billing_event = BillingEvent(
@@ -388,14 +375,19 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
         ).scalar_one_or_none()
     if sub is None and customer_key:
         candidates = (
-            await db.execute(
-                select(Subscription).where(
-                    Subscription.tinkoff_customer_key == customer_key,
-                    Subscription.provider == "tinkoff",
+            (
+                await db.execute(
+                    select(Subscription)
+                    .where(
+                        Subscription.tinkoff_customer_key == customer_key,
+                        Subscription.provider == "tinkoff",
+                    )
+                    .order_by(Subscription.updated_at.desc(), Subscription.created_at.desc())
                 )
-                .order_by(Subscription.updated_at.desc(), Subscription.created_at.desc())
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if customer_user is not None and customer_user.current_subscription_id is not None:
             sub = next(
                 (
@@ -423,9 +415,7 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
             sub = candidates[0]
 
     plan_code = str(raw.get("plan_code") or "pro").strip().lower() or "pro"
-    pro_plan = (
-        await db.execute(select(Plan).where(Plan.code == plan_code))
-    ).scalar_one_or_none()
+    pro_plan = (await db.execute(select(Plan).where(Plan.code == plan_code))).scalar_one_or_none()
 
     should_activate = event.status == SubscriptionStatus.ACTIVE.value
     if sub is None and not should_activate:
@@ -463,11 +453,23 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
             tinkoff_order_id=order_id,
             tinkoff_customer_key=customer_key,
             tinkoff_rebill_id=rebill_id,
+            tinkoff_terminal_profile=terminal_profile,
         )
         db.add(sub)
         await db.flush()
         user.current_subscription_id = sub.id
     else:
+        if terminal_profile and sub.tinkoff_terminal_profile not in {None, terminal_profile}:
+            logger.warning(
+                "Tinkoff event terminal profile mismatch "
+                "subscription_id=%s expected=%s received=%s",
+                sub.id,
+                sub.tinkoff_terminal_profile,
+                terminal_profile,
+            )
+            return
+        if terminal_profile and sub.tinkoff_terminal_profile is None:
+            sub.tinkoff_terminal_profile = terminal_profile
         existing_plan = pro_plan or await db.get(Plan, sub.plan_id)
         if existing_plan is not None:
             sub.billing_period = _resolve_tinkoff_period(

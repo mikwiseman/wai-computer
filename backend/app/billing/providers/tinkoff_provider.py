@@ -38,6 +38,10 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+TINKOFF_PROFILE_WAI_COMPUTER = "wai_computer"
+TINKOFF_PROFILE_LEGACY = "legacy"
+_TINKOFF_PROFILES = {TINKOFF_PROFILE_WAI_COMPUTER, TINKOFF_PROFILE_LEGACY}
+
 
 # Map T-Bank statuses → our normalized SubscriptionStatus values.
 _STATUS_MAP = {
@@ -91,18 +95,33 @@ def verify_tinkoff_token(payload: dict[str, Any], password: str) -> bool:
     return expected == received
 
 
-def build_receipt(*, description: str, amount_kopecks: int, customer_email: str) -> dict[str, Any]:
-    """54-ФЗ receipt body. НДС 22% from 2026-01-01 ('vat22')."""
+def build_receipt(
+    *,
+    description: str,
+    amount_kopecks: int,
+    customer_email: str,
+    terminal_profile: str = TINKOFF_PROFILE_WAI_COMPUTER,
+) -> dict[str, Any]:
+    """Build the 54-ФЗ receipt for the legal entity behind the terminal."""
+    if terminal_profile == TINKOFF_PROFILE_WAI_COMPUTER:
+        taxation = "osn"
+        tax = "none"
+    elif terminal_profile == TINKOFF_PROFILE_LEGACY:
+        # Preserve the settings used by already-issued recurrent mandates.
+        taxation = "usn_income"
+        tax = "vat22"
+    else:
+        raise ValueError(f"Unknown T-Bank terminal profile: {terminal_profile}")
     return {
         "Email": customer_email,
-        "Taxation": "usn_income",  # ООО WaiWai uses УСН Доходы; adjust if entity changes.
+        "Taxation": taxation,
         "Items": [
             {
                 "Name": description[:64],
                 "Price": amount_kopecks,
                 "Quantity": 1,
                 "Amount": amount_kopecks,
-                "Tax": "vat22",
+                "Tax": tax,
                 "PaymentMethod": "full_prepayment",
                 "PaymentObject": "service",
             }
@@ -127,10 +146,37 @@ class TinkoffProvider(PaymentProvider):
         terminal_key: str | None = None,
         password: str | None = None,
         api_url: str | None = None,
+        *,
+        profile: str = TINKOFF_PROFILE_WAI_COMPUTER,
+        legacy_terminal_key: str | None = None,
+        legacy_password: str | None = None,
     ) -> None:
+        if profile not in _TINKOFF_PROFILES:
+            raise ValueError(f"Unknown T-Bank terminal profile: {profile}")
         settings = get_settings()
-        self._terminal_key = terminal_key or settings.tinkoff_terminal_key
-        self._password = password or settings.tinkoff_password
+        current_terminal_key = (
+            terminal_key if terminal_key is not None else settings.tinkoff_terminal_key
+        )
+        current_password = password if password is not None else settings.tinkoff_password
+        configured_legacy_terminal_key = (
+            legacy_terminal_key
+            if legacy_terminal_key is not None
+            else getattr(settings, "tinkoff_legacy_terminal_key", "")
+        )
+        configured_legacy_password = (
+            legacy_password
+            if legacy_password is not None
+            else getattr(settings, "tinkoff_legacy_password", "")
+        )
+        self._credentials_by_profile = {
+            TINKOFF_PROFILE_WAI_COMPUTER: (current_terminal_key, current_password),
+            TINKOFF_PROFILE_LEGACY: (
+                configured_legacy_terminal_key,
+                configured_legacy_password,
+            ),
+        }
+        self.terminal_profile = profile
+        self._terminal_key, self._password = self._credentials_by_profile[profile]
         self._api_url = (api_url or settings.tinkoff_api_url).rstrip("/") + "/"
 
     def _require_creds(self) -> tuple[str, str]:
@@ -181,6 +227,7 @@ class TinkoffProvider(PaymentProvider):
 
         order_id = uuid4().hex
         data = {"user_id": user_id, "plan_code": plan_code, "period": period}
+        data["terminal_profile"] = self.terminal_profile
         if promo_code_id:
             data["promo_code_id"] = promo_code_id
 
@@ -211,6 +258,7 @@ class TinkoffProvider(PaymentProvider):
                 description=base["Description"],
                 amount_kopecks=amount_kopecks,
                 customer_email=user_email,
+                terminal_profile=self.terminal_profile,
             ),
         }
 
@@ -266,6 +314,7 @@ class TinkoffProvider(PaymentProvider):
                     description=description,
                     amount_kopecks=amount_kopecks,
                     customer_email=customer_email,
+                    terminal_profile=self.terminal_profile,
                 ),
             },
         )
@@ -316,12 +365,26 @@ class TinkoffProvider(PaymentProvider):
         return response
 
     async def parse_webhook(self, *, raw_body: bytes, headers: dict[str, str]) -> ProviderEvent:
-        _, password = self._require_creds()
         try:
             payload = json.loads(raw_body.decode("utf-8"))
         except json.JSONDecodeError as exc:
             raise ValueError("Tinkoff webhook body not JSON") from exc
-        if not verify_tinkoff_token(payload, password):
+        payload_terminal_key = str(payload.get("TerminalKey") or "")
+        terminal_profile = next(
+            (
+                profile
+                for profile, (
+                    configured_terminal_key,
+                    configured_password,
+                ) in self._credentials_by_profile.items()
+                if configured_terminal_key
+                and configured_password
+                and payload_terminal_key == configured_terminal_key
+                and verify_tinkoff_token(payload, configured_password)
+            ),
+            None,
+        )
+        if terminal_profile is None:
             raise ValueError("Tinkoff webhook signature invalid")
 
         order_id = str(payload.get("OrderId") or "")
@@ -351,6 +414,7 @@ class TinkoffProvider(PaymentProvider):
                 "plan_code": str(plan_code).strip().lower() if plan_code else None,
                 "period": str(period).strip().lower() if period else None,
                 "promo_code_id": str(promo_code_id).strip() if promo_code_id else None,
+                "terminal_profile": terminal_profile,
                 "payload": payload,
             },
         )

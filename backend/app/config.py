@@ -281,6 +281,10 @@ class Settings(BaseSettings):
     tinkoff_api_url: str = "https://securepay.tinkoff.ru/v2/"
     tinkoff_terminal_key: str = ""
     tinkoff_password: str = ""
+    # Existing recurrent mandates are terminal-bound. Keep the former terminal
+    # configured until its final subscription has expired or been cancelled.
+    tinkoff_legacy_terminal_key: str = ""
+    tinkoff_legacy_password: str = ""
 
     # Billing — generic
     billing_trial_days: int = 0
@@ -349,10 +353,9 @@ class Settings(BaseSettings):
     @property
     def mcp_resource_url_resolved(self) -> str:
         """Canonical MCP resource URL used for OAuth resource indicators."""
-        return (
-            self.mcp_resource_url
-            or f"{self.public_base_url_resolved.rstrip('/')}/mcp"
-        ).rstrip("/")
+        return (self.mcp_resource_url or f"{self.public_base_url_resolved.rstrip('/')}/mcp").rstrip(
+            "/"
+        )
 
     @property
     def public_base_url_resolved(self) -> str:

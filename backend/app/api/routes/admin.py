@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.deps import CurrentUser, Database
 from app.billing.promo_codes import generate_promo_code, hash_promo_code, normalize_promo_code
 from app.billing.providers.stripe_provider import StripeProvider
-from app.billing.providers.tinkoff_provider import TinkoffProvider
+from app.billing.providers.tinkoff_provider import TINKOFF_PROFILE_LEGACY, TinkoffProvider
 from app.config import get_settings
 from app.core.embedding_backfill import backfill_missing_segment_embeddings
 from app.core.entity_graph import (
@@ -615,9 +615,7 @@ async def _recording_pipeline_observability(db: Database, *, now: datetime) -> d
         ).all()
     )
     last_24h_total = sum(last_24h_counts.values())
-    failed_rate = (
-        last_24h_counts.get("failed", 0) / last_24h_total if last_24h_total > 0 else 0.0
-    )
+    failed_rate = last_24h_counts.get("failed", 0) / last_24h_total if last_24h_total > 0 else 0.0
     stuck_processing_count = int(
         (
             await db.execute(
@@ -752,8 +750,7 @@ def _observability_alerts(recording_pipeline: dict) -> list[dict]:
             }
         )
     if (
-        recording_pipeline["last_24h"]["total"]
-        >= settings.recording_monitoring_min_volume_24h
+        recording_pipeline["last_24h"]["total"] >= settings.recording_monitoring_min_volume_24h
         and recording_pipeline["failed_rate_24h"]
         >= settings.recording_monitoring_failure_rate_critical
     ):
@@ -947,9 +944,7 @@ async def _ai_usage_rows(
                     "failed_events": _int(row[offset + 6]),
                     "refused_events": _int(row[offset + 7]),
                     "unpriced_events": _int(row[offset + 8]),
-                    "last_event_at": row[offset + 9].isoformat()
-                    if row[offset + 9]
-                    else None,
+                    "last_event_at": row[offset + 9].isoformat() if row[offset + 9] else None,
                 }
             )
         return output
@@ -1241,15 +1236,11 @@ async def _deepgram_usage_rows(
                     0,
                 ),
                 func.coalesce(
-                    func.sum(
-                        case((DeepgramUsageEvent.provider_status_code == 402, 1), else_=0)
-                    ),
+                    func.sum(case((DeepgramUsageEvent.provider_status_code == 402, 1), else_=0)),
                     0,
                 ),
                 func.coalesce(
-                    func.sum(
-                        case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)
-                    ),
+                    func.sum(case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)),
                     0,
                 ),
             ).where(DeepgramUsageEvent.created_at >= since)
@@ -1285,15 +1276,11 @@ async def _deepgram_usage_rows(
                     0,
                 ),
                 func.coalesce(
-                    func.sum(
-                        case((DeepgramUsageEvent.provider_status_code == 402, 1), else_=0)
-                    ),
+                    func.sum(case((DeepgramUsageEvent.provider_status_code == 402, 1), else_=0)),
                     0,
                 ),
                 func.coalesce(
-                    func.sum(
-                        case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)
-                    ),
+                    func.sum(case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)),
                     0,
                 ),
                 func.max(DeepgramUsageEvent.created_at),
@@ -1315,9 +1302,7 @@ async def _deepgram_usage_rows(
         p402,
         unpriced,
         last_at,
-    ) in (
-        captured_user_rows
-    ):
+    ) in captured_user_rows:
         key = str(user_id) if user_id is not None else "unknown"
         item = user_rows.setdefault(key, _new_deepgram_user_row(key, email))
         item["email"] = email or item["email"]
@@ -1416,9 +1401,7 @@ async def _deepgram_usage_rows(
                 func.coalesce(func.sum(DeepgramUsageEvent.audio_seconds), 0),
                 func.coalesce(func.sum(DeepgramUsageEvent.billable_seconds), 0),
                 func.coalesce(
-                    func.sum(
-                        case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)
-                    ),
+                    func.sum(case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)),
                     0,
                 ),
                 func.coalesce(
@@ -1486,9 +1469,7 @@ async def _deepgram_usage_rows(
                     0,
                 ),
                 func.coalesce(
-                    func.sum(
-                        case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)
-                    ),
+                    func.sum(case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)),
                     0,
                 ),
             )
@@ -1497,9 +1478,16 @@ async def _deepgram_usage_rows(
             .order_by(func.date(DeepgramUsageEvent.created_at))
         )
     ).all()
-    for day, events, cost, billable_seconds, audio_seconds, failed, refused, unpriced in (
-        captured_day_rows
-    ):
+    for (
+        day,
+        events,
+        cost,
+        billable_seconds,
+        audio_seconds,
+        failed,
+        refused,
+        unpriced,
+    ) in captured_day_rows:
         key = _day(day)
         item = day_rows.setdefault(key, _new_deepgram_day_row(key))
         item["captured_events"] = _int(events)
@@ -1783,8 +1771,7 @@ def _deepgram_usage_analysis(payload: dict) -> list[dict]:
                 "code": "deepgram.provider.payment_required",
                 "title": "Deepgram is refusing requests with 402",
                 "detail": (
-                    f"{captured['provider_402']} provider attempts returned "
-                    "payment-required."
+                    f"{captured['provider_402']} provider attempts returned payment-required."
                 ),
             }
         )
@@ -1828,8 +1815,7 @@ def _deepgram_usage_analysis(payload: dict) -> list[dict]:
     repeated = [
         item
         for item in top_recordings
-        if item["captured_events"] > 1
-        and (item["failed_events"] > 0 or item["refused_events"] > 0)
+        if item["captured_events"] > 1 and (item["failed_events"] > 0 or item["refused_events"] > 0)
     ]
     if repeated:
         analysis.append(
@@ -1838,8 +1824,7 @@ def _deepgram_usage_analysis(payload: dict) -> list[dict]:
                 "code": "deepgram.recording.repeated_attempts",
                 "title": "Repeated attempts detected for the same recording",
                 "detail": (
-                    f"{len(repeated)} recordings have multiple failed/refused "
-                    "Deepgram events."
+                    f"{len(repeated)} recordings have multiple failed/refused Deepgram events."
                 ),
             }
         )
@@ -1981,17 +1966,17 @@ async def list_admin_promo_codes(
     limit: int = 100,
 ) -> AdminPromoCodeListResponse:
     del admin
-    query = select(BillingPromoCode).order_by(desc(BillingPromoCode.created_at)).limit(
-        min(max(limit, 1), 500)
+    query = (
+        select(BillingPromoCode)
+        .order_by(desc(BillingPromoCode.created_at))
+        .limit(min(max(limit, 1), 500))
     )
     if not include_archived:
         query = query.where(BillingPromoCode.archived_at.is_(None))
     if active is not None:
         query = query.where(BillingPromoCode.active.is_(active))
     promos = list((await db.execute(query)).scalars().all())
-    return AdminPromoCodeListResponse(
-        items=[await _promo_response(promo, db) for promo in promos]
-    )
+    return AdminPromoCodeListResponse(items=[await _promo_response(promo, db) for promo in promos])
 
 
 @router.get(
@@ -2215,13 +2200,17 @@ async def get_admin_user(
         )
     ).all()
     usage_rows = (
-        await db.execute(
-            select(UsageWeek)
-            .where(UsageWeek.user_id == user.id)
-            .order_by(desc(UsageWeek.week_start_utc))
-            .limit(12)
+        (
+            await db.execute(
+                select(UsageWeek)
+                .where(UsageWeek.user_id == user.id)
+                .order_by(desc(UsageWeek.week_start_utc))
+                .limit(12)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return AdminUserDetail(
         **summary.model_dump(),
         subscriptions=[
@@ -2301,9 +2290,7 @@ async def patch_admin_user_status(
 
 def delete_tokens_stmt(model, user_id: UUID):
     return (
-        update(model)
-        .where(model.user_id == user_id)
-        .values(expires_at=datetime.now(timezone.utc))
+        update(model).where(model.user_id == user_id).values(expires_at=datetime.now(timezone.utc))
     )
 
 
@@ -2321,9 +2308,7 @@ def _subscription_response(sub: Subscription, plan: Plan) -> AdminSubscriptionRe
         canceled_at=sub.canceled_at,
         trial_end=sub.trial_end,
         tinkoff_next_charge_at=sub.tinkoff_next_charge_at,
-        has_provider_subscription=bool(
-            sub.stripe_subscription_id or sub.tinkoff_rebill_id
-        ),
+        has_provider_subscription=bool(sub.stripe_subscription_id or sub.tinkoff_rebill_id),
     )
 
 
@@ -2444,12 +2429,16 @@ async def list_admin_billing(
     items: list[AdminBillingSubscriptionListItem] = []
     for sub, plan, user in rows:
         invoices = (
-            await db.execute(
-                select(Invoice)
-                .where(Invoice.subscription_id == sub.id)
-                .order_by(desc(Invoice.created_at))
+            (
+                await db.execute(
+                    select(Invoice)
+                    .where(Invoice.subscription_id == sub.id)
+                    .order_by(desc(Invoice.created_at))
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         items.append(
             AdminBillingSubscriptionListItem(
                 id=str(sub.id),
@@ -2722,7 +2711,13 @@ async def run_admin_subscription_renewal(
         )
         return {"charged": False, "skipped": True, "reason": skip_reason}
 
-    result = await charge_tinkoff_subscription(db, sub, plan, user, TinkoffProvider())
+    result = await charge_tinkoff_subscription(
+        db,
+        sub,
+        plan,
+        user,
+        TinkoffProvider(profile=sub.tinkoff_terminal_profile or TINKOFF_PROFILE_LEGACY),
+    )
     await db.flush()
     await _audit(
         db,
@@ -2760,7 +2755,9 @@ async def refund_admin_invoice(
             reason=payload.reason,
         )
     elif sub.provider == BillingProvider.TINKOFF.value:
-        provider_result = await TinkoffProvider().cancel_payment(
+        provider_result = await TinkoffProvider(
+            profile=sub.tinkoff_terminal_profile or TINKOFF_PROFILE_LEGACY
+        ).cancel_payment(
             invoice.provider_payment_id,
             amount_kopecks=payload.amount_minor,
         )
@@ -2807,9 +2804,7 @@ async def get_admin_stats(db: Database, admin: CurrentAdmin) -> AdminStatsRespon
         ).all()
     )
     total_users = int(
-        (
-            await db.execute(select(func.count(User.id)).where(_customer_user_filter()))
-        ).scalar_one()
+        (await db.execute(select(func.count(User.id)).where(_customer_user_filter()))).scalar_one()
     )
     new_users_30d = int(
         (
@@ -2950,11 +2945,7 @@ async def get_admin_stats(db: Database, admin: CurrentAdmin) -> AdminStatsRespon
             "total": len(promo_rows),
             "active": active,
             "paused": len(
-                [
-                    promo
-                    for promo in promo_rows
-                    if not promo.active and promo.archived_at is None
-                ]
+                [promo for promo in promo_rows if not promo.active and promo.archived_at is None]
             ),
             "archived": archived,
             "expired": expired,
@@ -3139,9 +3130,7 @@ async def run_admin_brain_backfill(
     return AdminBrainBackfillResponse(**payload)
 
 
-@router.post(
-    "/brain/backfill-extraction", response_model=AdminBrainExtractionBackfillResponse
-)
+@router.post("/brain/backfill-extraction", response_model=AdminBrainExtractionBackfillResponse)
 async def run_admin_brain_extraction_backfill(
     request: AdminBrainBackfillRequest,
     db: Database,
@@ -3174,12 +3163,16 @@ async def run_admin_brain_extraction_backfill(
 async def list_admin_audit(db: Database, admin: CurrentAdmin, limit: int = 100) -> dict:
     del admin
     rows = (
-        await db.execute(
-            select(AdminAuditLog)
-            .order_by(desc(AdminAuditLog.created_at))
-            .limit(min(max(limit, 1), 500))
+        (
+            await db.execute(
+                select(AdminAuditLog)
+                .order_by(desc(AdminAuditLog.created_at))
+                .limit(min(max(limit, 1), 500))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {
         "items": [
             {

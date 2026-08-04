@@ -113,9 +113,15 @@ In the sandbox terminal settings:
 
 ```
 TINKOFF_API_URL=https://securepay.tinkoff.ru/v2/
-TINKOFF_TERMINAL_KEY=...        # from sandbox terminal
-TINKOFF_PASSWORD=...             # from sandbox terminal
+TINKOFF_TERMINAL_KEY=...          # Wai Computer terminal for new checkouts
+TINKOFF_PASSWORD=...
+TINKOFF_LEGACY_TERMINAL_KEY=...   # previous terminal; existing RebillId only
+TINKOFF_LEGACY_PASSWORD=...
 ```
+
+`RebillId` comes from the parent payment and renewals must keep using that
+payment's terminal. Do not remove the legacy credentials while an active
+subscription still references the `legacy` terminal profile.
 
 ### 4. Test cards
 

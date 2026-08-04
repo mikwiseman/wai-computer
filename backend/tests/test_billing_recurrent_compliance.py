@@ -112,6 +112,8 @@ async def test_tinkoff_checkout_records_consent_event(
     monkeypatch.setattr("app.billing.router.get_settings", lambda: _BillingSettings())
 
     class FakeTinkoff:
+        terminal_profile = "wai_computer"
+
         async def create_checkout(self, **kwargs: object) -> CheckoutResult:
             return CheckoutResult(
                 provider="tinkoff",
@@ -156,9 +158,10 @@ async def test_tinkoff_checkout_records_consent_event(
 
 @pytest.mark.asyncio
 async def test_charge_confirmation_email_ru_content() -> None:
-    with patch("app.core.email.get_settings", return_value=_email_settings()), patch(
-        "app.core.email.resend"
-    ) as mock_resend:
+    with (
+        patch("app.core.email.get_settings", return_value=_email_settings()),
+        patch("app.core.email.resend") as mock_resend,
+    ):
         from app.core.email import send_charge_confirmation_email
 
         ok = await send_charge_confirmation_email(
@@ -181,9 +184,10 @@ async def test_charge_confirmation_email_ru_content() -> None:
 
 @pytest.mark.asyncio
 async def test_charge_confirmation_email_best_effort_swallows_failure() -> None:
-    with patch("app.core.email.get_settings", return_value=_email_settings()), patch(
-        "app.core.email.resend"
-    ) as mock_resend:
+    with (
+        patch("app.core.email.get_settings", return_value=_email_settings()),
+        patch("app.core.email.resend") as mock_resend,
+    ):
         mock_resend.Emails.send.side_effect = Exception("resend down")
         from app.core.email import send_charge_confirmation_email
 
@@ -200,9 +204,10 @@ async def test_charge_confirmation_email_best_effort_swallows_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_payment_failed_email_content() -> None:
-    with patch("app.core.email.get_settings", return_value=_email_settings()), patch(
-        "app.core.email.resend"
-    ) as mock_resend:
+    with (
+        patch("app.core.email.get_settings", return_value=_email_settings()),
+        patch("app.core.email.resend") as mock_resend,
+    ):
         from app.core.email import send_payment_failed_email
 
         ok = await send_payment_failed_email("user@example.com", locale="ru")
@@ -214,9 +219,10 @@ async def test_payment_failed_email_content() -> None:
 
 @pytest.mark.asyncio
 async def test_renewal_reminder_email_content_en() -> None:
-    with patch("app.core.email.get_settings", return_value=_email_settings()), patch(
-        "app.core.email.resend"
-    ) as mock_resend:
+    with (
+        patch("app.core.email.get_settings", return_value=_email_settings()),
+        patch("app.core.email.resend") as mock_resend,
+    ):
         from app.core.email import send_renewal_reminder_email
 
         ok = await send_renewal_reminder_email(
@@ -325,9 +331,7 @@ async def test_renewal_failure_sends_payment_failed_email(
     spy = AsyncMock(return_value=True)
     monkeypatch.setattr("app.tasks.billing_renewals.send_payment_failed_email", spy)
 
-    result = await charge_tinkoff_subscription(
-        db_session, sub, plan, user, FailingProvider()
-    )
+    result = await charge_tinkoff_subscription(db_session, sub, plan, user, FailingProvider())
     assert result == "failed"
     assert sub.status == SubscriptionStatus.PAST_DUE.value
     assert sub.tinkoff_next_charge_at is None
@@ -368,13 +372,17 @@ async def test_renewal_reminders_email_and_dedupe(
     spy.assert_awaited_once()
     assert spy.await_args.kwargs["locale"] == user.default_language
     markers = (
-        await db_session.execute(
-            select(BillingEvent).where(
-                BillingEvent.subscription_id == sub.id,
-                BillingEvent.type == "renewal_reminder_sent",
+        (
+            await db_session.execute(
+                select(BillingEvent).where(
+                    BillingEvent.subscription_id == sub.id,
+                    BillingEvent.type == "renewal_reminder_sent",
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(markers) == 1
 
     second = await send_due_renewal_reminders(db_session=db_session)
@@ -408,9 +416,7 @@ async def test_send_due_renewal_reminders_uses_db_context(
         async def __aexit__(self, *args: object) -> bool:
             return False
 
-    monkeypatch.setattr(
-        "app.tasks.billing_renewals.get_db_context", lambda: SessionContext()
-    )
+    monkeypatch.setattr("app.tasks.billing_renewals.get_db_context", lambda: SessionContext())
     spy = AsyncMock(return_value=True)
     monkeypatch.setattr("app.tasks.billing_renewals.send_renewal_reminder_email", spy)
 

@@ -83,9 +83,7 @@ class Plan(Base, UUIDMixin, TimestampMixin):
     tinkoff_amount_rub_monthly: Mapped[Decimal | None] = mapped_column(
         Numeric(12, 2), nullable=True
     )
-    tinkoff_amount_rub_yearly: Mapped[Decimal | None] = mapped_column(
-        Numeric(12, 2), nullable=True
-    )
+    tinkoff_amount_rub_yearly: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
 
     # USD price hints for marketing display (source of truth is Stripe Price)
     usd_amount_monthly: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
@@ -148,6 +146,7 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
     tinkoff_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
     tinkoff_customer_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
     tinkoff_rebill_id: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
+    tinkoff_terminal_profile: Mapped[str | None] = mapped_column(String(32), nullable=True)
     tinkoff_next_charge_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), index=True
     )

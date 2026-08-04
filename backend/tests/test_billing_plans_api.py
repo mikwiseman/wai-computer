@@ -201,6 +201,8 @@ async def test_checkout_defaults_ru_region_to_tinkoff_provider(
     captured: dict[str, object] = {}
 
     class FakeTinkoffProvider:
+        terminal_profile = "wai_computer"
+
         async def create_checkout(self, **kwargs):
             captured.update(kwargs)
             return CheckoutResult(
