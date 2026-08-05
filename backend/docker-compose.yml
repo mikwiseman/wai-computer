@@ -208,6 +208,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ../releases/macos:/srv/releases/macos:ro
+      - ../releases/dictation:/srv/dictation:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:

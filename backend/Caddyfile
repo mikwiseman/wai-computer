@@ -29,6 +29,17 @@ wai.computer {
         header Cache-Control "public, max-age=300"
     }
 
+    # Страница и образ Wai Dictation — отдельного продукта, живущего в своём
+    # репозитории (github.com/mikwiseman/wai-dictation). Здесь только раздача
+    # статики: index.html + нотарифицированный DMG, файлы лежат в
+    # /opt/waicomputer/releases/dictation на хосте.
+    handle_path /dictation/* {
+        root * /srv/dictation
+        file_server
+        header Cache-Control "public, max-age=300"
+    }
+    redir /dictation /dictation/ 308
+
     handle /api/* {
         reverse_proxy api:8000
     }
