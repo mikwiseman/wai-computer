@@ -18,15 +18,23 @@ function resolveApiProxyTarget(): string {
 
 export { resolveApiProxyTarget };
 
+export function schoolRewrites() {
+  return {
+    beforeFiles: [
+      { source: "/", destination: "/school-static/index.html" },
+      { source: "/school/projects", destination: "/school-static/projects.html" },
+    ],
+    afterFiles: [
+      { source: "/api/:path*", destination: `${resolveApiProxyTarget()}/api/:path*` },
+    ],
+    fallback: [],
+  };
+}
+
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${resolveApiProxyTarget()}/api/:path*`,
-      },
-    ];
+    return schoolRewrites();
   },
 };
 

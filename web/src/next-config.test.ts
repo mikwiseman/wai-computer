@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { resolveApiProxyTarget } from "../next.config";
+import { resolveApiProxyTarget, schoolRewrites } from "../next.config";
 
 const originalApiBaseUrl = process.env.API_BASE_URL;
 const originalPublicApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -35,5 +35,20 @@ describe("resolveApiProxyTarget", () => {
     process.env.NODE_ENV = "development";
 
     expect(resolveApiProxyTarget()).toBe("http://127.0.0.1:8000");
+  });
+});
+
+describe("English school routing", () => {
+  it("overrides only the two approved public pages before filesystem routing", () => {
+    expect(schoolRewrites()).toEqual({
+      beforeFiles: [
+        { source: "/", destination: "/school-static/index.html" },
+        { source: "/school/projects", destination: "/school-static/projects.html" },
+      ],
+      afterFiles: [
+        { source: "/api/:path*", destination: `${resolveApiProxyTarget()}/api/:path*` },
+      ],
+      fallback: [],
+    });
   });
 });
