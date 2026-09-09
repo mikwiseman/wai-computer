@@ -84,9 +84,14 @@ wai.computer {
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
         -Server
     }
+
+    # Student demos embed their own project pages; all other pages stay unframeable.
+    @schoolProject path /school/projects/* /school-static/student-projects/*
+    header @schoolProject X-Frame-Options "SAMEORIGIN"
+    @otherPages not path /school/projects/* /school-static/student-projects/*
+    header @otherPages X-Frame-Options "DENY"
 
     request_body {
         max_size 200MB

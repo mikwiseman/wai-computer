@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Student projects</title>
-  <meta name="description" content="Real WAI School student projects: games, practice tools and services built with AI by children aged 9–15 in two to four weeks. Open a project and try it." />
+  <meta name="description" content="Real wai.computer student projects: games, practice tools and services built with AI by children aged 9–15 in two to four weeks. Open a project and try it." />
   <link rel="canonical" href="https://wai.computer/school/projects" />
 
   <meta property="og:type" content="website" />
@@ -14,9 +14,9 @@
   <meta property="og:image" content="https://wai.computer/school-static/assets/castle.webp" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="WAI School student projects" />
+  <meta property="og:image:alt" content="wai.computer student projects" />
   <meta property="og:locale" content="en_GB" />
-  <meta property="og:site_name" content="wai school" />
+  <meta property="og:site_name" content="wai.computer" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:image" content="https://wai.computer/school-static/assets/castle.webp" />
   <meta name="twitter:title" content="Student projects" />
@@ -147,6 +147,11 @@
       border-radius: var(--r-pill); background: var(--orange); color: #FFF;
       font-weight: 700; font-size: 14px; white-space: nowrap;
       transition: background 180ms ease, transform 160ms var(--ease-out);
+    }
+    @media (max-width: 420px) {
+      .hdr { left: 12px; right: 12px; gap: 8px; padding-left: 12px; }
+      .hdr__brand { font-size: 15px; }
+      .hdr__cta { font-size: 12px; padding-inline: 12px; }
     }
     .hdr__cta:hover { background: var(--orange-dark); }
     .hdr__cta:active { transform: scale(0.975); }
@@ -427,9 +432,9 @@
     "@id": "https://wai.computer/school/projects#page",
     "url": "https://wai.computer/school/projects",
     "name": "Student projects",
-    "description": "Real WAI School student projects: games, practice tools and services built with AI in two to four weeks. Open any project and try it.",
+    "description": "Real wai.computer student projects: games, practice tools and services built with AI in two to four weeks. Open any project and try it.",
     "inLanguage": "en",
-    "isPartOf": { "@id": "https://wai.school/#website" }
+    "isPartOf": { "@id": "https://wai.computer/#website" }
   }
   </script>
 
@@ -439,7 +444,7 @@
 <body>
 
   <header class="hdr">
-    <a class="hdr__brand" href="/">wai<span>.</span>school</a>
+    <a class="hdr__brand" href="/">wai<span>.</span>computer</a>
     <nav class="hdr__nav">
       <a class="hdr__cta" href="/school/contact" target="_blank" rel="noopener" data-cta="booking" data-cta-location="nav">Ask about lessons</a>
     </nav>
@@ -779,7 +784,7 @@
 
 <footer class="foot">
   <div class="wrap foot__row">
-    <a class="foot__brand" href="/">wai<span>.</span>school</a>
+    <a class="foot__brand" href="/">wai<span>.</span>computer</a>
 
     <div class="foot__links">
       <span class="foot__status meta"><span class="foot__dot" aria-hidden="true"></span> Live online learning</span>
@@ -860,10 +865,10 @@
       var f = document.createElement('iframe');
       f.className = 'play-frame';
       f.src = slide.getAttribute('data-src');
-      f.title = slide.getAttribute('data-title') || 'WAI School student project';
+      f.title = slide.getAttribute('data-title') || 'wai.computer student project';
       f.setAttribute('allow', 'autoplay; fullscreen');
 
-      f.addEventListener('load', function () { try { f.focus(); } catch (err) {} });
+      f.addEventListener('load', function () { try { f.focus({ preventScroll: true }); } catch (err) {} });
       stage.classList.add('playing');
       stage.appendChild(f);
       window.WaiAnalytics?.track("cta_click", { ctaId: "project_open", component: "project_gallery" });
@@ -898,6 +903,6 @@
   })();
 </script>
 
-<footer class="school-company"><p>Wai School is an educational programme of <strong>WaiWai, LLC</strong>, Delaware, United States.</p><p>1111B S Governors Ave, STE 28908, Dover, DE 19904, USA</p><nav aria-label="Company and contact"><a href="/school/contact">Contact</a><a href="/legal/offer">Courses &amp; terms</a><a href="/legal/privacy">Privacy</a></nav></footer>
+<footer class="school-company"><p>wai.computer is an educational programme of <strong>WaiWai, LLC</strong>, Delaware, United States.</p><p>1111B S Governors Ave, STE 28908, Dover, DE 19904, USA</p><nav aria-label="Company and contact"><a href="/school/contact">Contact</a><a href="/legal/offer">Courses &amp; terms</a><a href="/legal/privacy">Privacy</a></nav></footer>
 </body>
 </html>

@@ -17,7 +17,7 @@ pages = {
     '/school/projects': ['Student projects', 'pcard'],
     '/mentors/dima': ['Dmitry Rubin'],
     '/mentors/darya': ['Darya Zhuykova'],
-    '/school/contact': ['mailto:hello@mail.waiwai.is', '€2,500'],
+    '/school/contact': ['mailto:hi@wai.computer', '€2,500'],
     '/legal/offer': ['ten individual lessons', '1111B S Governors Ave'],
     '/legal/privacy': ['School website privacy'],
 }
@@ -29,6 +29,7 @@ for path, markers in pages.items():
     for marker in markers + ['WaiWai, LLC', 'Delaware', '<html lang="en">']:
         assert marker in html, (path, marker)
     assert not re.search(r'[\u0400-\u04ff]|Russia|Moscow|RUB\b|₽|Severstal|Rosatom|IIDF|Netology', html, re.I), path
+    assert not re.search(r'wai(?:[ .]|<span[^>]*>\.</span>)school|hello@mail\.waiwai\.is', html, re.I), path
     for block in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S):
         json.loads(block)
     assets.update(re.findall(r'/school-static/[a-zA-Z0-9_./-]+\.(?:webp|png|jpg|svg|woff2)', html))
@@ -57,6 +58,8 @@ for path in project_pages:
         html = response.read().decode()
         assert response.status == 200 and re.search(r'<html[^>]* lang="en"', html), path
         assert html.startswith('<!DOCTYPE html>'), path
+        if urlsplit(base).hostname == 'wai.computer':
+            assert response.headers.get('X-Frame-Options', '').upper() == 'SAMEORIGIN', (path, 'project embedding blocked')
         assert not re.search(r'[\u0400-\u04ff]|Russia|Moscow|₽', html, re.I), path
     parser = AssetParser(base + path)
     parser.feed(html)

@@ -646,7 +646,7 @@ async function drawStoryCard(canvas, result) {
     ctx.fillText("Your subtle hint is ready", 1008, height - 114);
     ctx.fillStyle = result.story.accent;
     ctx.font = "700 23px Manrope, sans-serif";
-    ctx.fillText("wai.school/g2/project/bouquet/", 1008, height - 72);
+    ctx.fillText("wai.computer/school/projects/bouquet/", 1008, height - 72);
     ctx.save();
     for (let index = 0; index < 1400; index += 1) {
         const alpha = Math.random() * 0.05;
