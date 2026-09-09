@@ -9,7 +9,6 @@ export const metadata: Metadata = {
     canonical: "https://wai.computer/privacy",
     languages: {
       en: "https://wai.computer/privacy",
-      ru: "https://wai.computer/ru/privacy",
     },
   },
 };
@@ -24,14 +23,14 @@ export default function PrivacyPage() {
 
         <header className={styles.legalHeader}>
           <h1>Privacy Policy</h1>
-          <p className={styles.updated}>Last updated: May 28, 2026</p>
+          <p className={styles.updated}>Last updated: September 9, 2026</p>
         </header>
 
         <div className={styles.legalContent}>
           <section>
             <h2>Who we are</h2>
             <p>
-              WaiComputer is operated by WaiWai. This Policy explains how we
+              WaiComputer is operated by WaiWai, LLC, a Delaware limited liability company, United States. This Policy explains how we
               process data when you use the WaiComputer apps, website, API,
               Telegram bot, MCP server, and connected services.
             </p>

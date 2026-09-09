@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/block-modz/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Mods for Minecraft Bedrock</title>
+<meta content="13 free Minecraft Bedrock mods: weapons, cars, portals, jetpacks and realistic textures. Download in one click, on your phone or computer." name="description"/>
+<link href="img/realistic_icon.png" rel="icon" type="image/png"/>
+<meta content="website" property="og:type"/>
+<meta content="BLOCK MODZ" property="og:site_name"/>
+<meta content="Mods for Minecraft Bedrock" property="og:title"/>
+<meta content="13 free mods: weapons, cars, portals, jetpacks and textures. Download in one click." property="og:description"/>
+<meta content="https://wai.computer/school/projects/block-modz" property="og:url"/>
+<meta content="https://wai.computer/school-static/project-previews/block-modz.png" property="og:image"/>
+<meta content="1200" property="og:image:width"/>
+<meta content="630" property="og:image:height"/>
+<meta content="Minecraft Bedrock MODS — 13 free mods" property="og:image:alt"/>
+<meta content="summary_large_image" name="twitter:card"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&amp;family=VT323&amp;display=swap" rel="stylesheet"/>
+<style>
+  :root{
+
+    --bg1:#210806;
+    --bg2:#100302;
+    --brick:#2a1013;
+    --brick2:#3a141a;
+    --brick-edge:#5a1c22;
+    --lava:#ff7a18;
+    --lava-bright:#ffbe3d;
+    --lava-deep:#b83600;
+    --ember:#ff5a2c;
+    --glowstone:#ffd76a;
+    --soul:#37d7d7;
+    --portal:#8a2be2;
+    --text:#f0d6bf;
+    --text-dim:#c9a487;
+    --shadow:#00000066;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:'VT323', monospace;
+    font-size:22px;
+    color:var(--text);
+    background:
+      radial-gradient(120% 75% at 50% 118%, rgba(255,120,20,.30), transparent 60%),
+      radial-gradient(90% 55% at 50% -12%, rgba(138,43,226,.20), transparent 60%),
+      linear-gradient(var(--bg1), var(--bg2));
+    background-attachment:fixed;
+    min-height:100vh;
+  }
+  .pixel{font-family:'Press Start 2P', monospace;}
+
+
+  .embers{
+    position:fixed; inset:0; z-index:-1;
+    pointer-events:none; overflow:hidden;
+  }
+  .ember{
+    position:absolute; bottom:-14px;
+    width:6px; height:6px; border-radius:50%;
+    background:radial-gradient(circle,#ffe08a,#ff7a18 55%,rgba(255,90,20,0) 72%);
+    box-shadow:0 0 8px rgba(255,140,30,.9);
+    animation:emberRise linear infinite;
+  }
+  @keyframes emberRise{
+    0%{transform:translateY(0) translateX(0); opacity:0;}
+    12%{opacity:1;}
+    88%{opacity:.85;}
+    100%{transform:translateY(-104vh) translateX(var(--dx,14px)); opacity:0;}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .ember{animation:none; display:none;}
+    header h1{animation:none;}
+  }
+
+
+  header{
+    background:linear-gradient(#2a0d0c,#1a0605);
+    border-bottom:8px solid var(--lava);
+    box-shadow:0 6px 26px rgba(255,90,20,.45);
+    text-align:center;
+    padding:0;
+  }
+  .grass-top{
+    background:
+      radial-gradient(70% 120% at 50% 0%, rgba(138,43,226,.35), transparent 60%),
+      linear-gradient(135deg,#3a141a,#521a1a);
+    border-bottom:8px solid var(--lava-deep);
+    padding:36px 16px 28px;
+  }
+  @keyframes lavaGlow{
+    0%,100%{text-shadow:0 0 10px rgba(255,120,20,.7),0 0 22px rgba(255,80,10,.4),3px 3px 0 #4a0d00;}
+    50%{text-shadow:0 0 18px rgba(255,160,50,.95),0 0 36px rgba(255,90,10,.65),3px 3px 0 #4a0d00;}
+  }
+  header h1{
+    font-family:'Press Start 2P', monospace;
+    color:var(--glowstone);
+    font-size:clamp(18px,4vw,34px);
+    line-height:1.5;
+    animation:lavaGlow 2.2s ease-in-out infinite;
+  }
+  header p{
+    color:var(--text);
+    font-size:24px;
+    padding:18px 16px 8px;
+  }
+  header .fresh{
+    font-family:'Press Start 2P', monospace;
+    font-size:13px;
+    color:var(--lava-bright);
+    background:#1a0605;
+    border-top:4px solid var(--lava-deep);
+    padding:14px 16px;
+    line-height:1.5;
+    text-shadow:0 0 10px rgba(255,120,20,.7);
+  }
+
+  .wrap{max-width:760px;margin:0 auto;padding:24px 16px 60px;}
+
+
+  .sign{
+    background:linear-gradient(#2a1013,#1c0a0c);
+    border:6px solid var(--brick-edge);
+    box-shadow:6px 6px 0 var(--shadow), 0 0 18px rgba(255,90,20,.25);
+    color:var(--lava-bright);
+    text-align:center;
+    padding:20px 18px;
+    font-size:26px;
+    line-height:1.4;
+    text-shadow:0 0 8px rgba(255,120,20,.5);
+  }
+  .sign .arrow{font-size:40px;display:block;margin-top:6px;color:var(--lava);}
+
+
+  .chips{
+    display:flex;justify-content:center;gap:12px;
+    flex-wrap:wrap;margin-bottom:22px;
+  }
+  .chip{
+    background:linear-gradient(#2a1013,#1c0a0c);
+    border:4px solid var(--brick-edge);
+    box-shadow:4px 4px 0 var(--shadow), 0 0 12px rgba(255,90,20,.20);
+    font-family:'Press Start 2P', monospace;
+    font-size:11px;color:var(--text);
+    padding:11px 13px;line-height:1.4;
+  }
+  .chip b{color:var(--lava-bright);}
+
+
+  .mod{
+    background:linear-gradient(160deg,#341318,#220d10);
+    border:6px solid var(--brick-edge);
+    box-shadow:8px 8px 0 var(--shadow), 0 0 22px rgba(255,90,20,.22);
+    margin:28px 0;
+    padding:22px;
+  }
+  .mod h2{
+    font-family:'Press Start 2P', monospace;
+    font-size:16px;
+    color:var(--lava-bright);
+    margin-bottom:14px;
+    line-height:1.5;
+    text-shadow:0 0 10px rgba(255,120,20,.5);
+  }
+  .mod .tag{
+    display:inline-block;
+    background:linear-gradient(var(--lava-bright),var(--lava));
+    color:#2a0d00;
+    font-weight:bold;
+    font-size:18px;
+    padding:2px 10px;
+    margin-bottom:12px;
+    border:3px solid var(--lava-deep);
+    box-shadow:0 0 12px rgba(255,140,30,.6);
+  }
+  .mod p{font-size:23px;line-height:1.4;margin-bottom:16px;color:var(--text);}
+  .mod p b{color:var(--glowstone);}
+  .mod-img{
+    width:84px;height:84px;
+    image-rendering:pixelated;
+    border:4px solid var(--lava-deep);
+    background:#0004;padding:6px;
+    box-shadow:0 0 14px rgba(255,90,20,.35);
+    display:block;margin-bottom:14px;
+  }
+  .mod-img.wide{width:auto;max-width:100%;height:74px;}
+
+
+  .soon{
+    opacity:.9;
+    background:linear-gradient(160deg,#1a0f1e,#120814);
+    border-style:dashed;
+    border-color:var(--portal);
+    box-shadow:8px 8px 0 var(--shadow), 0 0 18px rgba(138,43,226,.3);
+    text-align:center;
+  }
+  .soon .tag{
+    background:linear-gradient(#5a2aa0,#3a1470);
+    color:#fff;border-color:#2a0d55;box-shadow:0 0 12px rgba(138,43,226,.5);
+  }
+  .soon .lock{font-size:42px;margin:6px 0;}
+  .soon h2{color:#c79bff;text-shadow:0 0 10px rgba(138,43,226,.6);}
+  .soon p{color:var(--text-dim);}
+
+
+  .btn{
+    display:inline-block;
+    font-family:'Press Start 2P', monospace;
+    font-size:14px;
+    color:#2a0d00;
+    background:linear-gradient(var(--lava-bright),var(--lava));
+    border:none;
+    border-bottom:6px solid var(--lava-deep);
+    padding:16px 24px;
+    text-decoration:none;
+    cursor:pointer;
+    box-shadow:0 0 16px rgba(255,120,20,.55);
+    transition:transform .05s, box-shadow .15s;
+  }
+  .btn:hover{background:linear-gradient(#ffd15a,#ff8f2a);box-shadow:0 0 24px rgba(255,150,40,.8);}
+  .btn:active{transform:translateY(4px);border-bottom-width:2px;}
+
+
+  .like{
+    font-family:'Press Start 2P', monospace;
+    font-size:14px;
+    color:var(--ember);
+    background:#1c0a0c;
+    border:2px solid var(--brick-edge);
+    border-bottom:6px solid #7a1a1a;
+    padding:14px 18px;
+    margin-left:10px;
+    cursor:pointer;
+    transition:transform .05s;
+  }
+  .like:hover{background:#2a1013;}
+  .like:active{transform:translateY(4px);border-bottom-width:2px;}
+  .like.liked{
+    color:#fff;
+    background:linear-gradient(var(--ember),var(--lava-deep));
+    border-color:var(--lava-deep);border-bottom-color:#7a1a00;
+    box-shadow:0 0 16px rgba(255,90,30,.7);
+  }
+  .like[disabled]{opacity:.6;cursor:default;}
+
+
+  .guide{
+    background:linear-gradient(#2a1013,#180809);
+    border:6px solid var(--brick-edge);
+    box-shadow:8px 8px 0 var(--shadow), 0 0 20px rgba(255,90,20,.2);
+    color:var(--text);
+    padding:24px;
+    margin-top:40px;
+  }
+  .guide h2{
+    font-family:'Press Start 2P', monospace;
+    font-size:16px;
+    color:var(--lava-bright);
+    margin-bottom:18px;
+    text-shadow:0 0 10px rgba(255,120,20,.5);
+  }
+  .guide ol{margin-left:26px;}
+  .guide li{font-size:24px;line-height:1.6;margin-bottom:8px;}
+  .guide b{color:var(--glowstone);}
+  .guide .note{
+    background:#00000033;
+    border-left:6px solid var(--lava);
+    padding:12px 16px;
+    margin-top:18px;
+    font-size:22px;
+  }
+
+  footer{
+    text-align:center;
+    color:var(--text-dim);
+    font-size:20px;
+    padding:20px;
+    background:#1a0605;
+    border-top:6px solid var(--lava-deep);
+  }
+</style>
+
+<link href="https://wai.computer/school/projects/block-modz" rel="canonical"/></head>
+<body>
+
+<div aria-hidden="true" class="embers">
+<span class="ember" style="left:4%;  width:5px; height:5px; animation-duration:9s;  animation-delay:0s;   --dx:16px;"></span>
+<span class="ember" style="left:11%; width:7px; height:7px; animation-duration:11s; animation-delay:2s;   --dx:-12px;"></span>
+<span class="ember" style="left:18%; width:4px; height:4px; animation-duration:7s;  animation-delay:5s;   --dx:20px;"></span>
+<span class="ember" style="left:25%; width:8px; height:8px; animation-duration:13s; animation-delay:1s;   --dx:-18px;"></span>
+<span class="ember" style="left:32%; width:5px; height:5px; animation-duration:8s;  animation-delay:6s;   --dx:10px;"></span>
+<span class="ember" style="left:39%; width:6px; height:6px; animation-duration:10s; animation-delay:3s;   --dx:-22px;"></span>
+<span class="ember" style="left:46%; width:4px; height:4px; animation-duration:12s; animation-delay:7s;   --dx:14px;"></span>
+<span class="ember" style="left:53%; width:7px; height:7px; animation-duration:9s;  animation-delay:4s;   --dx:-10px;"></span>
+<span class="ember" style="left:60%; width:5px; height:5px; animation-duration:11s; animation-delay:8s;   --dx:18px;"></span>
+<span class="ember" style="left:67%; width:9px; height:9px; animation-duration:14s; animation-delay:2.5s; --dx:-16px;"></span>
+<span class="ember" style="left:74%; width:4px; height:4px; animation-duration:7.5s;animation-delay:9s;   --dx:12px;"></span>
+<span class="ember" style="left:81%; width:6px; height:6px; animation-duration:10s; animation-delay:5.5s; --dx:-20px;"></span>
+<span class="ember" style="left:88%; width:5px; height:5px; animation-duration:12s; animation-delay:1.5s; --dx:16px;"></span>
+<span class="ember" style="left:95%; width:7px; height:7px; animation-duration:9.5s;animation-delay:7.5s; --dx:-14px;"></span>
+<span class="ember" style="left:8%;  width:4px; height:4px; animation-duration:13s; animation-delay:10s;  --dx:-18px;"></span>
+<span class="ember" style="left:43%; width:8px; height:8px; animation-duration:15s; animation-delay:11s;  --dx:22px;"></span>
+<span class="ember" style="left:57%; width:4px; height:4px; animation-duration:8.5s;animation-delay:6.5s; --dx:-12px;"></span>
+<span class="ember" style="left:70%; width:6px; height:6px; animation-duration:11s; animation-delay:3.5s; --dx:16px;"></span>
+</div>
+<header>
+<div class="grass-top">
+<h1>MODS<br/>for Minecraft</h1>
+</div>
+<p>Bedrock Edition · download and play!</p>
+<p class="fresh">✨ A new mod every week! ✨</p>
+</header>
+<div class="wrap">
+<div class="pick" style="text-align:center;margin:0 0 24px;">
+<button class="btn" id="pickBtn" type="button">🎲 Random mod!</button>
+<p id="pickResult" style="margin-top:12px;font-size:24px;min-height:28px;color:#ffd76a;"></p>
+</div>
+
+<div class="chips">
+<div class="chip">📦 Mods: <b>13</b></div>
+<div class="chip">🎮 Bedrock <b>1.21+</b></div>
+<div class="chip">⚡ Download in <b>1 click</b></div>
+</div>
+
+<div class="sign">
+    Scroll down for the<br/>installation instructions
+    <span class="arrow">⬇</span>
+</div>
+
+<div class="mod">
+<img alt="Realistic textures" class="mod-img wide" src="img/realistic.png"/>
+<span class="tag">NEW MOD</span>
+<h2>Realistic textures 🌱🪵</h2>
+<p>Texture pack: everyday blocks look more detailed and alive —
+       dirt, grass, wood, and now <b>stone, cobblestone, sand, gravel and ores</b>!
+       Stone has cracks, cobblestone has mortar, ores sparkle,
+       and logs have real growth rings.</p>
+<p><b>Note:</b> this is a resource pack — enable it in your world's
+       Resource Packs section, not Behavior Packs.</p>
+<a class="btn" download="" href="mods/RealisticTextures.mcpack">⬇ DOWNLOAD</a>
+<button class="like" data-mod="realistic"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod">
+<img alt="Mini blocks" class="mod-img wide" src="img/miniblocks.png"/>
+<span class="tag">MOD</span>
+<h2>Mini blocks 🧱</h2>
+<p>Eight tiny blocks, one quarter of the usual size: mini stone, dirt, grass,
+       planks, and sparkling diamond, gold, emerald and redstone blocks.
+       Use them for decorations and small details! Find them in Creative
+       mode under Construction.</p>
+<a class="btn" download="" href="mods/MiniBlocks.mcaddon">⬇ DOWNLOAD</a>
+<button class="like" data-mod="miniblocks"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod">
+<img alt="Building dynamite" class="mod-img" src="img/dynamite.png"/>
+<span class="tag">MOD</span>
+<h2>Building dynamite 🧨🏠</h2>
+<p>A total of <b>10 super dynamites</b>, each building its own house! <b>Place the dynamite
+       as a block and light it with flint and steel</b> 🔥 — the fuse hisses, <b>BOOM</b> 💥 — a complete house appears,
+       with a floor, windows, a door, a roof and a lamp inside. Houses:
+       wood, stone, brick, diamond, glass, <b>nether,
+       pumpkin, ice, gold and emerald</b>! Recipe: TNT + a block of the material you want.</p>
+<a class="btn" download="" href="mods/Dynamite.mcaddon">⬇ DOWNLOAD</a>
+<button class="like" data-mod="dynamite"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod">
+<img alt="Portal gun" class="mod-img" src="img/portal_gun.png"/>
+<span class="tag">MOD</span>
+<h2>Portal gun 🌀</h2>
+<p>Fire portals, just like in Portal! <b>Right-click</b> — blue portal 🔵,
+       <b>crouch + right-click</b> — orange portal 🟠. Step into one and instantly
+       emerge from the other! Portals glow with particles. Recipe: 2 iron + ender pearl + diamond.</p>
+<a class="btn" download="" href="mods/PortalGun.mcaddon">⬇ DOWNLOAD</a>
+<button class="like" data-mod="portal_gun"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod">
+<img alt="Explosive potions" class="mod-img" src="img/potions.png"/>
+<span class="tag">MOD</span>
+<h2>Explosive potions ☢️➕</h2>
+<p>Two explosive potions! Hold one and press Use — it bursts
+       where you are looking. <b>Radiation</b> ☢️ — gives everyone nearby
+       <b>all negative effects</b> for 30 seconds: poison, wither, weakness…
+       <b>Medic</b> ➕ — gives everyone nearby <b>all positive effects</b> for 30 seconds:
+       strength, regeneration, speed, protection… Blast radius: 5 blocks!</p>
+<a class="btn" download="" href="mods/Potions.mcaddon">⬇ DOWNLOAD</a>
+<button class="like" data-mod="potions"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod">
+<img alt="Jetpack" class="mod-img" src="img/jetpack.png"/>
+<span class="tag">MOD</span>
+<h2>Jetpack 🚀</h2>
+<p>Hold the jetpack and press Use — <b>you fly up</b>!
+       Press again to go higher. You float down gently, without damage —
+       with flames, smoke and sound. Recipe: 2 iron + blaze rod + gunpowder.</p>
+<a class="btn" download="" href="mods/Jetpack.mcaddon">⬇ DOWNLOAD</a>
+<button class="like" data-mod="jetpack"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod">
+<img alt="Cars" class="mod-img wide" src="img/cars.png"/>
+<span class="tag">MOD</span>
+<h2>Cars 🚗</h2>
+<p>Ten cars: Mercedes, BMW, Audi, Toyota, Ferrari,
+       Lamborghini, Porsche, Tesla, Ford and Bugatti. Each has <b>its own recipe</b>!
+       Hold the car and press Use —
+       <b>a real car appears and you get behind the wheel</b>! Drive with WASD.
+       Sports cars are the fastest! 🏎️ Press Shift to get out.</p>
+<a class="btn" download="" href="mods/Cars.mcaddon">⬇ DOWNLOAD</a>
+<button class="like" data-mod="cars"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod">
+<img alt="Ore outlines" class="mod-img" src="img/ore_outline.png"/>
+<span class="tag">MOD</span>
+<h2>Ore outlines 💎</h2>
+<p>Texture pack: spot ores from far away! Each ore has a bright outline
+       in its own color: turquoise diamonds, yellow gold, red redstone,
+       and light blue ancient debris. Works with deepslate ores too.</p>
+<p><b>Note:</b> this is a resource pack — enable it in your world's
+       Resource Packs section, not Behavior Packs.</p>
+<a class="btn" download="" href="mods/OreOutline.mcaddon">⬇ DOWNLOAD</a>
+<button class="like" data-mod="ore_outline"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod">
+<img alt="Super tools" class="mod-img" src="img/bulldozer.png"/>
+<span class="tag">MOD</span>
+<h2>Super tools ⚔️🚜</h2>
+<p>Two items in one pack! <b>Sharpness 10 sword</b> — glows and hits hard,
+       like a sword with Sharpness 10. Recipe: diamond sword + 2 flint.
+       <b>Bulldozer</b> — break one block and a huge 5×5×5 cube, 125 blocks, crumbles!
+       Recipe: diamond pickaxe + 2 iron blocks.</p>
+<a class="btn" download="" href="mods/SuperTools.mcaddon">⬇ DOWNLOAD</a>
+<button class="like" data-mod="supertools"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod">
+<img alt="Burger" class="mod-img" src="img/burger.png"/>
+<span class="tag">MOD</span>
+<h2>Burger 🍔</h2>
+<p>A mighty burger! Eat it for 3 minutes of Strength 5
+       and Regeneration 5: hit much harder and recover hearts automatically.
+       Craft at a crafting table: bread + steak + golden carrot.</p>
+<a class="btn" download="" href="mods/Burger.mcaddon">⬇ DOWNLOAD</a>
+<button class="like" data-mod="burger"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod">
+<img alt="Shawarma" class="mod-img" src="img/shawarma.png"/>
+<span class="tag">MOD</span>
+<h2>Shawarma 🌯</h2>
+<p>Delicious shawarma! Eat it for speed, haste for faster mining,
+       and regeneration for quick healing. Recipe: bread + cooked chicken + carrot.</p>
+<a class="btn" download="" href="mods/Shawarma.mcaddon">⬇ DOWNLOAD</a>
+<button class="like" data-mod="shawarma"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod">
+<img alt="Fire gear" class="mod-img wide" src="img/firegear.png"/>
+<span class="tag">MOD</span>
+<h2>Fire gear 🔥⚔️</h2>
+<p>Weapons and armor! <b>Fire sword</b> — glows and sets enemies on fire for 5 seconds.
+       Recipe: diamond sword + 2 blaze powder.
+       <b>Fire chestplate</b> — strong protection that keeps you safe
+       from fire and lava. Recipe: diamond chestplate + 2 blaze powder + magma cream.</p>
+<a class="btn" download="" href="mods/FireGear.mcaddon">⬇ DOWNLOAD</a>
+<button class="like" data-mod="firegear"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod">
+<img alt="Weapons" class="mod-img wide" src="img/weapons.png"/>
+<span class="tag">NEW MOD</span>
+<h2>Weapons 🔫🛡️</h2>
+<p>Three items! <b>Pistol</b> — press Use to shoot; hit a mob
+       to deal damage. <b>M4 rifle</b> — <b>hold the button</b>, and it fires in bursts! 💥
+       <b>Bulletproof vest</b> — equip in the chestplate slot for <b>strong protection</b>
+       from damage. You can <b>see it on your character</b> — a green vest on your body! 🟢 Shots have tracers and sound. Recipes: pistol — 2 iron + redstone;
+       M4 — 4 iron + 2 redstone; vest — 4 iron + 2 leather.</p>
+<a class="btn" download="" href="mods/Weapons.mcaddon">⬇ DOWNLOAD</a>
+<button class="like" data-mod="weapons"><span class="heart">🤍</span> <span class="like-count">0</span></button>
+</div>
+
+<div class="mod soon">
+<span class="tag">COMING SOON</span>
+<div class="lock">🔒</div>
+<h2>Mod #1</h2>
+<p>A new mod is coming soon!</p>
+</div>
+<div class="mod soon">
+<span class="tag">COMING SOON</span>
+<div class="lock">🔒</div>
+<h2>Mod #2</h2>
+<p>A new mod is coming soon!</p>
+</div>
+<div class="mod soon">
+<span class="tag">COMING SOON</span>
+<div class="lock">🔒</div>
+<h2>Mod #3</h2>
+<p>A new mod is coming soon!</p>
+</div>
+
+<div class="guide">
+<h2>How to install</h2>
+<ol>
+<li>Download the file using a button above.</li>
+<li>Tap the downloaded file.</li>
+<li>Your phone will ask to open it in Minecraft. Tap Yes.</li>
+<li>Minecraft installs it automatically. Look for Imported ✅</li>
+</ol>
+<div class="note">
+      ⚡ For a <b>mod</b> (.mcaddon): open a world → Edit →
+      Behavior Packs → Activate. The mod needs this to appear!
+    </div>
+<div class="note">
+      🧍 For a <b>skin</b> (.mcpack): open the Dressing Room from the main menu →
+      My Skins → select the new one.
+    </div>
+</div>
+</div>
+<script>(function () {
+    const BASE = "/school-data/block-modz/likes";
+    const buttons = document.querySelectorAll('.like');
+    function likedSet() {
+        try {
+            return new Set(JSON.parse(localStorage.getItem('likedMods') || '[]'));
+        }
+        catch (e) {
+            return new Set();
+        }
+    }
+    function saveLiked(set) {
+        localStorage.setItem('likedMods', JSON.stringify([...set]));
+    }
+    function getNick() {
+        let n = localStorage.getItem('nick');
+        if (!n) {
+            n = (prompt("What is your in-game nickname?") || '').trim().slice(0, 20);
+            if (n)
+                localStorage.setItem('nick', n);
+        }
+        return n;
+    }
+    function markLiked(btn) {
+        btn.classList.add('liked');
+        btn.querySelector('.heart').textContent = '❤️';
+    }
+    function loadCounts() {
+        fetch(BASE + '?limit=50&order=desc')
+            .then(r => r.json())
+            .then(data => {
+            const counts = {};
+            (data.items || []).forEach(it => {
+                const m = it.payload && it.payload.mod;
+                if (m)
+                    counts[m] = (counts[m] || 0) + 1;
+            });
+            buttons.forEach(btn => {
+                btn.querySelector('.like-count').textContent = counts[btn.dataset.mod] || 0;
+            });
+        })
+            .catch(() => { });
+    }
+    const already = likedSet();
+    buttons.forEach(btn => { if (already.has(btn.dataset.mod))
+        markLiked(btn); });
+    buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mod = btn.dataset.mod;
+            const liked = likedSet();
+            if (liked.has(mod))
+                return;
+            const nick = getNick();
+            if (!nick)
+                return;
+            btn.disabled = true;
+            fetch(BASE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nick: nick, payload: { mod: mod } })
+            })
+                .then(r => r.json())
+                .then(() => {
+                liked.add(mod);
+                saveLiked(liked);
+                markLiked(btn);
+                const c = btn.querySelector('.like-count');
+                c.textContent = (parseInt(c.textContent, 10) || 0) + 1;
+            })
+                .catch(() => { alert("Could not save your like 😢 Please try again."); })
+                .finally(() => { btn.disabled = false; });
+        });
+    });
+    loadCounts();
+})();
+var pickBtn = document.getElementById('pickBtn');
+if (pickBtn) {
+    pickBtn.addEventListener('click', function () {
+        var cards = Array.prototype.slice.call(document.querySelectorAll('.mod'))
+            .filter(function (m) { return !m.classList.contains('soon') && m.querySelector('h2'); });
+        if (!cards.length)
+            return;
+        var card = cards[Math.floor(Math.random() * cards.length)];
+        var name = card.querySelector('h2').textContent.trim();
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.style.outline = '4px solid #ffbe3d';
+        card.style.transition = 'outline .2s';
+        setTimeout(function () { card.style.outline = 'none'; }, 1600);
+        document.getElementById('pickResult').textContent = "🎉 Your random pick: " + name + '!';
+    });
+}
+</script>
+</body>
+</html>

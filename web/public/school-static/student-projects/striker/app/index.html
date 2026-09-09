@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/striker/app/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>My workout — Striker Training</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0B1410;
+    --surface: #14211A;
+    --surface2: #1C2C23;
+    --ink: #ECF5EF;
+    --ink-soft: #9DB3A6;
+    --primary: #38E07B;
+    --accent: #FF6B35;
+
+    --secondary: #D8E8DE;
+    --line: rgba(236,245,239,0.10);
+    --on-primary: #06210F;
+    --on-accent: #250900;
+    --radius: 18px;
+    --shadow: 0 4px 20px rgba(0,0,0,0.45);
+    --shadow-md: 0 14px 40px rgba(0,0,0,0.55);
+
+    color-scheme: dark;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    padding-bottom: 40px;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: 'Oswald', 'Barlow Condensed', system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+
+    flex-wrap: nowrap;
+  }
+
+  .logo {
+    font-family: 'Oswald', 'Barlow Condensed', sans-serif;
+    font-weight: 600;
+    font-size: 1.15rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--primary);
+    white-space: nowrap;
+  }
+
+  .logo-short { display: none; }
+
+  .back-link {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 8px 14px;
+    color: var(--ink-soft);
+    text-decoration: none;
+    font-family: 'Oswald', 'Barlow Condensed', sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    font-size: 0.88rem;
+    white-space: nowrap;
+    border-radius: 50px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+  }
+
+  .back-link:hover { color: var(--ink); border-color: rgba(56,224,123,0.35); }
+
+
+  .tabs {
+    display: flex;
+    gap: 6px;
+    padding: 16px 20px 0;
+    flex-wrap: wrap;
+  }
+
+  .tab {
+    font-family: 'Oswald', 'Barlow Condensed', sans-serif;
+    font-weight: 500;
+    font-size: 0.92rem;
+    letter-spacing: 0.03em;
+    min-height: 44px;
+    padding: 9px 18px;
+    border-radius: 50px;
+    border: 1px solid var(--line);
+    cursor: pointer;
+    background: var(--surface);
+    color: var(--ink-soft);
+    box-shadow: var(--shadow);
+    transition: background 0.18s, color 0.18s, border-color 0.18s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+  }
+
+  .tab:hover { background: var(--surface2); color: var(--ink); }
+
+
+  .tab.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--on-primary);
+  }
+
+  .tab:focus-visible,
+  .back-link:focus-visible,
+  .btn-today:focus-visible,
+  .btn-save:focus-visible,
+  .btn-del:focus-visible,
+  .sound-switch:focus-visible {
+    outline: 3px solid var(--primary);
+    outline-offset: 3px;
+  }
+
+
+  .screen { display: none; padding: 20px; max-width: 600px; margin: 0 auto; }
+  .screen.active { display: block; }
+
+
+  .streak-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    box-shadow: var(--shadow-md);
+    padding: 32px 24px;
+    text-align: center;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .streak-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    border-radius: 4px 4px 0 0;
+  }
+
+
+  .streak-big {
+    font-family: 'Oswald', 'Barlow Condensed', sans-serif;
+    font-size: 5.5rem;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 30px rgba(56,224,123,0.45);
+  }
+
+  .streak-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 8px;
+  }
+
+  .streak-sub {
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+    margin-top: 8px;
+  }
+
+  .streak-flame {
+    font-size: 2.5rem;
+    display: block;
+    margin-bottom: 8px;
+  }
+
+
+  .btn-today {
+    width: 100%;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-family: 'Oswald', 'Barlow Condensed', sans-serif;
+    font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 18px;
+    border-radius: 50px;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 6px 22px rgba(0,0,0,0.5), 0 0 30px rgba(255,107,53,0.28);
+    transition: transform 0.18s, box-shadow 0.18s;
+    margin-bottom: 16px;
+  }
+
+  .btn-today:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.55), 0 0 42px rgba(255,107,53,0.42);
+  }
+
+  .btn-today:disabled {
+    background: var(--surface2);
+    color: var(--ink-soft);
+    border: 1px solid var(--line);
+    box-shadow: none;
+    cursor: default;
+    transform: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn-today:hover { transform: none; }
+  }
+
+  .done-badge {
+    display: inline-block;
+    background: rgba(56,224,123,0.12);
+    border: 1px solid rgba(56,224,123,0.28);
+    color: var(--primary);
+    font-weight: 700;
+    font-size: 0.9rem;
+    padding: 8px 20px;
+    border-radius: 50px;
+    margin-bottom: 16px;
+  }
+
+
+  .week-row {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+
+  .day-dot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 2px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+  }
+
+
+  .dot.done {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--on-primary);
+    font-size: 1rem;
+    font-weight: 700;
+    box-shadow: 0 0 16px rgba(56,224,123,0.35);
+  }
+
+  .dot-label {
+    font-size: 0.7rem;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+
+
+  .stats-row { display: flex; gap: 16px; }
+
+  .stat-box {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    padding: 14px;
+    background: var(--bg);
+    border-radius: 14px;
+  }
+
+  .stat-num {
+    font-family: 'Oswald', 'Barlow Condensed', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+
+  .stat-num-total { color: var(--primary); }
+  .stat-num-best  { color: var(--accent); }
+  .stat-num-week  { color: var(--secondary); }
+
+  .stat-cap { font-size: 0.8rem; color: var(--ink-soft); font-weight: 600; }
+
+
+  .section-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 22px 20px;
+    margin-bottom: 16px;
+  }
+
+  .section-card h3 {
+    font-size: 1.15rem;
+    margin-bottom: 14px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+
+  .ex-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+
+  .ex-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+  }
+
+  .ex-item:hover { background: rgba(56,224,123,0.10); }
+
+  .ex-check {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid rgba(56,224,123,0.35);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+
+  .ex-item.checked .ex-check {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--on-primary);
+    font-weight: 700;
+  }
+
+  .ex-text { flex: 1; }
+  .ex-name { font-weight: 600; font-size: 0.95rem; }
+  .ex-detail { font-size: 0.8rem; color: var(--ink-soft); }
+
+  .ex-item.checked .ex-name { text-decoration: line-through; color: var(--ink-soft); }
+
+  .progress-bar-wrap {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 50px;
+    height: 8px;
+    margin-top: 14px;
+    overflow: hidden;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    border-radius: 50px;
+    transition: width 0.35s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .progress-bar { transition: none; }
+  }
+
+  .progress-label {
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    margin-top: 6px;
+    text-align: right;
+  }
+
+
+  .tip-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 20px;
+    margin-bottom: 14px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+
+  .tip-icon { font-size: 1.8rem; flex-shrink: 0; }
+
+  .tip-title {
+    font-family: 'Oswald', 'Barlow Condensed', sans-serif;
+    font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+
+  .tip-text { font-size: 0.88rem; color: var(--ink-soft); line-height: 1.55; }
+
+
+  .record-form {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 22px 20px;
+    margin-bottom: 20px;
+  }
+
+  .record-form h3 { font-size: 1.15rem; margin-bottom: 16px; text-transform: uppercase; }
+
+  .form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .form-row label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .form-row input, .form-row select {
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.95rem;
+    background: var(--bg);
+    color: var(--ink);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .form-row input::placeholder { color: var(--ink-soft); opacity: 0.75; }
+
+  .form-row input:focus, .form-row select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(56,224,123,0.20);
+  }
+
+
+  .btn-save {
+    background: var(--accent);
+    color: var(--on-accent);
+    font-family: 'Oswald', 'Barlow Condensed', sans-serif;
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 13px 28px;
+    border-radius: 50px;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.45), 0 0 24px rgba(255,107,53,0.26);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+
+  .btn-save:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 34px rgba(255,107,53,0.38);
+  }
+
+  @media (prefers-reduced-motion: reduce) { .btn-save:hover { transform: none; } }
+
+  .records-list { display: flex; flex-direction: column; gap: 12px; }
+
+  .record-item {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .record-medal { font-size: 1.8rem; flex-shrink: 0; }
+
+  .record-info { flex: 1; }
+  .record-name { font-weight: 700; font-size: 0.95rem; }
+  .record-val { font-size: 0.85rem; color: var(--ink-soft); }
+
+
+  .record-score {
+    font-family: 'Oswald', 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 1.6rem;
+    color: var(--primary);
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .no-records {
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    padding: 32px 0;
+  }
+
+
+  .btn-del {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    padding: 0;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .btn-del:hover { color: #FF7A7A; background: rgba(255,122,122,0.10); }
+
+
+  .celebrate {
+    text-align: center;
+    padding: 16px;
+    background: rgba(56,224,123,0.10);
+    border: 1px solid rgba(56,224,123,0.28);
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 1rem;
+    display: none;
+  }
+
+  .celebrate.show { display: block; }
+
+
+  .sound-switch {
+    width: 58px;
+    height: 32px;
+    border-radius: 50px;
+    border: 1px solid var(--line);
+    cursor: pointer;
+    background: var(--surface2);
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.2s, border-color 0.2s;
+    padding: 0;
+  }
+
+  .sound-switch::after {
+    content: '';
+    position: absolute;
+    inset: -6px 0;
+  }
+
+  .sound-switch.on { background: var(--primary); border-color: var(--primary); }
+  .switch-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #ECF5EF;
+    transition: left 0.2s, background 0.2s;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  }
+
+  .sound-switch.on .switch-knob { background: var(--on-primary, #06210F); }
+  .sound-switch.on .switch-knob { left: 28px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .switch-knob { transition: none; }
+  }
+
+
+  @keyframes score-pop {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(1.16); text-shadow: 0 0 46px rgba(56,224,123,0.8); }
+    100% { transform: scale(1); }
+  }
+
+  .streak-big.pop { animation: score-pop 0.5s ease-out; }
+
+  @keyframes dot-pop {
+    0%   { transform: scale(0.3); }
+    60%  { transform: scale(1.18); }
+    100% { transform: scale(1); }
+  }
+
+  .dot.just-done { animation: dot-pop 0.45s ease-out; }
+
+  @keyframes flame-kick {
+    0%   { transform: scale(1) rotate(0); }
+    30%  { transform: scale(1.3) rotate(-8deg); }
+    60%  { transform: scale(1.15) rotate(6deg); }
+    100% { transform: scale(1) rotate(0); }
+  }
+
+  .streak-flame.kick { animation: flame-kick 0.55s ease-out; }
+
+  @keyframes celebrate-in {
+    from { opacity: 0; transform: translateY(-10px) scale(0.96); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  .celebrate.show { animation: celebrate-in 0.32s ease-out; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .streak-big.pop, .dot.just-done, .streak-flame.kick, .celebrate.show {
+      animation: none;
+    }
+  }
+
+
+  @media (max-width: 767px) {
+    body {
+
+      padding-bottom: calc(78px + env(safe-area-inset-bottom));
+    }
+
+    .tabs {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 50;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 2px;
+      flex-wrap: nowrap;
+      padding: 6px 4px;
+      padding-bottom: calc(6px + env(safe-area-inset-bottom));
+      background: var(--surface);
+      border-top: 1px solid var(--line);
+      box-shadow: 0 -8px 30px rgba(0,0,0,0.55);
+    }
+
+    .tab {
+      flex-direction: column;
+      gap: 3px;
+      min-height: 54px;
+      padding: 7px 2px;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      border-radius: 12px;
+      font-size: clamp(0.58rem, 2.7vw, 0.72rem);
+      letter-spacing: 0.01em;
+      line-height: 1.15;
+    }
+
+    .tab-ico { font-size: 1.2rem; line-height: 1; }
+
+    .tab:hover { background: transparent; color: var(--ink-soft); }
+
+
+    .tab.active {
+      background: rgba(56,224,123,0.12);
+      border-color: transparent;
+      color: var(--primary);
+    }
+
+    .screen { padding: 16px; }
+    .streak-card { padding: 24px 18px; border-radius: 20px; }
+    .streak-big { font-size: 4.6rem; }
+    .section-card { padding: 18px 16px; }
+    .record-form { padding: 18px 16px; }
+    header { padding: 10px 14px; }
+
+
+    .week-row { flex-wrap: nowrap; gap: clamp(3px, 1.5vw, 10px); }
+    .day-dot { flex: 1; min-width: 0; }
+    .dot { width: clamp(28px, 8vw, 36px); height: clamp(28px, 8vw, 36px); }
+
+
+    .stats-row { gap: 8px; }
+    .stat-box { min-width: 0; padding: 12px 6px; }
+    .stat-num { font-size: 1.8rem; }
+    .stat-cap { font-size: 0.7rem; }
+
+
+    .logo-full { display: none; }
+    .logo-short { display: inline; }
+  }
+
+  @media (max-width: 360px) {
+    .tabs { gap: 0; padding-left: 2px; padding-right: 2px; }
+    .tab { padding-left: 0; padding-right: 0; }
+  }
+</style>
+
+<link href="https://wai.computer/school/projects/striker/app" rel="canonical"/></head>
+<body>
+<header>
+<div class="logo">⚽ <span class="logo-full">Striker Training</span><span class="logo-short">Striker</span></div>
+<a class="back-link" href="../">← back to site</a>
+</header>
+<nav aria-label="Sections" class="tabs">
+<button class="tab active" onclick="showTab('streak', this)"><span class="tab-ico">🔥</span><span class="tab-txt">Streak</span></button>
+<button class="tab" onclick="showTab('training', this)"><span class="tab-ico">📋</span><span class="tab-txt">Training</span></button>
+<button class="tab" onclick="showTab('tips', this)"><span class="tab-ico">💡</span><span class="tab-txt">Tips</span></button>
+<button class="tab" onclick="showTab('records', this)"><span class="tab-ico">🏆</span><span class="tab-txt">Records</span></button>
+<button class="tab" onclick="showTab('settings', this)"><span class="tab-ico">⚙️</span><span class="tab-txt">Settings</span></button>
+</nav>
+
+<div class="screen active" id="screen-streak">
+<div class="streak-card">
+<span class="streak-flame">🔥</span>
+<div class="streak-label">Consecutive day streak</div>
+<div class="streak-big" id="streak-num">0</div>
+<div class="streak-sub" id="streak-sub">Start today. Press the button below!</div>
+<div class="week-row" id="week-dots"></div>
+</div>
+<div class="celebrate" id="celebrate-msg"></div>
+<button class="btn-today" id="btn-today" onclick="markToday()">✅ Mark today's training</button>
+<div class="section-card">
+<h3>📊 Statistics</h3>
+<div class="stats-row">
+<div class="stat-box">
+<div class="stat-num stat-num-total" id="stat-total">0</div>
+<div class="stat-cap">total days</div>
+</div>
+<div class="stat-box">
+<div class="stat-num stat-num-best" id="stat-best">0</div>
+<div class="stat-cap">best streak</div>
+</div>
+<div class="stat-box">
+<div class="stat-num stat-num-week" id="stat-week">0</div>
+<div class="stat-cap">days this week</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="screen" id="screen-training">
+<div class="section-card">
+<h3>🏃 Today's exercises</h3>
+<ul class="ex-list" id="ex-list"></ul>
+<div class="progress-bar-wrap">
+<div class="progress-bar" id="ex-progress" style="width:0%"></div>
+</div>
+<div class="progress-label" id="ex-progress-label">0 of 6 completed</div>
+</div>
+<div class="celebrate" id="training-done-msg">🎉 All exercises completed! You are a great striker!</div>
+<div class="section-card">
+<h3>📋 Training programme</h3>
+<div id="training-plans" style="display:flex; flex-direction:column; gap:10px;"></div>
+</div>
+</div>
+
+<div class="screen" id="screen-tips">
+<div id="tips-list"></div>
+</div>
+
+<div class="screen" id="screen-records">
+<div class="record-form">
+<h3>➕ Add a record</h3>
+<div class="form-row">
+<label>What to record</label>
+<select id="rec-type">
+<option>Goals per training session</option>
+<option>Shots on target out of 10</option>
+<option>Dribbling (sec)</option>
+<option>30 m sprint (sec)</option>
+<option>Accurate passes out of 10</option>
+<option>Custom achievement</option>
+</select>
+</div>
+<div class="form-row">
+<label>Result</label>
+<input id="rec-value" min="0" placeholder="Enter a number" type="number"/>
+</div>
+<div class="form-row" id="custom-name-row" style="display:none;">
+<label>Title</label>
+<input id="rec-custom" placeholder="For example: juggling" type="text"/>
+</div>
+<button class="btn-save" onclick="saveRecord()">💾 Save record</button>
+</div>
+<div class="records-list" id="records-list">
+<div class="no-records">No records yet. Add your first! 🏆</div>
+</div>
+</div>
+
+<div class="screen" id="screen-settings">
+<div class="section-card">
+<h3>⚙️ Settings</h3>
+<div style="display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px; background:var(--bg); border-radius:14px;">
+<div>
+<div style="font-weight:700; font-size:0.98rem;">🔊 Sounds</div>
+<div style="font-size:0.82rem; color:var(--ink-soft);">Clicks when marking training and exercises</div>
+</div>
+<button class="sound-switch on" id="sound-switch" onclick="toggleSound()">
+<span class="switch-knob"></span>
+</button>
+</div>
+</div>
+</div>
+<script>const STORAGE_KEY = 'wai_striker_v1';
+let audioCtx = null;
+let soundOn = true;
+function getCtx() {
+    if (!audioCtx)
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+}
+function playDing() {
+    if (!soundOn)
+        return;
+    try {
+        const ctx = getCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(660, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(990, ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.22);
+    }
+    catch (e) { }
+}
+function playTick() {
+    if (!soundOn)
+        return;
+    try {
+        const ctx = getCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'triangle';
+        osc.frequency.value = 380;
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.08);
+    }
+    catch (e) { }
+}
+function playFanfare() {
+    if (!soundOn)
+        return;
+    try {
+        const ctx = getCtx();
+        [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.value = f;
+            const t = ctx.currentTime + i * 0.09;
+            gain.gain.setValueAtTime(0, t);
+            gain.gain.linearRampToValueAtTime(0.18, t + 0.04);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+            osc.start(t);
+            osc.stop(t + 0.4);
+        });
+    }
+    catch (e) { }
+}
+function toggleSound() {
+    soundOn = !soundOn;
+    saved.soundOn = soundOn;
+    persist();
+    const sw = document.getElementById('sound-switch');
+    sw.classList.toggle('on', soundOn);
+    if (soundOn) {
+        getCtx().resume();
+        playDing();
+    }
+}
+const EXERCISES = [
+    { name: "Shots on goal", detail: "3 sets of 10 shots" },
+    { name: "Dribbling around cones", detail: "4 sets of 30 seconds" },
+    { name: "30-meter sprint", detail: "5 repetitions with rest" },
+    { name: "Ball control", detail: "3 minutes of juggling" },
+    { name: "Left-foot shots", detail: "3 sets of 8 shots" },
+    { name: "Running with the ball", detail: "4 accelerations over 20 meters" },
+];
+let saved = { doneDates: [], records: [], exDate: null, exDone: [] };
+const state = {
+    streak: 0, bestStreak: 0, totalDays: 0, todayDone: false,
+    weekDays: [false, false, false, false, false, false, false],
+    records: [],
+    exercises: EXERCISES.map(e => ({ ...e, done: false })),
+};
+function isoDate(d) {
+    return d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
+}
+function todayStr() { return isoDate(new Date()); }
+function shiftDate(iso, deltaDays) {
+    const d = new Date(iso + 'T00:00:00');
+    d.setDate(d.getDate() + deltaDays);
+    return isoDate(d);
+}
+function loadSaved() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw)
+            saved = Object.assign(saved, JSON.parse(raw));
+    }
+    catch (e) { }
+}
+function persist() {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+    }
+    catch (e) { }
+}
+function recompute() {
+    const set = new Set(saved.doneDates);
+    const today = todayStr();
+    state.totalDays = set.size;
+    state.todayDone = set.has(today);
+    let streak = 0;
+    let cursor = set.has(today) ? today : (set.has(shiftDate(today, -1)) ? shiftDate(today, -1) : null);
+    while (cursor && set.has(cursor)) {
+        streak++;
+        cursor = shiftDate(cursor, -1);
+    }
+    state.streak = streak;
+    const sorted = [...set].sort();
+    let best = 0, run = 0, prev = null;
+    for (const day of sorted) {
+        run = (prev && day === shiftDate(prev, 1)) ? run + 1 : 1;
+        if (run > best)
+            best = run;
+        prev = day;
+    }
+    state.bestStreak = best;
+    const now = new Date();
+    const monday = shiftDate(today, -((now.getDay() + 6) % 7));
+    state.weekDays = Array.from({ length: 7 }, (_, i) => set.has(shiftDate(monday, i)));
+    if (saved.exDate === today && Array.isArray(saved.exDone)) {
+        state.exercises = EXERCISES.map((e, i) => ({ ...e, done: !!saved.exDone[i] }));
+    }
+    else {
+        state.exercises = EXERCISES.map(e => ({ ...e, done: false }));
+    }
+    state.records = saved.records || [];
+}
+const tips = [
+    { icon: '⚡', title: "The first touch matters", text: "Receive the ball so you are immediately in a good position. A good first touch is half of a successful shot." },
+    { icon: '👁️', title: "Look before you shoot", text: "Look around before receiving the ball. The best strikers know what they will do before it arrives." },
+    { icon: '🦶', title: "Power is not everything", text: "Accuracy matters more than power. Aim for the corner, where the goalkeeper has the hardest time reaching." },
+    { icon: '🏃', title: "Moving without the ball", text: "Keep finding space. A well-timed run behind a defender is one of the best ways to receive a pass." },
+    { icon: '🧠', title: "Read the game", text: "Watch where the goalkeeper is looking and where defenders stand. A smart striker thinks one move ahead." },
+    { icon: '💪', title: "Your body is your shield", text: "Use your body to protect the ball from a defender. Stand between them and the ball, keeping a low center of gravity." },
+];
+const trainings = [
+    { emoji: '🎯', name: "Finishing", desc: "Shots, rebounds and play in the penalty area" },
+    { emoji: '💨', name: "Speed and acceleration", desc: "Sprints, running with the ball and changes of pace" },
+    { emoji: '🎪', name: "Dribbling", desc: "Dribbles, feints and getting past defenders" },
+    { emoji: '🤝', name: "Teamwork", desc: "One-twos, overlapping runs and passing" },
+];
+const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const medals = ['🥇', '🥈', '🥉', '🏅'];
+function markToday() {
+    const today = todayStr();
+    if (saved.doneDates.includes(today))
+        return;
+    saved.doneDates.push(today);
+    persist();
+    recompute();
+    renderStreak();
+    showCelebrate();
+    playDing();
+}
+function renderStreak() {
+    document.getElementById('streak-num').textContent = state.streak;
+    document.getElementById('stat-total').textContent = state.totalDays;
+    document.getElementById('stat-best').textContent = state.bestStreak;
+    document.getElementById('stat-week').textContent = state.weekDays.filter(Boolean).length;
+    const sub = state.streak === 0
+        ? "Start today. Press the button below!"
+        : state.streak === 1
+            ? "A great start! Keep going 💪"
+            : `${state.streak} days in a row — you are on fire! 🔥`;
+    document.getElementById('streak-sub').textContent = sub;
+    const btn = document.getElementById('btn-today');
+    if (state.todayDone) {
+        btn.textContent = "✅ Today is marked!";
+        btn.disabled = true;
+    }
+    else {
+        btn.textContent = "✅ Mark today's training";
+        btn.disabled = false;
+    }
+    const wrap = document.getElementById('week-dots');
+    wrap.innerHTML = '';
+    days.forEach((d, i) => {
+        const div = document.createElement('div');
+        div.className = 'day-dot';
+        div.innerHTML = `<div class="dot ${state.weekDays[i] ? 'done' : ''}">${state.weekDays[i] ? '✓' : ''}</div><span class="dot-label">${d}</span>`;
+        wrap.appendChild(div);
+    });
+}
+function showCelebrate() {
+    const msgs = [
+        "🎉 Recorded! Your streak is growing!",
+        "💪 Keep it up! You are on the right track!",
+        "🔥 Another day added!",
+        "⚽ A striker keeps going!"
+    ];
+    const el = document.getElementById('celebrate-msg');
+    el.textContent = msgs[Math.floor(Math.random() * msgs.length)];
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 3000);
+}
+function renderTraining() {
+    const list = document.getElementById('ex-list');
+    list.innerHTML = '';
+    state.exercises.forEach((ex, i) => {
+        const li = document.createElement('li');
+        li.className = `ex-item${ex.done ? ' checked' : ''}`;
+        li.onclick = () => toggleEx(i);
+        li.innerHTML = `
+      <div class="ex-check">${ex.done ? '✓' : ''}</div>
+      <div class="ex-text">
+        <div class="ex-name">${ex.name}</div>
+        <div class="ex-detail">${ex.detail}</div>
+      </div>`;
+        list.appendChild(li);
+    });
+    const done = state.exercises.filter(e => e.done).length;
+    const total = state.exercises.length;
+    const pct = Math.round(done / total * 100);
+    document.getElementById('ex-progress').style.width = pct + '%';
+    document.getElementById('ex-progress-label').textContent = `${done} of ${total} completed`;
+    const msg = document.getElementById('training-done-msg');
+    if (done === total)
+        msg.classList.add('show');
+    else
+        msg.classList.remove('show');
+    const plans = document.getElementById('training-plans');
+    plans.innerHTML = '';
+    trainings.forEach(t => {
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg);border-radius:12px;cursor:pointer;transition:background 0.15s;';
+        div.innerHTML = `<span style="font-size:1.6rem">${t.emoji}</span><div><div style="font-weight:700;font-size:0.95rem">${t.name}</div><div style="font-size:0.82rem;color:var(--ink-soft)">${t.desc}</div></div>`;
+        div.onmouseover = () => div.style.background = 'rgba(56,224,123,0.10)';
+        div.onmouseleave = () => div.style.background = 'var(--bg)';
+        plans.appendChild(div);
+    });
+}
+function toggleEx(i) {
+    state.exercises[i].done = !state.exercises[i].done;
+    saved.exDate = todayStr();
+    saved.exDone = state.exercises.map(e => e.done);
+    persist();
+    if (state.exercises[i].done) {
+        const allDone = state.exercises.every(e => e.done);
+        if (allDone)
+            playFanfare();
+        else
+            playDing();
+    }
+    else {
+        playTick();
+    }
+    renderTraining();
+}
+function renderTips() {
+    const wrap = document.getElementById('tips-list');
+    wrap.innerHTML = '';
+    tips.forEach(t => {
+        const div = document.createElement('div');
+        div.className = 'tip-card';
+        div.innerHTML = `
+      <span class="tip-icon">${t.icon}</span>
+      <div>
+        <div class="tip-title">${t.title}</div>
+        <div class="tip-text">${t.text}</div>
+      </div>`;
+        wrap.appendChild(div);
+    });
+}
+document.getElementById('rec-type').addEventListener('change', function () {
+    const row = document.getElementById('custom-name-row');
+    row.style.display = this.value === "Custom achievement" ? 'flex' : 'none';
+});
+function saveRecord() {
+    const type = document.getElementById('rec-type').value;
+    const val = parseFloat(document.getElementById('rec-value').value);
+    const custom = document.getElementById('rec-custom').value.trim();
+    if (isNaN(val) || val < 0) {
+        alert("Enter a number!");
+        return;
+    }
+    const name = type === "Custom achievement" ? (custom || "Achievement") : type;
+    state.records.unshift({ name, value: val, date: new Date().toLocaleDateString('ru') });
+    saved.records = state.records;
+    persist();
+    document.getElementById('rec-value').value = '';
+    document.getElementById('rec-custom').value = '';
+    renderRecords();
+}
+function deleteRecord(i) {
+    state.records.splice(i, 1);
+    saved.records = state.records;
+    persist();
+    renderRecords();
+}
+function renderRecords() {
+    const wrap = document.getElementById('records-list');
+    wrap.innerHTML = '';
+    if (state.records.length === 0) {
+        wrap.innerHTML = "<div class=\"no-records\">No records yet. Add your first! 🏆</div>";
+        return;
+    }
+    state.records.forEach((r, i) => {
+        const div = document.createElement('div');
+        div.className = 'record-item';
+        div.innerHTML = `
+      <span class="record-medal">${medals[Math.min(i, 3)]}</span>
+      <div class="record-info">
+        <div class="record-name">${r.name}</div>
+        <div class="record-val">${r.date}</div>
+      </div>
+      <div class="record-score">${r.value}</div>
+      <button class="btn-del" onclick="deleteRecord(${i})" title="Delete">✕</button>`;
+        wrap.appendChild(div);
+    });
+}
+function showTab(id, btn) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('screen-' + id).classList.add('active');
+    if (btn)
+        btn.classList.add('active');
+}
+loadSaved();
+recompute();
+renderStreak();
+renderTraining();
+renderTips();
+renderRecords();
+(function () {
+    const origMarkToday = window.markToday;
+    if (typeof origMarkToday !== 'function')
+        return;
+    window.markToday = function () {
+        const streakBefore = state.streak;
+        origMarkToday.apply(this, arguments);
+        if (state.streak <= streakBefore)
+            return;
+        const num = document.getElementById('streak-num');
+        if (num) {
+            num.classList.remove('pop');
+            void num.offsetWidth;
+            num.classList.add('pop');
+        }
+        const flame = document.querySelector('.streak-flame');
+        if (flame) {
+            flame.classList.remove('kick');
+            void flame.offsetWidth;
+            flame.classList.add('kick');
+        }
+        const todayIdx = (new Date().getDay() + 6) % 7;
+        const cell = document.querySelectorAll('#week-dots .day-dot')[todayIdx];
+        const dot = cell && cell.querySelector('.dot');
+        if (dot)
+            dot.classList.add('just-done');
+    };
+})();
+(function () {
+    const origShowTab = window.showTab;
+    if (typeof origShowTab !== 'function')
+        return;
+    window.showTab = function () {
+        origShowTab.apply(this, arguments);
+        window.scrollTo({ top: 0, behavior: 'auto' });
+    };
+})();
+</script>
+</body>
+</html>

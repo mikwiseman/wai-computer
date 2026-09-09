@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/rifflegg/app/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>RIFFLEGG — League table</title>
+<meta content="#0b0b14" name="theme-color"/>
+<link href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0b14'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%2319e17e' font-family='monospace' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" rel="icon"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&amp;family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="style.css" rel="stylesheet"/>
+
+<link href="https://wai.computer/school/projects/rifflegg/app" rel="canonical"/></head>
+<body>
+<nav>
+<div class="logo">RIFFLEGG<span>.</span></div>
+<div class="season">SEASON 1</div>
+</nav>
+<div class="wrap">
+<div class="profile" id="profile">
+<h2>👤 My profile</h2>
+</div>
+<div class="head">
+<div class="label">LEAGUE TABLE</div>
+<h1>Who is the best? 🏆</h1>
+</div>
+<table>
+<thead>
+<tr>
+<th class="left">PLAYER</th>
+<th>WINS</th>
+<th>LOSSES</th>
+<th class="hide-mob">WON</th>
+<th>POINTS</th>
+</tr>
+</thead>
+<tbody id="lb">
+<tr><td colspan="5" style="padding:30px;color:var(--muted)">Loading the table…</td></tr>
+</tbody>
+</table>
+<div id="awards"></div>
+<div class="create">
+<h2>⚔️ Create a match</h2>
+<div class="field">
+<div class="field-label">MODE</div>
+<div class="modes">
+<button class="mode-btn active" data-mode="1×1" data-players="2">1×1</button>
+<button class="mode-btn" data-mode="2×2" data-players="4">2×2</button>
+<button class="mode-btn" data-mode="3×3" data-players="6">3×3</button>
+</div>
+</div>
+<div class="field">
+<div class="field-label">YOUR STAKE · 🪙 COINS</div>
+<div class="stake-top">
+<input class="stake-input" id="stake" max="5000" min="150" step="50" type="number" value="300"/>
+<span class="stake-coin">🪙</span>
+</div>
+<input aria-label="Coin stake" class="stake-slider" id="stakeSlider" max="5000" min="150" step="50" type="range" value="300"/>
+<div class="stake-preview">
+<div class="sp-tile bank"><div class="sp-num" id="pvBank">600</div><div class="sp-cap">pot 🪙</div></div>
+<div class="sp-tile win"><div class="sp-num" id="pvWin">540</div><div class="sp-cap">to the winner 🪙</div></div>
+</div>
+<div class="hint" id="hint">Minimum 150 🪙. The winner takes 90% of the pot.</div>
+</div>
+<div class="field">
+<div class="field-label">MATCH DURATION</div>
+<div class="dur-chips" id="durChips">
+<button class="dur-chip" data-dur="600">10 min</button>
+<button class="dur-chip active" data-dur="900">15 min</button>
+<button class="dur-chip" data-dur="1500">25 min</button>
+</div>
+</div>
+<button class="create-btn" id="createBtn">⚔️ Issue a challenge</button>
+<div class="hint">Everyone in the league can see the match and accept your challenge.</div>
+</div>
+<div class="matches-title">⚔️ ACTIVE MATCHES — VISIBLE TO EVERYONE</div>
+<div id="matches">
+<div class="empty">Loading matches…</div>
+</div>
+<div class="matches-title">🌍 RESULTS FEED</div>
+<div id="feed">
+<div class="empty">Loading the feed…</div>
+</div>
+</div>
+<footer>RIFFLEGG · Season 1 · Play coins, no real money</footer>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/striker/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>Striker Training</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0B1410;
+    --surface: #14211A;
+    --surface2: #1C2C23;
+    --ink: #ECF5EF;
+    --ink-soft: #9DB3A6;
+    --primary: #38E07B;
+    --accent: #FF6B35;
+
+    --secondary: #D8E8DE;
+    --line: rgba(236,245,239,0.10);
+    --on-primary: #06210F;
+    --on-accent: #250900;
+    --radius: 18px;
+    --shadow: 0 4px 20px rgba(0,0,0,0.45);
+    --shadow-md: 0 14px 40px rgba(0,0,0,0.55);
+    color-scheme: dark;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  h1 {
+    font-family: 'Oswald', 'Barlow Condensed', system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+
+  .topbar {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+  }
+
+  .wordmark {
+    font-family: 'Oswald', 'Barlow Condensed', system-ui, sans-serif;
+    font-weight: 600;
+    font-size: clamp(0.95rem, 3.6vw, 1.15rem);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--primary);
+    white-space: nowrap;
+  }
+
+
+  .hero {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 32px 20px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background:
+      radial-gradient(ellipse 80% 55% at 50% -5%, rgba(56,224,123,0.16) 0%, transparent 70%),
+      radial-gradient(ellipse 45% 35% at 85% 85%, rgba(255,107,53,0.10) 0%, transparent 65%),
+      radial-gradient(ellipse 40% 30% at 12% 70%, rgba(56,224,123,0.07) 0%, transparent 65%);
+    pointer-events: none;
+  }
+
+
+  .hero::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    opacity: 0.10;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 800' preserveAspectRatio='xMidYMax slice'%3E%3Cg fill='none' stroke='%23ECF5EF' stroke-width='3'%3E%3Cline x1='0' y1='200' x2='1200' y2='200'/%3E%3Ccircle cx='600' cy='200' r='120'/%3E%3Crect x='380' y='650' width='440' height='170'/%3E%3Crect x='510' y='760' width='180' height='60'/%3E%3Cpath d='M 490 650 A 120 120 0 0 0 710 650'/%3E%3C/g%3E%3Cg fill='%23ECF5EF'%3E%3Ccircle cx='600' cy='200' r='6'/%3E%3Ccircle cx='600' cy='700' r='6'/%3E%3C/g%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    background-size: cover;
+  }
+
+  .hero > * { position: relative; z-index: 1; }
+
+  .hero h1 {
+    font-size: clamp(2rem, 7vw, 3.6rem);
+    line-height: 1.02;
+    margin-bottom: 24px;
+    color: var(--ink);
+    text-transform: uppercase;
+    letter-spacing: 0.005em;
+  }
+
+  .hero h1 span {
+    color: var(--primary);
+    text-shadow: 0 0 32px rgba(56,224,123,0.35);
+  }
+
+
+  .tracker {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    box-shadow: var(--shadow-md);
+    padding: 24px 28px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 28px;
+    position: relative;
+    text-decoration: none;
+    color: inherit;
+    width: 100%;
+    max-width: 340px;
+    transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
+  }
+
+  .tracker:hover, .tracker:focus-visible {
+    transform: translateY(-3px);
+    border-color: rgba(56,224,123,0.4);
+    box-shadow: var(--shadow-md), 0 0 32px rgba(56,224,123,0.18);
+  }
+
+  .tracker:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
+  .tracker:active { transform: translateY(0); }
+
+  .tracker-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+
+  .tracker-number {
+    font-family: 'Oswald', 'Barlow Condensed', sans-serif;
+    font-size: 4.6rem;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1.05;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 28px rgba(56,224,123,0.45);
+  }
+
+
+  .tracker-number.is-invite {
+    font-size: 2.3rem;
+    line-height: 1.1;
+    text-transform: uppercase;
+  }
+
+  .tracker-unit {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--ink-soft);
+    line-height: 1.35;
+  }
+
+  .tracker-flame {
+    font-size: 2rem;
+    position: absolute;
+    top: -14px;
+    right: -8px;
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,0.5));
+  }
+
+
+  .week-row {
+    display: flex;
+    justify-content: center;
+    gap: clamp(3px, 1.4vw, 8px);
+    margin-top: 16px;
+    width: 100%;
+  }
+
+  .day-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .dot {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 2px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--on-primary);
+  }
+
+  .dot.done {
+    background: var(--primary);
+    border-color: var(--primary);
+    box-shadow: 0 0 14px rgba(56,224,123,0.35);
+  }
+
+  .dot.today { border-color: rgba(56,224,123,0.55); }
+
+  .dot-label {
+    font-size: 0.66rem;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 56px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-family: 'Oswald', 'Barlow Condensed', sans-serif;
+    font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 14px 36px;
+    border-radius: 50px;
+    text-decoration: none;
+    box-shadow: 0 6px 22px rgba(0,0,0,0.5), 0 0 34px rgba(255,107,53,0.30);
+    transition: transform 0.18s, box-shadow 0.18s;
+    border: none;
+    cursor: pointer;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.55), 0 0 46px rgba(255,107,53,0.45);
+  }
+
+  .btn-primary:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  .btn-primary:active { transform: translateY(0); }
+
+  .hero-sub {
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+    margin-top: 18px;
+  }
+
+  footer {
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+    color: var(--ink-soft);
+    text-align: center;
+    padding: 18px 20px;
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+    font-size: 0.82rem;
+  }
+
+  footer span { color: var(--primary); font-weight: 600; }
+
+
+  .rise { animation: rise 0.5s ease both; }
+  .rise-2 { animation-delay: 0.08s; }
+  .rise-3 { animation-delay: 0.16s; }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rise { animation: none; }
+    .btn-primary:hover, .tracker:hover, .tracker:focus-visible { transform: none; }
+    .tracker-number { transition: none !important; }
+  }
+
+
+  @media (max-height: 520px) {
+    .hero { justify-content: flex-start; }
+  }
+</style>
+
+<link href="https://wai.computer/school/projects/striker" rel="canonical"/></head>
+<body>
+<header class="topbar">
+
+<div class="wordmark">⚽ Striker Training</div>
+</header>
+<main class="hero">
+<h1 class="rise">Get <span>stronger</span><br/>every day</h1>
+<a class="tracker rise rise-2" href="app/" id="tracker">
+<span class="tracker-flame">🔥</span>
+<span class="tracker-label" id="tracker-label">Your streak</span>
+<span class="tracker-number" id="tracker-number">0</span>
+<span class="tracker-unit" id="tracker-unit">days in a row</span>
+<span class="week-row" id="week-row"></span>
+</a>
+<a class="btn-primary rise rise-3" href="app/" id="cta">Start training</a>
+<p class="hero-sub rise rise-3">Exercises, tips and records await.</p>
+</main>
+<footer>
+<p>⚽ <span>Striker Training</span> — your personal coach on your phone</p>
+</footer>
+<script>const STORAGE_KEY = 'wai_striker_v1';
+function isoDate(d) {
+    return d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
+}
+function todayStr() { return isoDate(new Date()); }
+function shiftDate(iso, deltaDays) {
+    const d = new Date(iso + 'T00:00:00');
+    d.setDate(d.getDate() + deltaDays);
+    return isoDate(d);
+}
+function readProgress() {
+    let doneDates = [];
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.doneDates))
+                doneDates = parsed.doneDates;
+        }
+    }
+    catch (e) { }
+    const set = new Set(doneDates.filter(d => typeof d === 'string'));
+    const today = todayStr();
+    let streak = 0;
+    let cursor = set.has(today) ? today
+        : (set.has(shiftDate(today, -1)) ? shiftDate(today, -1) : null);
+    while (cursor && set.has(cursor)) {
+        streak++;
+        cursor = shiftDate(cursor, -1);
+    }
+    let best = 0, run = 0, prev = null;
+    for (const day of [...set].sort()) {
+        run = (prev && day === shiftDate(prev, 1)) ? run + 1 : 1;
+        if (run > best)
+            best = run;
+        prev = day;
+    }
+    const now = new Date();
+    const monday = shiftDate(today, -((now.getDay() + 6) % 7));
+    const weekDays = Array.from({ length: 7 }, (_, i) => set.has(shiftDate(monday, i)));
+    const todayIdx = (now.getDay() + 6) % 7;
+    return { streak, best, weekDays, todayIdx, hasHistory: set.size > 0 };
+}
+function plural(n, one, few, many) {
+    const m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11)
+        return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14))
+        return few;
+    return many;
+}
+const p = readProgress();
+const elLabel = document.getElementById('tracker-label');
+const elNum = document.getElementById('tracker-number');
+const elUnit = document.getElementById('tracker-unit');
+const elCta = document.getElementById('cta');
+let countTo = 0;
+if (p.streak > 0) {
+    elLabel.textContent = "Your streak";
+    elUnit.textContent = plural(p.streak, "day", "days", "days") + " in a row";
+    elCta.textContent = "Continue";
+    countTo = p.streak;
+}
+else if (p.hasHistory) {
+    elLabel.textContent = "Best streak";
+    elUnit.textContent = plural(p.best, "day", "days", "days") + " — streak ended";
+    elCta.textContent = "Come back";
+    countTo = p.best;
+}
+else {
+    elLabel.textContent = "Your streak";
+    elNum.textContent = "Start today";
+    elNum.classList.add('is-invite');
+    elUnit.textContent = "mark your first day";
+    elCta.textContent = "Start training";
+}
+const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const weekRow = document.getElementById('week-row');
+dayNames.forEach((name, i) => {
+    const cell = document.createElement('span');
+    cell.className = 'day-cell';
+    const dot = document.createElement('span');
+    dot.className = 'dot' + (p.weekDays[i] ? ' done' : '') + (i === p.todayIdx ? ' today' : '');
+    dot.textContent = p.weekDays[i] ? '✓' : '';
+    const label = document.createElement('span');
+    label.className = 'dot-label';
+    label.textContent = name;
+    cell.appendChild(dot);
+    cell.appendChild(label);
+    weekRow.appendChild(cell);
+});
+if (countTo > 0) {
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+        elNum.textContent = countTo;
+    }
+    else {
+        const step = Math.max(35, Math.round(900 / countTo));
+        let current = 0;
+        elNum.textContent = '0';
+        const timer = setInterval(() => {
+            current++;
+            elNum.textContent = current;
+            if (current >= countTo)
+                clearInterval(timer);
+        }, step);
+    }
+}
+</script>
+</body>
+</html>

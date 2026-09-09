@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { resolveApiProxyTarget } from "../next.config";
+import { resolveApiProxyTarget, schoolRewrites } from "../next.config";
 
 const originalApiBaseUrl = process.env.API_BASE_URL;
 const originalPublicApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -35,5 +35,26 @@ describe("resolveApiProxyTarget", () => {
     process.env.NODE_ENV = "development";
 
     expect(resolveApiProxyTarget()).toBe("http://127.0.0.1:8000");
+  });
+});
+
+describe("English school routing", () => {
+  it("overrides school pages while preserving application and API routes", () => {
+    expect(schoolRewrites()).toEqual({
+      beforeFiles: expect.arrayContaining([
+        { source: "/", destination: "/school-static/index.html" },
+        { source: "/school/projects", destination: "/school-static/projects.html" },
+        { source: "/projects", destination: "/school-static/projects.html" },
+        { source: "/mentors/dima", destination: "/school-static/mentors/dima.html" },
+        { source: "/mentors/darya", destination: "/school-static/mentors/darya.html" },
+        { source: "/school/contact", destination: "/school-static/contact.html" },
+        { source: "/legal/offer", destination: "/school-static/offer.html" },
+        { source: "/legal/privacy", destination: "/school-static/privacy.html" },
+      ]),
+      afterFiles: [
+        { source: "/api/:path*", destination: `${resolveApiProxyTarget()}/api/:path*` },
+      ],
+      fallback: [],
+    });
   });
 });

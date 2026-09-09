@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/hallownest/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Hallownest Archives — an indie game inspired by Hollow Knight</title>
+<meta content="Hallownest Archives — a new game inspired by Hollow Knight. A world after a catastrophe, its history hidden in ruins and survivors' voices. Play The Wanderer demo in your browser." name="description"/>
+<meta content="#060c14" name="theme-color"/>
+<meta content="Hallownest Archives — an indie game inspired by Hollow Knight" property="og:title"/>
+<meta content="A world after a catastrophe, its story hidden in ruins and survivors' voices. Play The Wanderer demo in your browser." property="og:description"/>
+<meta content="website" property="og:type"/>
+<meta content="https://wai.computer/school-static/project-previews/hallownest.png" property="og:image"/>
+<meta content="summary_large_image" name="twitter:card"/>
+<link href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23060c14'/%3E%3Ctext x='16' y='24' font-size='22' text-anchor='middle' fill='%23ff9a4c'%3E%E2%9F%A1%3C/text%3E%3C/svg%3E" rel="icon"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #060c14;
+    color: #c8d8e8;
+    font-family: Georgia, serif;
+    min-height: 100vh;
+  }
+
+
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 40px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 40%, #0d2040 0%, #060c14 70%);
+  }
+  .hero > * { position: relative; z-index: 1; }
+  .hero-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+
+  .tag {
+    font-size: 0.7rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: #6a9aca;
+    margin-bottom: 24px;
+  }
+  .hero h1 {
+    font-size: 3.5rem;
+    color: #d8eaf8;
+    letter-spacing: 0.05em;
+    line-height: 1.1;
+    text-shadow: 0 0 40px #1a4a8a55;
+  }
+  .hero p {
+    margin-top: 20px;
+    font-size: 1.1rem;
+    color: #7090b0;
+    max-width: 420px;
+    line-height: 1.7;
+  }
+  .hero-cta {
+    margin-top: 40px;
+    display: inline-block;
+    background: #2a5a9a;
+    color: #d8eaf8;
+    text-decoration: none;
+    padding: 16px 48px;
+    letter-spacing: 0.2em;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    font-weight: bold;
+    transition: all 0.3s;
+  }
+  .hero-cta:hover { background: #3a7acc; }
+
+
+  #ff-global {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 999;
+  }
+  .firefly {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: #a8d0f0;
+    box-shadow: 0 0 6px 2px #6aaae0;
+    animation: drift linear infinite;
+    opacity: 0;
+  }
+  @keyframes drift {
+    0%   { opacity: 0; transform: translate(0,0); }
+    20%  { opacity: 0.4; }
+    80%  { opacity: 0.25; }
+    100% { opacity: 0; transform: translate(var(--dx), var(--dy)); }
+  }
+
+
+  .content {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: #1a2a3a;
+    border: 1px solid #1a2a3a;
+  }
+
+  .block {
+    padding: 48px 40px;
+    background: #060c14;
+  }
+  .block h2 {
+    font-size: 0.7rem;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: #5a8aba;
+    margin-bottom: 20px;
+  }
+  .block p {
+    font-size: 1rem;
+    line-height: 1.9;
+    color: #7090a8;
+    margin-bottom: 16px;
+  }
+  .block p:last-child { margin-bottom: 0; }
+
+  @media (max-width: 600px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .lore-section {
+    padding: 60px 0;
+    border-top: 1px solid #1a2a3a;
+  }
+  .lore-title {
+    font-size: 0.7rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: #5a8aba;
+    margin-bottom: 40px;
+  }
+  .lore-entry {
+    margin-bottom: 40px;
+    padding-left: 24px;
+    border-left: 1px solid #1a3050;
+  }
+  .lore-label {
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #4a7aaa;
+    margin-bottom: 12px;
+  }
+  .lore-entry p {
+    font-size: 0.95rem;
+    line-height: 1.9;
+    color: #6080a0;
+    font-style: italic;
+  }
+
+
+  .waitlist {
+    text-align: center;
+    padding: 60px 0 20px;
+    border-top: 1px solid #1a2a3a;
+  }
+  .waitlist .lore-title { margin-bottom: 20px; }
+  .waitlist-desc {
+    font-size: 0.95rem;
+    line-height: 1.8;
+    color: #7090a8;
+    max-width: 440px;
+    margin: 0 auto 32px;
+  }
+  #wl-form {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    max-width: 440px;
+    margin: 0 auto;
+  }
+  #wl-nick {
+    flex: 1 1 200px;
+    background: #0a131f;
+    border: 1px solid #1a3050;
+    color: #c8d8e8;
+    font-family: Georgia, serif;
+    font-size: 0.95rem;
+    padding: 14px 18px;
+    outline: none;
+    transition: border-color 0.3s;
+  }
+  #wl-nick:focus { border-color: #3a7acc; }
+  #wl-nick::placeholder { color: #3a5a7a; }
+  #wl-btn {
+    background: #2a5a9a;
+    color: #d8eaf8;
+    border: none;
+    padding: 14px 32px;
+    letter-spacing: 0.15em;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  #wl-btn:hover { background: #3a7acc; }
+  #wl-btn:disabled { background: #1a3050; color: #5a7a9a; cursor: default; }
+  .waitlist-status {
+    min-height: 1.2em;
+    margin-top: 18px;
+    font-size: 0.9rem;
+    letter-spacing: 0.03em;
+  }
+  .waitlist-status.ok { color: #6acaaa; }
+  .waitlist-status.err { color: #ca6a6a; }
+  .waitlist-note {
+    margin-top: 14px;
+    font-size: 0.72rem;
+    color: #2a4a6a;
+    letter-spacing: 0.04em;
+  }
+
+
+  .trial {
+    text-align: center;
+    padding: 60px 0 20px;
+    border-top: 1px solid #1a2a3a;
+  }
+  .trial .lore-title { margin-bottom: 20px; }
+  .trial-desc {
+    font-size: 0.95rem;
+    line-height: 1.8;
+    color: #7090a8;
+    max-width: 480px;
+    margin: 0 auto 28px;
+  }
+  #trial [hidden] { display: none !important; }
+  .trial-arena {
+    position: relative;
+    max-width: 760px;
+    height: 360px;
+    margin: 0 auto;
+    border: 1px solid #1a3050;
+    background: radial-gradient(ellipse at 50% 50%, #0a1828 0%, #04080f 80%);
+    overflow: hidden;
+    cursor: crosshair;
+  }
+  .trial-screen {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 20px;
+    text-align: center;
+    background: rgba(4, 8, 15, 0.55);
+  }
+  .trial-glyph { font-size: 2.6rem; color: #6aaae0; text-shadow: 0 0 24px #2a6aaa; }
+  .trial-btn {
+    background: #2a5a9a;
+    color: #d8eaf8;
+    border: none;
+    padding: 14px 36px;
+    letter-spacing: 0.15em;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  .trial-btn:hover { background: #3a7acc; }
+  .trial-btn:disabled { background: #1a3050; color: #5a7a9a; cursor: default; }
+  .trial-hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 4;
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 18px;
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #8ab8e0;
+    pointer-events: none;
+  }
+  .mote {
+    position: absolute;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #d8f0ff 0%, #6aaae0 45%, rgba(40,120,200,0) 75%);
+    box-shadow: 0 0 14px 4px #4a9ad4;
+    cursor: pointer;
+    z-index: 3;
+    animation: mote-life 1.5s ease-in-out forwards;
+  }
+  @keyframes mote-life {
+    0%   { opacity: 0; transform: scale(0.2); }
+    18%  { opacity: 1; transform: scale(1); }
+    70%  { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.6); }
+  }
+  .mote-burst {
+    position: absolute;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    border: 2px solid #aee0ff;
+    z-index: 3;
+    pointer-events: none;
+    animation: mote-burst 0.4s ease-out forwards;
+  }
+  @keyframes mote-burst {
+    0%   { opacity: 0.9; transform: scale(0.6); }
+    100% { opacity: 0;   transform: scale(2.4); }
+  }
+  .trial-result-line { font-size: 1.2rem; color: #d8eaf8; }
+  .trial-rank { font-size: 0.92rem; color: #6aaae0; font-style: italic; }
+  .trial-form {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .trial-form input {
+    background: #0a131f;
+    border: 1px solid #1a3050;
+    color: #c8d8e8;
+    font-family: Georgia, serif;
+    font-size: 0.95rem;
+    padding: 12px 16px;
+    outline: none;
+    transition: border-color 0.3s;
+  }
+  .trial-form input:focus { border-color: #3a7acc; }
+  .trial-form input::placeholder { color: #3a5a7a; }
+  .trial-status { min-height: 1.1em; font-size: 0.88rem; letter-spacing: 0.02em; }
+  .trial-status.ok { color: #6acaaa; }
+  .trial-status.err { color: #ca6a6a; }
+  .trial-replay {
+    background: none;
+    border: 1px solid #2a4a6a;
+    color: #6aaae0;
+    padding: 8px 22px;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  .trial-replay:hover { background: #1a3a60; }
+
+  .cta-block {
+    text-align: center;
+    padding: 40px 0 60px;
+    border-top: 1px solid #1a2a3a;
+  }
+  .cta-block a {
+    display: inline-block;
+    border: 1px solid #2a5a9a;
+    color: #6aaae0;
+    text-decoration: none;
+    padding: 16px 44px;
+    letter-spacing: 0.2em;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  .cta-block a:hover { background: #2a5a9a; color: #d8eaf8; }
+  .cta-sub {
+    margin-top: 14px;
+    font-size: 0.75rem;
+    color: #1a3050;
+    letter-spacing: 0.05em;
+  }
+
+  footer {
+    text-align: center;
+    padding: 30px;
+    font-size: 0.7rem;
+    color: #1a2a3a;
+    border-top: 1px solid #0e1820;
+  }
+
+
+  :root {
+    --ink:    #d8e8f6;
+    --ink-2:  #a3c0dc;
+    --muted:  #85a3c1;
+    --line:   #1e3550;
+    --ember:  #ff9a4c;
+    --display: 'Cinzel', Georgia, serif;
+  }
+  body { color: var(--ink); }
+
+
+  .hero h1, .lore-title { font-family: var(--display); font-weight: 600; }
+  .tag, .block h2 { font-family: var(--display); font-weight: 600; color: var(--ember); }
+  .hero h1 { font-size: clamp(2.4rem, 6.5vw, 4.4rem); letter-spacing: 0.06em; text-shadow: 0 0 60px rgba(42,90,154,0.45); }
+  .hero p { color: var(--ink-2); font-size: 1.12rem; max-width: 520px; }
+  .hero { min-height: auto; padding: 76px 20px 86px; }
+  .block p, .lore-entry p, .trial-desc, .waitlist-desc { color: var(--ink-2); }
+  .waitlist-note, .cta-sub, .lore-label { color: var(--muted); }
+  footer { color: var(--muted); }
+
+
+  .hero-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-top: 38px; }
+  .hero-ctas .hero-cta { margin: 0; }
+
+  .hero-cta.play { background: var(--ember); border: 1px solid var(--ember); color: #1d0e02; }
+  .hero-cta.play:hover { background: #ffb070; border-color: #ffb070; }
+  .hero-cta.ghost { background: transparent; border: 1px solid #2a5a9a; color: #9dc4ea; }
+  .hero-cta.ghost:hover { background: rgba(42,90,154,0.22); color: #d8eaf8; }
+
+
+  .hero-shot {
+    margin-top: 46px; width: min(1000px, 100%); position: relative;
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    box-shadow: 0 40px 120px -40px #000, 0 0 90px -34px rgba(42,90,154,0.55);
+  }
+  .hero-shot img { display: block; width: 100%; height: auto; }
+  .hero-shot figcaption {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 26px 16px 11px;
+    font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted);
+    background: linear-gradient(transparent, rgba(6,12,20,0.94));
+  }
+
+
+  .shots { margin: 0 0 84px; }
+  .shots-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .shot {
+    margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #04080f;
+    transition: transform 0.25s ease, border-color 0.25s ease;
+  }
+  .shot:hover { transform: translateY(-3px); border-color: var(--ember); }
+  .shot img { display: block; width: 100%; height: auto; }
+  .shot figcaption { padding: 13px 15px; border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+  .shot figcaption b { display: block; font-family: var(--display); font-size: 0.92rem; color: var(--ink-2); margin-bottom: 3px; letter-spacing: 0.04em; }
+  .shots .lore-title { margin-bottom: 22px; }
+  @media (max-width: 720px) { .shots-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) { .hero-shot figcaption { font-size: 0.6rem; letter-spacing: 0.1em; padding: 22px 12px 9px; } }
+
+
+  #ff-global { z-index: 2; opacity: 0.5; }
+
+
+  .grid.one { grid-template-columns: 1fr; }
+  .grid.one .block { padding: 40px 44px; }
+  .grid.one .block p { max-width: 68ch; }
+
+  .waitlist-tg { margin-top: 22px; font-size: 0.82rem; color: var(--muted); }
+  .waitlist-tg a { color: var(--ember); text-decoration: none; border-bottom: 1px solid rgba(255,154,76,0.35); }
+  .waitlist-tg a:hover { color: #ffb070; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .reveal { opacity: 1 !important; transform: none !important; }
+    .firefly { display: none; }
+  }
+</style>
+
+<link href="https://wai.computer/school/projects/hallownest" rel="canonical"/></head>
+<body>
+<div class="hero">
+<div class="hero-bg">
+
+<svg preserveaspectratio="xMidYMid slice" style="position:absolute;inset:0;width:100%;height:100%" viewbox="0 0 1440 900" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<radialgradient cx="30%" cy="60%" id="fog1" r="40%">
+<stop offset="0%" stop-color="#0d2a4a" stop-opacity="0.5"></stop>
+<stop offset="100%" stop-color="#060c14" stop-opacity="0"></stop>
+</radialgradient>
+<radialgradient cx="70%" cy="50%" id="fog2" r="45%">
+<stop offset="0%" stop-color="#0a1e38" stop-opacity="0.4"></stop>
+<stop offset="100%" stop-color="#060c14" stop-opacity="0"></stop>
+</radialgradient>
+<filter id="blur">
+<fegaussianblur stddeviation="8"></fegaussianblur>
+</filter>
+</defs>
+<rect fill="url(#fog1)" height="900" width="1440"></rect>
+<rect fill="url(#fog2)" height="900" width="1440"></rect>
+
+<g fill="none" opacity="0.6" stroke="#2a4a6a" stroke-width="1.5">
+
+<ellipse cx="280" cy="30" rx="7" ry="12"></ellipse>
+<ellipse cx="280" cy="54" rx="12" ry="7"></ellipse>
+<ellipse cx="280" cy="78" rx="7" ry="12"></ellipse>
+<ellipse cx="280" cy="102" rx="12" ry="7"></ellipse>
+<ellipse cx="280" cy="126" rx="7" ry="12"></ellipse>
+<ellipse cx="280" cy="150" rx="12" ry="7"></ellipse>
+<ellipse cx="280" cy="174" rx="7" ry="12"></ellipse>
+<ellipse cx="280" cy="198" rx="12" ry="7"></ellipse>
+<ellipse cx="280" cy="222" rx="7" ry="12"></ellipse>
+<ellipse cx="280" cy="246" rx="12" ry="7"></ellipse>
+<ellipse cx="280" cy="270" rx="7" ry="12"></ellipse>
+</g>
+<g fill="none" opacity="0.6" stroke="#2a4a6a" stroke-width="1.5">
+
+<ellipse cx="1160" cy="50" rx="7" ry="12"></ellipse>
+<ellipse cx="1160" cy="74" rx="12" ry="7"></ellipse>
+<ellipse cx="1160" cy="98" rx="7" ry="12"></ellipse>
+<ellipse cx="1160" cy="122" rx="12" ry="7"></ellipse>
+<ellipse cx="1160" cy="146" rx="7" ry="12"></ellipse>
+<ellipse cx="1160" cy="170" rx="12" ry="7"></ellipse>
+<ellipse cx="1160" cy="194" rx="7" ry="12"></ellipse>
+<ellipse cx="1160" cy="218" rx="12" ry="7"></ellipse>
+<ellipse cx="1160" cy="242" rx="7" ry="12"></ellipse>
+<ellipse cx="1160" cy="266" rx="12" ry="7"></ellipse>
+</g>
+<g fill="none" opacity="0.35" stroke="#2a4a6a" stroke-width="1.5">
+
+<ellipse cx="720" cy="20" rx="7" ry="12"></ellipse>
+<ellipse cx="720" cy="44" rx="12" ry="7"></ellipse>
+<ellipse cx="720" cy="68" rx="7" ry="12"></ellipse>
+<ellipse cx="720" cy="92" rx="12" ry="7"></ellipse>
+<ellipse cx="720" cy="116" rx="7" ry="12"></ellipse>
+<ellipse cx="720" cy="140" rx="12" ry="7"></ellipse>
+<ellipse cx="720" cy="164" rx="7" ry="12"></ellipse>
+</g>
+
+<path d="M0,900 L0,700 L80,660 L120,710 L180,640 L220,690
+               L290,610 L340,665 L400,590 L450,640 L520,570
+               L580,625 L650,555 L700,600 L760,545 L820,595
+               L890,535 L950,580 L1020,520 L1080,570 L1150,510
+               L1220,565 L1290,530 L1370,590 L1440,550 L1440,900 Z" fill="#04080f"></path>
+
+<rect fill="#060e18" height="105" width="22" x="130" y="595"></rect>
+<rect fill="#0a1420" height="12" width="34" x="124" y="588"></rect>
+<rect fill="#060e18" height="10" width="46" x="118" y="580"></rect>
+<rect fill="#060e18" height="90" width="20" x="1270" y="480"></rect>
+<rect fill="#0a1420" height="11" width="32" x="1264" y="473"></rect>
+<rect fill="#060e18" height="10" width="44" x="1258" y="465"></rect>
+
+<rect fill="#060e18" height="80" width="16" x="60" y="650"></rect>
+<rect fill="#0a1420" height="9" width="28" x="54" y="643"></rect>
+
+<path d="M60,643 Q88,610 116,643" fill="none" stroke="#0a1828" stroke-width="3"></path>
+<rect fill="#060e18" height="65" width="16" x="110" y="650"></rect>
+<rect fill="#0a1420" height="9" width="28" x="104" y="643"></rect>
+
+<line stroke="#04080f" stroke-width="1.5" x1="80" x2="75" y1="625" y2="643"></line>
+<line stroke="#04080f" stroke-width="1" x1="88" x2="95" y1="618" y2="635"></line>
+
+<rect fill="#060e18" height="40" opacity="0.8" width="80" x="620" y="700"></rect>
+<rect fill="#060e18" height="18" opacity="0.7" width="50" x="635" y="685"></rect>
+
+<polygon fill="#04080f" points="650,685 665,670 680,685"></polygon>
+
+<line stroke="#04080f" stroke-width="1.5" x1="640" x2="635" y1="700" y2="740"></line>
+<line stroke="#04080f" stroke-width="1" x1="670" x2="678" y1="700" y2="730"></line>
+
+<rect fill="#060e18" height="120" width="18" x="1320" y="600"></rect>
+<rect fill="#0a1420" height="10" width="30" x="1314" y="593"></rect>
+
+<rect fill="#060e18" height="14" opacity="0.6" transform="rotate(-8,1345,690)" width="50" x="1345" y="690"></rect>
+
+<rect fill="#060e18" height="8" opacity="0.5" transform="rotate(12,450,750)" width="30" x="450" y="750"></rect>
+<rect fill="#060e18" height="6" opacity="0.4" transform="rotate(-6,850,760)" width="22" x="850" y="760"></rect>
+<rect fill="#060e18" height="9" opacity="0.5" transform="rotate(5,1180,720)" width="35" x="1180" y="720"></rect>
+
+<path d="M1050,550 Q1075,520 1100,550" fill="none" opacity="0.7" stroke="#0a1828" stroke-width="2.5"></path>
+<line opacity="0.7" stroke="#0a1828" stroke-width="2.5" x1="1050" x2="1050" y1="550" y2="600"></line>
+<line opacity="0.7" stroke="#0a1828" stroke-width="2.5" x1="1100" x2="1100" y1="550" y2="590"></line>
+
+<line opacity="0.8" stroke="#04080f" stroke-width="1.5" x1="1075" x2="1068" y1="525" y2="555"></line>
+
+<line opacity="0.6" stroke="#0e1e30" stroke-width="1.5" x1="400" x2="415" y1="0" y2="200"></line>
+<line opacity="0.5" stroke="#0e1e30" stroke-width="1" x1="900" x2="888" y1="0" y2="160"></line>
+<line opacity="0.55" stroke="#0e1e30" stroke-width="1.5" x1="1100" x2="1092" y1="0" y2="140"></line>
+
+<circle cx="350" cy="400" fill="#4a8aba" opacity="0.4" r="1.5"></circle>
+<circle cx="800" cy="300" fill="#6aaae0" opacity="0.3" r="1"></circle>
+<circle cx="1050" cy="450" fill="#4a8aba" opacity="0.35" r="1.5"></circle>
+<circle cx="200" cy="550" fill="#6aaae0" opacity="0.25" r="1"></circle>
+<circle cx="650" cy="200" fill="#4a8aba" opacity="0.3" r="1.2"></circle>
+</svg>
+</div>
+<div class="tag">Indie game · in development</div>
+<h1>Hallownest<br/>Archives</h1>
+<p>A new game inspired by Hollow Knight: a mysterious world after a catastrophe, its history hidden in ruins and survivors' voices.</p>
+<div class="hero-ctas">
+<a class="hero-cta play" href="app/">▶ Play the demo</a>
+
+</div>
+<figure class="hero-shot">
+<img alt="A wanderer with a lantern on a ruined castle ledge: a cracked wall ahead and a stone crawler in the moonlight to the right" height="1190" loading="eager" src="shots/gates.png" width="2200"/>
+<figcaption>The Wanderer demo · play in your browser</figcaption>
+</figure>
+</div>
+<div id="ff-global"></div>
+<script>const ff = document.getElementById('ff-global');
+for (let i = 0; i < 30; i++) {
+    const el = document.createElement('div');
+    el.className = 'firefly';
+    const x = Math.random() * 100;
+    const y = Math.random() * 100;
+    const dx = (Math.random() - 0.5) * 150;
+    const dy = (Math.random() - 0.5) * 100;
+    const dur = 6 + Math.random() * 12;
+    const delay = Math.random() * -16;
+    el.style.cssText = `left:${x}%;top:${y}%;--dx:${dx}px;--dy:${dy}px;animation-duration:${dur}s;animation-delay:${delay}s;`;
+    ff.appendChild(el);
+}
+</script>
+<div class="content">
+<div class="grid one">
+<div class="block reveal">
+<h2>About the game</h2>
+<p>For those who finished Hollow Knight and want more. <b>Not a remake or a mod</b> — a new world, a new story, that same feeling.</p>
+<p>An empty world after a catastrophe. A wanderer stands alone among the ruins, with history hidden in fragments and survivors' voices. No long explanations: characters speak in riddles and hints. Find the answers yourself.</p>
+</div>
+</div>
+<div class="shots">
+<h2 class="lore-title reveal">Scenes from the demo</h2>
+<div class="shots-grid">
+<figure class="shot reveal">
+<img alt="The hall floor crumbles: a red collapse front advances from the left while the wanderer runs right by lantern light" height="1190" loading="lazy" src="shots/escape.png" width="2200"/>
+<figcaption><b>Escape the Halls</b>The floor crumbles behind you. It will not wait. Keep moving.</figcaption>
+</figure>
+<figure class="shot reveal">
+<img alt="The wanderer on narrow steps near the castle summit, with golden-eyed stone fliers approaching from both sides" height="1190" loading="lazy" src="shots/peak.png" width="2200"/>
+<figcaption><b>The Summit</b>Narrow steps and a swarm of stone fliers. The very top of the castle.</figcaption>
+</figure>
+</div>
+</div>
+<div class="trial reveal" id="trial">
+<h2 class="lore-title">Trial of Light</h2>
+<p class="trial-desc">Darkness has almost swallowed the hall. Sparks of light flash in the shadows. Click to catch them before time runs out. How many can you hold?</p>
+<div class="trial-arena" id="trial-arena">
+<div class="trial-screen" id="trial-intro">
+<div class="trial-glyph">⟡</div>
+<button class="trial-btn" id="trial-start" type="button">Start the trial</button>
+</div>
+<div class="trial-hud" hidden="" id="trial-hud">
+<span id="trial-score-hud">Sparks: 0</span>
+<span id="trial-time-hud">Time: 18</span>
+</div>
+<div class="trial-screen" hidden="" id="trial-result">
+<p class="trial-result-line" id="trial-result-line"></p>
+<p class="trial-rank" id="trial-rank"></p>
+<form autocomplete="off" class="trial-form" id="trial-form">
+<input aria-label="In-game nickname" id="trial-nick" maxlength="24" placeholder="In-game nickname" type="text"/>
+<button class="trial-btn" id="trial-save" type="submit">Save to the Archives</button>
+</form>
+<p class="trial-status" id="trial-status"></p>
+<button class="trial-replay" id="trial-replay" type="button">Play again</button>
+</div>
+</div>
+<p class="waitlist-note">Sparks are just for fun. Only your nickname and score are saved.</p>
+</div>
+<div class="lore-section">
+<h2 class="lore-title reveal">Archives</h2>
+<div class="lore-entry reveal">
+<div class="lore-label">The Watcher's final entry</div>
+<p>It had not vanished. It had gone nowhere — only fallen quiet, like fire beneath the ashes. The seal kept it locked away, and we called that victory. But victory means the enemy is dead. It was alive. It was waiting. And when the seal began to crack from within, the people here had already forgotten how to be afraid. That was when the wanderer came. That was when everything began again.</p>
+</div>
+</div>
+
+<div class="waitlist reveal">
+<h2 class="lore-title">Waiting list</h2>
+<p class="waitlist-desc">Leave an in-game nickname to be among the first to enter Hallownest when the gates open.</p>
+<form autocomplete="off" id="wl-form">
+<input aria-label="In-game nickname" id="wl-nick" maxlength="24" placeholder="In-game nickname" type="text"/>
+<button id="wl-btn" type="submit">Join the list</button>
+</form>
+<p class="waitlist-status" id="wl-status"></p>
+<p class="waitlist-note">An in-game nickname only. No real name or personal details.</p>
+<p class="waitlist-tg"> </p>
+</div>
+</div>
+<footer>Hallownest Archives · in development</footer>
+<button class="muted" id="music-btn" onclick="toggleMusic()" title="Music">
+<span id="music-icon">♩</span>
+</button>
+<style>
+  #music-btn {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #0d2040;
+    border: 1px solid #2a4a6a;
+    color: #6aaae0;
+    font-size: 1.1rem;
+    cursor: pointer;
+    z-index: 1000;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #music-btn:hover { background: #1a3a60; border-color: #4a8aba; }
+  #music-btn.muted { color: #2a4a6a; }
+
+
+  .js-loaded .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+  .js-loaded .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+
+  .spark {
+    position: fixed;
+    pointer-events: none;
+    border-radius: 50%;
+    z-index: 9999;
+    background: #8acfff;
+    box-shadow: 0 0 6px 2px #4a9ad4;
+    transform: translate(-50%, -50%);
+    animation: spark-fade 0.6s ease-out forwards;
+  }
+  @keyframes spark-fade {
+    0%   { opacity: 0.7; width: 5px; height: 5px; }
+    100% { opacity: 0;   width: 1px; height: 1px; }
+  }
+</style>
+<script>document.documentElement.classList.add('js-loaded');
+const btn = document.getElementById('music-btn');
+const icon = document.getElementById('music-icon');
+let playing = false;
+let actx = null, musicGain = null, noteTimer = null;
+function ensureAudio() {
+    if (actx)
+        return;
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    musicGain = actx.createGain();
+    musicGain.gain.value = 0;
+    musicGain.connect(actx.destination);
+    [55, 82.4].forEach((f, i) => {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'sine';
+        o.frequency.value = f;
+        g.gain.value = i ? 0.05 : 0.08;
+        o.connect(g);
+        g.connect(musicGain);
+        o.start();
+    });
+    const notes = [220, 261.6, 293.7, 329.6, 392];
+    noteTimer = setInterval(() => {
+        if (!playing)
+            return;
+        const f = notes[Math.floor(Math.random() * notes.length)];
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'triangle';
+        o.frequency.value = f;
+        g.gain.value = 0.0001;
+        g.gain.exponentialRampToValueAtTime(0.05, actx.currentTime + 0.6);
+        g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + 3);
+        o.connect(g);
+        g.connect(musicGain);
+        o.start();
+        o.stop(actx.currentTime + 3.1);
+    }, 3200);
+}
+function toggleMusic() {
+    ensureAudio();
+    playing = !playing;
+    musicGain.gain.linearRampToValueAtTime(playing ? 0.35 : 0, actx.currentTime + 0.6);
+    icon.textContent = playing ? '♪' : '♩';
+    btn.classList.toggle('muted', !playing);
+}
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach((e, i) => {
+        if (e.isIntersecting) {
+            setTimeout(() => e.target.classList.add('visible'), i * 80);
+            observer.unobserve(e.target);
+        }
+    });
+}, { threshold: 0.12 });
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+const heroBg = document.querySelector('.hero-bg');
+window.addEventListener('scroll', () => {
+    const y = window.scrollY;
+    if (heroBg)
+        heroBg.style.transform = `translateY(${y * 0.3}px)`;
+}, { passive: true });
+let lastSpark = 0;
+document.addEventListener('mousemove', (e) => {
+    const now = Date.now();
+    if (now - lastSpark < 40)
+        return;
+    lastSpark = now;
+    const s = document.createElement('div');
+    s.className = 'spark';
+    s.style.left = e.clientX + 'px';
+    s.style.top = e.clientY + 'px';
+    document.body.appendChild(s);
+    setTimeout(() => s.remove(), 650);
+});
+const WL_URL = '/school-data/hallownest/waitlist';
+const wlForm = document.getElementById('wl-form');
+const wlNick = document.getElementById('wl-nick');
+const wlBtn = document.getElementById('wl-btn');
+const wlStatus = document.getElementById('wl-status');
+function wlSay(text, type) {
+    wlStatus.textContent = text;
+    wlStatus.className = 'waitlist-status' + (type ? ' ' + type : '');
+}
+wlForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nick = wlNick.value.trim();
+    if (nick.length < 2) {
+        wlSay("Enter a nickname with at least 2 characters.", 'err');
+        wlNick.focus();
+        return;
+    }
+    wlBtn.disabled = true;
+    wlSay("Saving…", '');
+    try {
+        const res = await fetch(WL_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nick: nick, payload: { source: 'site' } })
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+            wlSay("Done! You are on the list, " + nick + ". See you in Hallownest.", 'ok');
+            wlNick.value = '';
+            wlForm.style.display = 'none';
+        }
+        else if (res.status === 429) {
+            wlSay("Too fast — wait a few seconds and try again.", 'err');
+            wlBtn.disabled = false;
+        }
+        else {
+            wlSay("Could not save. Please try again later.", 'err');
+            wlBtn.disabled = false;
+        }
+    }
+    catch (err) {
+        wlSay("Could not connect to the database. Check your connection and try again.", 'err');
+        wlBtn.disabled = false;
+    }
+});
+const TRIAL_TIME = 18;
+const arena = document.getElementById('trial-arena');
+const trIntro = document.getElementById('trial-intro');
+const trResult = document.getElementById('trial-result');
+const trHud = document.getElementById('trial-hud');
+const trScoreHud = document.getElementById('trial-score-hud');
+const trTimeHud = document.getElementById('trial-time-hud');
+const trStartBtn = document.getElementById('trial-start');
+const trReplayBtn = document.getElementById('trial-replay');
+const trResultLine = document.getElementById('trial-result-line');
+const trRankLine = document.getElementById('trial-rank');
+const trForm = document.getElementById('trial-form');
+const trNick = document.getElementById('trial-nick');
+const trSaveBtn = document.getElementById('trial-save');
+const trStatus = document.getElementById('trial-status');
+let trScore = 0, trTimeLeft = 0, trTick = null, trSpawn = null, trRunning = false;
+const trMotes = new Set();
+function trCleanup() {
+    if (trTick)
+        clearInterval(trTick);
+    if (trSpawn)
+        clearInterval(trSpawn);
+    trTick = trSpawn = null;
+    trMotes.forEach(m => { clearTimeout(m._timer); m.remove(); });
+    trMotes.clear();
+}
+function trSpawnMote() {
+    if (!trRunning)
+        return;
+    const m = document.createElement('div');
+    m.className = 'mote';
+    const pad = 30;
+    const x = pad + Math.random() * (arena.clientWidth - pad * 2);
+    const y = pad + Math.random() * (arena.clientHeight - pad * 2);
+    m.style.left = (x - 13) + 'px';
+    m.style.top = (y - 13) + 'px';
+    m.addEventListener('click', () => trCatch(m, x, y));
+    m._timer = setTimeout(() => { trMotes.delete(m); m.remove(); }, 1500);
+    trMotes.add(m);
+    arena.appendChild(m);
+}
+function trCatch(m, x, y) {
+    if (!trRunning || !trMotes.has(m))
+        return;
+    clearTimeout(m._timer);
+    trMotes.delete(m);
+    m.remove();
+    trScore++;
+    trScoreHud.textContent = "Sparks: " + trScore;
+    const b = document.createElement('div');
+    b.className = 'mote-burst';
+    b.style.left = (x - 13) + 'px';
+    b.style.top = (y - 13) + 'px';
+    arena.appendChild(b);
+    setTimeout(() => b.remove(), 400);
+}
+function trRank(n) {
+    if (n >= 25)
+        return "Keeper of Light";
+    if (n >= 15)
+        return "Guardian of the Seal";
+    if (n >= 7)
+        return "Seeker";
+    return "Wanderer in the Dark";
+}
+function startTrial() {
+    trCleanup();
+    trScore = 0;
+    trTimeLeft = TRIAL_TIME;
+    trRunning = true;
+    trIntro.hidden = true;
+    trResult.hidden = true;
+    trHud.hidden = false;
+    trScoreHud.textContent = "Sparks: 0";
+    trTimeHud.textContent = "Time: " + trTimeLeft;
+    trSpawnMote();
+    trSpawn = setInterval(trSpawnMote, 680);
+    trTick = setInterval(() => {
+        trTimeLeft--;
+        trTimeHud.textContent = "Time: " + Math.max(0, trTimeLeft);
+        if (trTimeLeft <= 0)
+            endTrial();
+    }, 1000);
+}
+function endTrial() {
+    trRunning = false;
+    trCleanup();
+    trHud.hidden = true;
+    trResultLine.textContent = "You caught " + trScore + " sparks of light";
+    trRankLine.textContent = "Rank: " + trRank(trScore);
+    trStatus.textContent = '';
+    trStatus.className = 'trial-status';
+    trSaveBtn.disabled = false;
+    trForm.style.display = 'flex';
+    trResult.hidden = false;
+}
+if (trStartBtn)
+    trStartBtn.addEventListener('click', startTrial);
+if (trReplayBtn)
+    trReplayBtn.addEventListener('click', startTrial);
+if (trForm)
+    trForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const nick = trNick.value.trim();
+        if (nick.length < 2) {
+            trStatus.textContent = "Enter a nickname with at least 2 characters.";
+            trStatus.className = 'trial-status err';
+            trNick.focus();
+            return;
+        }
+        trSaveBtn.disabled = true;
+        trStatus.textContent = "Saving…";
+        trStatus.className = 'trial-status';
+        try {
+            const res = await fetch(WL_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nick: nick, payload: { source: 'trial', score: trScore } })
+            });
+            const data = await res.json();
+            if (res.ok && data.ok) {
+                trStatus.textContent = "Saved to the Archives, " + nick + "! Sparks: " + trScore + '.';
+                trStatus.className = 'trial-status ok';
+                trForm.style.display = 'none';
+            }
+            else if (res.status === 429) {
+                trStatus.textContent = "Too fast — wait a few seconds and try again.";
+                trStatus.className = 'trial-status err';
+                trSaveBtn.disabled = false;
+            }
+            else {
+                trStatus.textContent = "Could not save. Please try again later.";
+                trStatus.className = 'trial-status err';
+                trSaveBtn.disabled = false;
+            }
+        }
+        catch (err) {
+            trStatus.textContent = "Could not connect to the database. Check your connection and try again.";
+            trStatus.className = 'trial-status err';
+            trSaveBtn.disabled = false;
+        }
+    });
+window.Trial = {
+    start: startTrial,
+    end: endTrial,
+    score: () => trScore,
+    motes: () => trMotes.size,
+    running: () => trRunning
+};
+</script>
+</body>
+</html>

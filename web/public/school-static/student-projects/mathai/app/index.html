@@ -1,0 +1,2094 @@
+<!DOCTYPE html>
+
+<html data-theme="neon" lang="en">
+<head><base href="/school/projects/mathai/app/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>MathAi — App</title>
+<style>
+  :root {
+    --bg: #F2FBF6;
+    --surface: #FFFFFF;
+    --surface2: #EAF7EF;
+    --ink: #1C3A33;
+    --ink-muted: #6B9A8A;
+    --primary: #2BB673;
+    --primary-light: #E8F8F0;
+    --secondary: #7AC6FF;
+    --accent: #FF9E6D;
+    --radius: 18px;
+    --radius-sm: 10px;
+    --border: rgba(43,182,115,0.18);
+    --font-head: 'Quicksand', system-ui, sans-serif;
+    --font-body: 'Mulish', system-ui, sans-serif;
+  }
+
+
+  :root[data-theme="cosmos"] {
+    --bg: #10151F; --surface: #1B2431; --surface2: #232F40;
+    --ink: #E8EEF7; --ink-muted: #8CA0B8;
+    --primary: #4EA8FF; --primary-light: #21344A;
+    --secondary: #7AC6FF; --accent: #FFB27A;
+    --border: rgba(120,198,255,0.22);
+  }
+
+  :root[data-theme="ocean"] {
+    --bg: #EAF4FB; --surface: #FFFFFF; --surface2: #DCEEFA;
+    --ink: #123047; --ink-muted: #5E86A3;
+    --primary: #1E88E5; --primary-light: #E3F1FB;
+    --secondary: #7AC6FF; --accent: #FF9E6D;
+    --border: rgba(30,136,229,0.18);
+  }
+
+  :root[data-theme="sunset"] {
+    --bg: #FFF4EC; --surface: #FFFFFF; --surface2: #FFE7D6;
+    --ink: #5A2E22; --ink-muted: #B07A63;
+    --primary: #F2704B; --primary-light: #FFE7DC;
+    --secondary: #FFB27A; --accent: #FF6FA5;
+    --border: rgba(242,112,75,0.2);
+  }
+
+  :root[data-theme="alps"] {
+    --bg: #EDF2F4; --surface: #FFFFFF; --surface2: #DDE7EB;
+    --ink: #243139; --ink-muted: #6C8592;
+    --primary: #2E8B72; --primary-light: #DBEDE6;
+    --secondary: #8FB8C9; --accent: #E2574C;
+    --border: rgba(46,139,114,0.2);
+  }
+
+  :root[data-theme="neon"] {
+    --bg: #0E1324; --surface: #161D33; --surface2: #1A2138;
+    --ink: #EAEEFB; --ink-muted: #7A86AD;
+    --primary: #22D3EE; --primary-light: #10314A;
+    --secondary: #A78BFA; --accent: #F472B6;
+    --border: rgba(122,150,220,0.28);
+    --font-head: 'Space Grotesk', system-ui, sans-serif;
+    --font-body: 'Sora', system-ui, sans-serif;
+  }
+
+  .theme-bar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-head);
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--ink-muted);
+  }
+  .theme-bar select {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 14px;
+  }
+
+
+  body {
+    background-image:
+      url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='200'%20height='200'%20viewBox='0%200%20200%20200'%3E%3Cg%20transform='translate(45,50)%20rotate(25)'%3E%3Cpath%20d='M0,-20%20C13,-9%2013,9%200,20%20C-13,9%20-13,-9%200,-20%20Z'%20fill='%232BB673'%20fill-opacity='0.22'/%3E%3Cpath%20d='M0,-16%20L0,16'%20stroke='%232BB673'%20stroke-opacity='0.30'%20stroke-width='1.2'%20fill='none'/%3E%3C/g%3E%3Cg%20transform='translate(150,78)%20rotate(-45)'%3E%3Cpath%20d='M0,-20%20C13,-9%2013,9%200,20%20C-13,9%20-13,-9%200,-20%20Z'%20fill='%232BB673'%20fill-opacity='0.22'/%3E%3Cpath%20d='M0,-16%20L0,16'%20stroke='%232BB673'%20stroke-opacity='0.30'%20stroke-width='1.2'%20fill='none'/%3E%3C/g%3E%3Cg%20transform='translate(95,158)%20rotate(80)'%3E%3Cpath%20d='M0,-20%20C13,-9%2013,9%200,20%20C-13,9%20-13,-9%200,-20%20Z'%20fill='%232BB673'%20fill-opacity='0.22'/%3E%3Cpath%20d='M0,-16%20L0,16'%20stroke='%232BB673'%20stroke-opacity='0.30'%20stroke-width='1.2'%20fill='none'/%3E%3C/g%3E%3C/svg%3E"),
+      radial-gradient(circle at 90% 82%, rgba(122,198,255,0.16), transparent 45%);
+    background-repeat: repeat, no-repeat;
+    background-size: 200px 200px, auto;
+    background-position: 0 0, center;
+  }
+  [data-theme="cosmos"] body {
+    background-image:
+      radial-gradient(2.5px 2.5px at 15% 20%, #ffffff, transparent),
+      radial-gradient(2px 2px at 45% 40%, #ffffff, transparent),
+      radial-gradient(2.5px 2.5px at 72% 25%, #eaf3ff, transparent),
+      radial-gradient(1.8px 1.8px at 30% 70%, #ffffff, transparent),
+      radial-gradient(2.5px 2.5px at 60% 78%, #ffffff, transparent),
+      radial-gradient(2px 2px at 88% 60%, #cfe3ff, transparent),
+      radial-gradient(2.5px 2.5px at 82% 90%, #ffffff, transparent),
+      radial-gradient(1.8px 1.8px at 8% 88%, #ffffff, transparent);
+    background-repeat: repeat;
+    background-size: 130px 130px;
+  }
+  [data-theme="sunset"] body {
+    background-image:
+      radial-gradient(circle at 50% 108%, rgba(242,112,75,0.55), transparent 55%),
+      radial-gradient(circle at 50% 118%, rgba(255,111,165,0.45), transparent 50%),
+      radial-gradient(circle at 15% 12%, rgba(255,178,122,0.35), transparent 40%);
+    background-repeat: no-repeat;
+  }
+  [data-theme="ocean"] body {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='1200'%20height='300'%20viewBox='0%200%201200%20300'%20preserveAspectRatio='none'%3E%3Cpath%20d='M0,110%20C200,180%20400,50%20600,110%20C800,170%201000,50%201200,110%20L1200,300%20L0,300%20Z'%20fill='%231E88E5'%20fill-opacity='0.25'/%3E%3Cpath%20d='M0,160%20C200,230%20400,100%20600,160%20C800,220%201000,100%201200,160%20L1200,300%20L0,300%20Z'%20fill='%231E88E5'%20fill-opacity='0.35'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    background-size: 100% 45%;
+  }
+  [data-theme="alps"] body {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='1200'%20height='360'%20viewBox='0%200%201200%20360'%20preserveAspectRatio='none'%3E%3Cpolygon%20points='0,360%20220,120%20440,360'%20fill='%238FB8C9'%20fill-opacity='0.7'/%3E%3Cpolygon%20points='300,360%20560,60%20820,360'%20fill='%236C8592'%20fill-opacity='0.8'/%3E%3Cpolygon%20points='700,360%20940,130%201200,360'%20fill='%238FB8C9'%20fill-opacity='0.7'/%3E%3Cpolygon%20points='518,110%20560,60%20602,110%20585,128%20535,128'%20fill='%23FFFFFF'/%3E%3Cpolygon%20points='194,152%20220,120%20246,152'%20fill='%23FFFFFF'/%3E%3Cpolygon%20points='914,160%20940,130%20966,160'%20fill='%23FFFFFF'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    background-size: 100% 55%;
+  }
+
+  [data-theme="neon"] body {
+    background-image:
+      radial-gradient(circle at 15% 12%, rgba(34,211,238,0.16), transparent 42%),
+      radial-gradient(circle at 88% 88%, rgba(167,139,250,0.18), transparent 45%),
+      radial-gradient(2px 2px at 20% 30%, rgba(255,255,255,0.75), transparent),
+      radial-gradient(1.5px 1.5px at 65% 20%, rgba(200,225,255,0.6), transparent),
+      radial-gradient(2px 2px at 80% 60%, rgba(255,255,255,0.55), transparent),
+      radial-gradient(1.5px 1.5px at 40% 82%, rgba(255,255,255,0.6), transparent);
+    background-repeat: no-repeat, no-repeat, repeat, repeat, repeat, repeat;
+    background-size: auto, auto, 170px 170px, 170px 170px, 170px 170px, 170px 170px;
+  }
+  [data-theme="neon"] .task-btn.check { color: #06202A; box-shadow: 0 0 16px rgba(34,211,238,0.55); }
+  [data-theme="neon"] .task-btn.check:hover { background: #38DCF2; }
+  [data-theme="neon"] .task-btn.hint:hover { background: rgba(167,139,250,0.25); }
+  [data-theme="neon"] .task-card:hover { box-shadow: 0 0 18px rgba(34,211,238,0.18); }
+  [data-theme="neon"] .task-hint-box { background: var(--surface2); color: var(--ink); border-color: rgba(167,139,250,0.35); }
+  [data-theme="neon"] .progress-fill { box-shadow: 0 0 10px rgba(34,211,238,0.6); }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--ink);
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+
+  header {
+    flex-shrink: 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .logo {
+    font-family: var(--font-head);
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--primary);
+  }
+  .logo span { color: var(--ink); }
+
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+  }
+
+  .tab-btn {
+    padding: 6px 16px;
+    border: none;
+    border-radius: 20px;
+    background: transparent;
+    font-family: var(--font-head);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink-muted);
+    cursor: pointer;
+    transition: all .2s;
+  }
+
+  .tab-btn.active {
+    background: var(--primary-light);
+    color: var(--primary);
+  }
+
+  .tab-btn:hover:not(.active) {
+    background: var(--bg);
+    color: var(--ink);
+  }
+
+
+  .page { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  .page.active { display: flex; }
+
+
+  .collection-page {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 16px;
+  }
+
+  .collection-page::-webkit-scrollbar { width: 4px; }
+  .collection-page::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .coll-header {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+
+  .coll-header h2 {
+    font-family: var(--font-head);
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .coll-header p { font-size: 13px; color: var(--ink-muted); }
+
+
+  .filter-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    justify-content: center;
+  }
+
+  .filter-chip {
+    padding: 5px 14px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-head);
+    color: var(--ink-muted);
+    background: var(--surface);
+    cursor: pointer;
+    transition: all .2s;
+  }
+
+  .filter-chip.active, .filter-chip:hover {
+    background: var(--primary-light);
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+
+
+  .tasks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .task-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    transition: box-shadow .2s;
+  }
+
+  .task-card:hover { box-shadow: 0 4px 16px rgba(43,182,115,0.1); }
+
+  .task-card.solved {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+  .task-card.flash {
+    animation: flashCard 1.2s ease;
+  }
+  @keyframes flashCard {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(43,182,115,0); }
+    30% { box-shadow: 0 0 0 4px rgba(43,182,115,0.5); }
+  }
+  .task-card.solved .task-q::before {
+    content: "✅ ";
+  }
+
+
+  .progress-wrap {
+    max-width: 320px;
+    margin: 12px auto 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    height: 14px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--primary);
+    border-radius: 20px;
+    transition: width .4s ease;
+  }
+
+  .task-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .task-tag {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--primary);
+    background: var(--primary-light);
+    padding: 2px 10px;
+    border-radius: 10px;
+  }
+
+  .task-level {
+    font-size: 11px;
+    color: var(--ink-muted);
+  }
+
+  .task-q {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+
+  .task-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .task-input {
+    flex: 1;
+    min-width: 120px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: var(--font-body);
+    font-size: 16px;
+    color: var(--ink);
+    outline: none;
+  }
+
+  .task-input:focus { border-color: var(--primary); }
+
+  .task-btn {
+    padding: 12px 18px;
+    border: none;
+    border-radius: 8px;
+    font-family: var(--font-head);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .2s;
+    white-space: nowrap;
+  }
+
+  .task-btn.check {
+    background: var(--primary);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(43,182,115,0.3);
+  }
+
+  .task-btn.check:hover { background: #24a064; }
+
+  .task-btn.hint {
+    background: var(--primary-light);
+    color: var(--primary);
+    border: 1px solid rgba(43,182,115,0.3);
+  }
+
+  .task-btn.hint:hover { background: #d4f0e4; }
+  .task-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .task-result {
+    margin-top: 10px;
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 600;
+    display: none;
+  }
+
+  .task-result.correct {
+    background: var(--primary-light);
+    color: var(--primary);
+    border: 1px solid rgba(43,182,115,0.3);
+    display: block;
+  }
+
+  .task-result.wrong {
+    background: #fff3f0;
+    color: #c0392b;
+    border: 1px solid rgba(192,57,43,0.2);
+    display: block;
+  }
+
+  .task-hint-box {
+    margin-top: 10px;
+    background: #fff8f0;
+    border: 1px solid rgba(255,158,109,0.3);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--ink);
+    line-height: 1.6;
+    display: none;
+  }
+
+  .task-hint-box .math-block {
+    background: var(--primary-light);
+    border-left: 3px solid var(--primary);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 6px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+  }
+
+  .hint-loading {
+    color: var(--ink-muted);
+    font-style: italic;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .duel-lobby{display:flex;flex-direction:column;gap:12px;max-width:340px;margin:0 auto;}
+  .duel-join{display:flex;gap:8px;}
+  .duel-roombox{text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;max-width:340px;margin:0 auto 16px;display:flex;flex-direction:column;gap:8px;align-items:center;}
+  .duel-code{font-family:var(--font-head);font-weight:700;font-size:34px;letter-spacing:5px;color:var(--primary);}
+  .duel-players{display:flex;gap:12px;max-width:340px;margin:0 auto;}
+  .duel-pcard{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center;transition:all .2s;}
+  .duel-pcard.active{border-color:var(--primary);background:var(--primary-light);}
+  .duel-pname{font-family:var(--font-head);font-weight:700;font-size:14px;color:var(--ink-muted);}
+  .duel-pscore{font-family:var(--font-head);font-weight:700;font-size:38px;color:var(--primary);}
+  .duel-turn{text-align:center;font-family:var(--font-head);font-weight:700;margin:14px 0;color:var(--ink);}
+  .duel-end{text-align:center;font-family:var(--font-head);font-weight:700;font-size:22px;color:var(--primary);margin-top:14px;}
+  .duel-log{max-width:340px;margin:16px auto 0;font-size:12px;color:var(--ink-muted);line-height:1.7;}
+  #page-duel .task-card{max-width:340px;margin:14px auto 0;}
+  [data-mp-status][data-tone="online"]{color:var(--primary);}
+  [data-mp-status][data-tone="offline"]{color:#c0392b;}
+
+  @media (max-width: 400px) {
+    .task-actions { flex-direction: column; }
+    .task-input { width: 100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+
+  .kb {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 8px 8px calc(10px + env(safe-area-inset-bottom));
+    transform: translateY(115%);
+    transition: transform .22s ease;
+    box-shadow: 0 -6px 22px rgba(0,0,0,0.22);
+  }
+  .kb.open { transform: translateY(0); }
+  .kb-grid {
+    max-width: 520px; margin: 0 auto;
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
+  }
+  .kb-key {
+    padding: 13px 0; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface2); color: var(--ink);
+    font-family: var(--font-head); font-weight: 700; font-size: 17px;
+    cursor: pointer; user-select: none;
+    transition: transform .05s ease, background .15s ease;
+  }
+  .kb-key:hover { border-color: var(--primary); }
+  .kb-key:active { transform: scale(0.93); }
+  .kb-key.op { color: var(--primary); }
+  .kb-key.fn { color: var(--accent); }
+  .kb-hide { grid-column: 1 / -1; margin-top: 2px; font-family: var(--font-body); font-size: 14px; }
+  [data-theme="neon"] .kb-key.op { box-shadow: inset 0 0 0 1px rgba(34,211,238,0.35); }
+
+
+  .helper-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 640px; margin: 0 auto 16px; }
+  .helper-chat { display: flex; flex-direction: column; gap: 12px; max-width: 640px; margin: 0 auto; }
+  .hmsg { padding: 12px 15px; border-radius: 14px; font-size: 14px; line-height: 1.65; }
+  .hmsg.you { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; max-width: 85%; }
+  .hmsg.you strong { color: inherit; }
+  .hmsg.bot { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 4px; max-width: 100%; }
+  .hmsg.bot strong { color: var(--primary); font-weight: 700; }
+  .hmsg .math-block { background: var(--primary-light); border-left: 3px solid var(--primary); border-radius: 8px; padding: 8px 12px; margin: 6px 0; font-family: 'Courier New', monospace; font-size: 13px; white-space: pre-wrap; overflow-x: auto; color: var(--ink); }
+  [data-theme="neon"] .hmsg.you { color: #06202A; }
+
+
+  html[lang="ar"] { --font-head: 'Cairo', system-ui, sans-serif; --font-body: 'Cairo', system-ui, sans-serif; }
+  [dir="rtl"] .tabs { margin-left: 0; margin-right: auto; }
+  [dir="rtl"] .task-tag { letter-spacing: 0; }
+  [dir="rtl"] .math-block { direction: ltr; text-align: left; }
+  [dir="rtl"] .task-input, [dir="rtl"] #calcInput { text-align: right; }
+  [dir="rtl"] .duel-code { direction: ltr; }
+  #langSelect { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; }
+
+
+  .medals-line { margin-top: 10px; display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .medal { font-size: 22px; transition: transform .2s ease, opacity .2s ease; }
+  .medal.locked { opacity: .28; filter: grayscale(1); }
+  .medal.got { transform: scale(1.05); }
+
+
+  .task-diff { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .task-diff.easy   { background: rgba(34,197,94,0.18);  color: #16a34a; }
+  .task-diff.medium { background: rgba(234,179,8,0.18);  color: #ca8a04; }
+  .task-diff.hard   { background: rgba(239,68,68,0.18);  color: #dc2626; }
+
+
+  @media (max-width: 520px) {
+    .task-btn   { padding: 12px 15px; font-size: 15px; }
+    .filter-chip{ padding: 10px 15px; font-size: 14px; }
+    .tab-btn    { padding: 10px 12px; font-size: 14px; }
+    .kb-key     { padding: 15px 0; font-size: 18px; }
+    .task-input, #calcInput { font-size: 16px; }
+  }
+</style>
+
+<link href="https://wai.computer/school/projects/mathai/app" rel="canonical"/></head>
+<body>
+<header>
+<div class="logo">Math<span>Ai</span></div>
+<div class="tabs">
+<button class="tab-btn active" data-i18n="tab_collection" id="tab-collection" onclick="switchPage('collection')">📚 Problems</button>
+<button class="tab-btn" data-i18n="tab_duel" id="tab-duel" onclick="switchPage('duel')">⚔️ Duel</button>
+<button class="tab-btn" data-i18n="tab_calc" id="tab-calc" onclick="switchPage('calc')">🧮 Calculator</button>
+<button class="tab-btn" data-i18n="tab_helper" id="tab-helper" onclick="switchPage('helper')">🤖 Helper</button>
+</div>
+</header>
+<div class="theme-bar">
+
+<select hidden="" id="langSelect" onchange="setLang(this.value)" style="display:none">
+
+<option value="en">🇬🇧 English</option>
+
+</select>
+<span data-i18n="themeLabel">🎨 Theme:</span>
+<select id="themeSelect" onchange="setTheme(this.value)">
+<option data-i18n="theme_neon" value="neon">🌌 Neon Space</option>
+<option data-i18n="theme_mint" value="mint">🌿 Mint</option>
+<option data-i18n="theme_cosmos" value="cosmos">🌙 Cosmos</option>
+<option data-i18n="theme_ocean" value="ocean">🌊 Ocean</option>
+<option data-i18n="theme_sunset" value="sunset">🌅 Sunset</option>
+<option data-i18n="theme_alps" value="alps">🏔️ Swiss Alps</option>
+</select>
+<button data-i18n="kbBtn" id="kbToggle" onclick="toggleKeyboard()" style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);font-family:var(--font-head);font-weight:700;font-size:13px;cursor:pointer;">⌨️ Keyboard</button>
+</div>
+
+<div class="page active" id="page-collection">
+<div class="collection-page">
+<div class="coll-header">
+<h2 data-i18n="coll_title">📚 Problem set</h2>
+<p data-i18n="coll_sub">Solve it yourself. Stuck? Open the hint with the full solution.</p>
+<p id="solvedCounter" style="margin-top:8px;font-family:var(--font-head);font-weight:700;color:var(--primary);">✅ Problems solved: 0 of 30</p>
+<div class="progress-wrap"><div class="progress-fill" id="progressFill"></div></div>
+<p id="statsLine" style="margin-top:10px;font-family:var(--font-head);font-weight:700;color:var(--ink-muted);">🔥 Streak: 0  ·  ⏱️ Best: —</p>
+<div class="medals-line" id="medalsLine"></div>
+<div data-i18n="allDone" id="allDoneBanner" style="display:none;margin:12px auto 0;max-width:340px;background:var(--primary);color:#fff;border-radius:var(--radius);padding:16px;font-family:var(--font-head);font-weight:700;font-size:18px;">🎉 You solved all 30 tasks! You are a math champion!</div>
+<div style="margin-top:12px;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;">
+<button class="task-btn check" id="musicBtn" onclick="toggleMusic()">🎵 Play music</button>
+<button class="task-btn hint" data-i18n="btn_random" onclick="randomTask()">🎲 Random task</button>
+<button class="task-btn hint" id="timerToggleBtn" onclick="toggleTimer()">⏱️ Hide timer</button>
+<button class="task-btn hint" data-i18n="selftest_btn" id="selfTestBtn" onclick="selfTest()">🧪 Test the app</button>
+<select id="musicSelect" onchange="changeMusic()" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:13px;">
+
+</select>
+</div>
+</div>
+<div class="filter-row" id="filterRow">
+<button class="filter-chip active" data-i18n="filter_all" onclick="filterTasks('all', this)">All</button>
+<button class="filter-chip" data-i18n="cat_arithmetic" onclick="filterTasks('arithmetic', this)">Arithmetic</button>
+<button class="filter-chip" data-i18n="cat_algebra" onclick="filterTasks('algebra', this)">Algebra</button>
+<button class="filter-chip" data-i18n="cat_geometry" onclick="filterTasks('geometry', this)">Geometry</button>
+<button class="filter-chip" data-i18n="cat_fractions" onclick="filterTasks('fractions', this)">Fractions</button>
+<button class="filter-chip" data-i18n="cat_analysis" onclick="filterTasks('analysis', this)">Calculus</button>
+</div>
+<div class="filter-row" id="diffRow">
+<button class="filter-chip active" data-i18n="diff_all" onclick="filterDiff('all', this)">🎚️ Any</button>
+<button class="filter-chip" data-i18n="diff_easy" onclick="filterDiff('easy', this)">🟢 Easy</button>
+<button class="filter-chip" data-i18n="diff_medium" onclick="filterDiff('medium', this)">🟡 Medium</button>
+<button class="filter-chip" data-i18n="diff_hard" onclick="filterDiff('hard', this)">🔴 Hard</button>
+</div>
+<div class="task-result" id="selfTestResult" style="display:none;max-width:420px;margin:0 auto 14px;"></div>
+<div class="tasks-list" id="tasksList"></div>
+</div>
+</div>
+
+<div class="page" id="page-duel">
+<div class="collection-page">
+<div class="coll-header">
+<h2 data-i18n="duel_title">⚔️ Online duel</h2>
+<p data-i18n="duel_sub">Create a room and give your friend the code. Take turns — first to 5 points wins!</p>
+<p data-mp-status="" style="margin-top:8px;font-family:var(--font-head);font-weight:700;">not in a room</p>
+</div>
+<div class="duel-lobby" id="duelLobby">
+<button class="task-btn check" data-i18n="duel_create" onclick="duelCreateRoom()">Create room</button>
+<div class="duel-join">
+<input autocapitalize="characters" class="task-input" data-i18n-ph="ph_roomCode" id="duelCodeInput" maxlength="6" placeholder="Room code" type="text"/>
+<button class="task-btn check" data-i18n="duel_join" onclick="duelJoinRoom()">Join</button>
+</div>
+</div>
+<div class="duel-roombox" id="duelRoomBox" style="display:none;">
+<div data-i18n="duel_codeLabel" style="font-size:13px;color:var(--ink-muted);">Room code:</div>
+<div class="duel-code" id="duelCodeShow">—</div>
+<button class="task-btn hint" data-i18n="duel_copy" onclick="duelCopyCode()">📋 Copy code</button>
+<span id="duelCopyMsg" style="font-size:12px;color:var(--primary);"></span>
+</div>
+<div id="duelBoard" style="display:none;">
+<div class="duel-players">
+<div class="duel-pcard" id="duelMe"><div class="duel-pname" data-i18n="duel_me">You</div><div class="duel-pscore" id="scoreMe">0</div></div>
+<div class="duel-pcard" id="duelYou"><div class="duel-pname" data-i18n="duel_friend">Friend</div><div class="duel-pscore" id="scoreYou">0</div></div>
+</div>
+<div class="duel-turn" data-i18n="duel_waiting" id="duelTurn">Waiting for a friend…</div>
+<div class="task-card" id="duelTaskCard" style="display:none;">
+<div class="task-q" id="duelQ"></div>
+<div class="task-actions">
+<input class="task-input" data-i18n-ph="ph_answer" id="duelAns" onkeydown="if(event.key==='Enter') duelCheck()" placeholder="Your answer…" type="text"/>
+<button class="task-btn check" data-i18n="duel_answerBtn" id="duelCheckBtn" onclick="duelCheck()">Answer</button>
+</div>
+</div>
+<div class="duel-end" id="duelEnd" style="display:none;"></div>
+<button class="task-btn check" id="duelRematchBtn" onclick="duelRematch()" style="display:none;margin:12px auto 0;">🔄 Rematch</button>
+<div class="duel-log" id="duelLog"></div>
+</div>
+</div>
+</div>
+
+<div class="page" id="page-calc">
+<div class="collection-page">
+<div class="coll-header">
+<h2 data-i18n="calc_title">🧮 Calculator</h2>
+<p data-i18n="calc_sub">Type an expression with numbers — it solves automatically. + − × ÷, brackets and powers (^) work.</p>
+</div>
+<div class="task-card" style="max-width:360px;margin:0 auto;">
+<div class="task-actions">
+<input class="task-input" data-i18n-ph="ph_calc" id="calcInput" onkeydown="if(event.key==='Enter') solveCalc()" placeholder="e.g. 48 × 25 + 100" type="text"/>
+<button class="task-btn check" data-i18n="calc_solve" onclick="solveCalc()">Solve</button>
+</div>
+<div class="task-result" id="calcResult"></div>
+</div>
+</div>
+</div>
+
+<div class="page" id="page-helper">
+<div class="collection-page">
+<div class="coll-header">
+<h2 data-i18n="helper_title">🤖 Helper</h2>
+<p data-i18n="helper_sub">Ask about a topic — I will explain simply. Or tap a topic button.</p>
+</div>
+<div class="helper-chips" id="helperChips"></div>
+<div class="task-card" style="max-width:640px;margin:0 auto 16px;">
+<div class="task-actions">
+<input class="task-input" data-i18n-ph="ph_helper" id="helperInput" onkeydown="if(event.key==='Enter') helperAsk()" placeholder="e.g. what are fractions?" type="text"/>
+<button class="task-btn check" data-i18n="helper_askBtn" onclick="helperAsk()">Ask</button>
+</div>
+</div>
+<div class="helper-chat" id="helperChat"></div>
+</div>
+</div>
+
+<div class="kb" id="kbPanel">
+<div class="kb-grid" id="kbGrid"></div>
+</div>
+<script>const TASKS = [
+    { id: 1, cat: 'arithmetic', level: "Grade 1–4", q: "Calculate: 347 + 589 − 214", answer: '722',
+        hint: "Go step by step, left to right.\n```347 + 589 = 936```\n```936 − 214 = 722```" },
+    { id: 2, cat: 'arithmetic', level: "Grade 1–4", q: "Find the product: 48 × 25", answer: '1200',
+        hint: "Trick: 25 = 100 ÷ 4. Multiply by 100, then divide by 4.\n```48 × 100 = 4800```\n```4800 ÷ 4 = 1200```" },
+    { id: 3, cat: 'fractions', level: "Grade 5–6", q: "Find the sum: 3/4 + 5/6", answer: '19/12',
+        hint: "Bring to a common denominator. LCM(4, 6) = 12.\n```3/4 = 9/12,  5/6 = 10/12```\nNow add the numerators." },
+    { id: 4, cat: 'fractions', level: "Grade 5–6", q: "Compute: 2/3 × 9/4", answer: '3/2',
+        hint: "When multiplying fractions, multiply numerators and denominators (you can reduce first).\n```(2 × 9) / (3 × 4) = 18/12 = 3/2```" },
+    { id: 5, cat: 'algebra', level: "Grade 7–8", q: "Solve the equation: 2x − 5 = 11", answer: '8',
+        hint: "Move −5 to the right, then divide by 2.\n```2x = 16``` → ```x = 8```" },
+    { id: 6, cat: 'algebra', level: "Grade 7–8", q: "Expand: (x + 3)(x − 3)", answer: 'x² − 9',
+        hint: "This is the difference of squares: (a+b)(a−b) = a² − b².\n```x² − 9```" },
+    { id: 7, cat: 'algebra', level: "Grade 8–9", q: "Solve the equation: x² − 5x + 6 = 0", answer: 'x=2, x=3',
+        hint: "Vieta's rule: find two numbers with sum 5 and product 6.\nThey are 2 and 3. Write: x=2, x=3." },
+    { id: 8, cat: 'geometry', level: "Grade 7–8", q: "Find the area of a circle with radius 5 cm. Answer in terms of π.", answer: '25π',
+        hint: "Area of a circle: S = πr².\n```S = π × 5² = 25π```" },
+    { id: 9, cat: 'geometry', level: "Grade 8–9", q: "In a right triangle the legs are 6 and 8. Find the hypotenuse.", answer: '10',
+        hint: "Pythagorean theorem: c² = a² + b².\n```c² = 36 + 64 = 100``` → ```c = 10```" },
+    { id: 10, cat: 'algebra', level: "Grade 9–10", q: "Solve the equation: 2x² + 3x − 2 = 0", answer: 'x=0.5, x=-2',
+        hint: "Using the discriminant: D = b² − 4ac.\n```D = 9 + 16 = 25```, √D = 5.\nThen x = (−b ± √D) / (2a)." },
+    { id: 11, cat: 'analysis', level: "Grade 10–11", q: "Find the derivative: f(x) = x³ − 4x + 1", answer: '3x² − 4',
+        hint: "Rule: derivative of xⁿ = n·xⁿ⁻¹, and a constant gives 0.\n```(x³)′ = 3x²,  (−4x)′ = −4,  (1)′ = 0```" },
+    { id: 12, cat: 'analysis', level: "Grade 10–11", q: "Compute: ∫ (2x + 3) dx", answer: 'x² + 3x + C',
+        hint: "Integrate each term and don't forget + C.\n```∫2x dx = x²,  ∫3 dx = 3x```" },
+    { id: 13, cat: 'geometry', level: "Grade 5–6", q: "Find the perimeter of a rectangle with sides 7 cm and 4 cm.", answer: '22',
+        hint: "Perimeter = 2 × (length + width).\n```2 × (7 + 4) = 22```" },
+    { id: 14, cat: 'fractions', level: "Grade 6–7", q: "Compute: 3⅓ − 1¾", answer: '19/12',
+        hint: "Convert mixed numbers to improper fractions, common denominator 12.\n```3⅓ = 10/3 = 40/12,  1¾ = 7/4 = 21/12```\nNow subtract: 40/12 − 21/12." },
+    { id: 15, cat: 'algebra', level: "Grade 7–8", q: "Simplify: 3a + 5b − a + 2b", answer: '2a + 7b',
+        hint: "Add the a-terms and the b-terms separately.\n```(3a − a) + (5b + 2b) = 2a + 7b```" },
+    { id: 16, cat: 'arithmetic', level: "Grade 1", q: "Calculate: 7 + 6", answer: '13',
+        hint: "Make 10: 7 + 3 = 10, then 3 more.\n```10 + 3 = 13```" },
+    { id: 17, cat: 'arithmetic', level: "Grade 2", q: "Calculate: 9 × 4", answer: '36',
+        hint: "It is 9 taken 4 times.\n```9 + 9 + 9 + 9 = 36```" },
+    { id: 18, cat: 'arithmetic', level: "Grade 3", q: "Calculate: 144 ÷ 12", answer: '12',
+        hint: "How many times does 12 fit into 144?\n```12 × 12 = 144```" },
+    { id: 19, cat: 'arithmetic', level: "Grade 4", q: "Calculate: 256 + 378", answer: '634',
+        hint: "Add in columns, starting with the ones.\n```256 + 378 = 634```" },
+    { id: 20, cat: 'fractions', level: "Grade 5", q: "Reduce the fraction: 8/12", answer: '2/3',
+        hint: "Divide the numerator and denominator by 4.\n```8 ÷ 4 = 2,  12 ÷ 4 = 3```" },
+    { id: 21, cat: 'fractions', level: "Grade 6", q: "Compute: 5/8 − 1/4", answer: '3/8',
+        hint: "Common denominator 8.\n```1/4 = 2/8```\n```5/8 − 2/8 = 3/8```" },
+    { id: 22, cat: 'arithmetic', level: "Grade 6", q: "What percent is 15 of 60?", answer: '25',
+        hint: "Divide the part by the whole and multiply by 100.\n```15 ÷ 60 × 100 = 25```" },
+    { id: 23, cat: 'algebra', level: "Grade 7", q: "Solve the equation: 5x = 45", answer: '9',
+        hint: "Divide both sides by 5.\n```45 ÷ 5 = 9```" },
+    { id: 24, cat: 'algebra', level: "Grade 8", q: "Expand: (x + 4)²", answer: 'x² + 8x + 16',
+        hint: "Square of a sum: (a+b)² = a² + 2ab + b².\n```x² + 8x + 16```" },
+    { id: 25, cat: 'geometry', level: "Grade 5", q: "Find the area of a square with side 6 cm.", answer: '36',
+        hint: "Area of a square = side × side.\n```6 × 6 = 36```" },
+    { id: 26, cat: 'geometry', level: "Grade 6", q: "Find the area of a rectangle 8 cm by 5 cm.", answer: '40',
+        hint: "Area = length × width.\n```8 × 5 = 40```" },
+    { id: 27, cat: 'geometry', level: "Grade 9", q: "The sum of a triangle's angles. How many degrees?", answer: '180',
+        hint: "Every triangle has the same angle sum.\n```180```" },
+    { id: 28, cat: 'algebra', level: "Grade 9", q: "Solve the equation: x² = 49", answer: 'x=7, x=-7',
+        hint: "The root of 49 is 7, but there is also a minus.\n```x = 7  or  x = -7```" },
+    { id: 29, cat: 'analysis', level: "Grade 10", q: "Find the derivative: f(x) = 5x²", answer: '10x',
+        hint: "Rule: (xⁿ)′ = n·xⁿ⁻¹.\n```(5x²)′ = 10x```" },
+    { id: 30, cat: 'analysis', level: "Grade 11", q: "Compute: ∫ x² dx", answer: 'x³/3 + C',
+        hint: "Increase the power by 1 and divide by the new power, don't forget + C.\n```∫x² dx = x³/3 + C```" },
+];
+let LANG = 'ru';
+const I18N = {
+    ru: {
+        tab_collection: "📚 Problems", tab_duel: "⚔️ Duel", tab_calc: "🧮 Calculator", tab_helper: "🤖 Helper",
+        langLabel: "🌐 Language:", themeLabel: "🎨 Theme:", kbBtn: "⌨️ Keyboard",
+        theme_neon: "🌌 Neon Space", theme_mint: "🌿 Mint", theme_cosmos: "🌙 Cosmos", theme_ocean: "🌊 Ocean", theme_sunset: "🌅 Sunset", theme_alps: "🏔️ Swiss Alps",
+        coll_title: "📚 Problem set", coll_sub: "Solve it yourself. Stuck? Open the hint with the full solution.",
+        btn_musicOn: "🎵 Play music", btn_musicOff: "🔇 Stop music", btn_random: "🎲 Random task",
+        btn_timerHide: "⏱️ Hide timer", btn_timerShow: "⏱️ Show timer",
+        filter_all: "All", cat_arithmetic: "Arithmetic", cat_algebra: "Algebra", cat_geometry: "Geometry", cat_fractions: "Fractions", cat_analysis: "Calculus",
+        ph_answer: "Your answer…", btn_check: "Check", btn_hint: "💡 Hint", btn_showAns: "🙋 Show answer",
+        res_correct: "✅ Correct! Great job!", res_wrong: "❌ Not quite. Try again or open the hint.",
+        res_showAns: "🙋 Correct answer:", hint_prefix: "💡 Hint:", hint_default: "Break the task into small steps and solve one at a time.",
+        solved: "✅ Solved: {n} of {t}", streak: "🔥 Streak: {n}", record: "⏱️ Best: {v}", record_none: '—', sec: "s",
+        allDone: "🎉 You solved all 30 tasks! You are a math champion!",
+        duel_title: "⚔️ Online duel", duel_sub: "Create a room and give your friend the code. Take turns — first to 5 points wins!",
+        duel_notInRoom: "not in a room", duel_create: "Create room", ph_roomCode: "Room code", duel_join: "Join",
+        duel_codeLabel: "Room code:", duel_copy: "📋 Copy code", duel_copied: "copied ✓", duel_copyManual: "copy manually:",
+        duel_me: "You", duel_friend: "Friend", duel_waiting: "Waiting for a friend…", duel_answerBtn: "Answer", duel_rematch: "🔄 Rematch",
+        duel_yourTurn: "Your turn! Solve the task.", duel_friendTurn: "Friend's turn…", duel_youWin: "🏆 You won!", duel_youLose: "Your friend reached 5 points. Better luck next time!",
+        log_created: "Room created. Give your friend the code:", log_joining: "Joining room", log_startedHost: "Friend joined! The game has started.", log_started: "The game has started!",
+        log_youRight: "You answered correctly (+1)! Turn passes to your friend. Your score:", log_youWrong: "You were wrong. Turn passes to your friend.",
+        log_friendRight: "Friend answered correctly (+1).", log_friendWrong: "Friend was wrong.", log_rematch: "Rematch! New game.", log_askHost: "Asking the host to start a rematch…",
+        status_ready: "room {room} is ready", status_short: "room code is too short", status_joining: "joining room {room}",
+        status_needRoom: "first create or enter a room code", status_online: "online · room {room}",
+        status_rate: "too many actions, waiting 3 seconds", status_rate2: "rate limit, waiting 3 seconds", status_reconnect: "reconnecting to the room",
+        calc_title: "🧮 Calculator", calc_sub: "Type an expression with numbers — it solves automatically. + − × ÷, brackets and powers (^) work.",
+        ph_calc: "e.g. 48 × 25 + 100", calc_solve: "Solve",
+        calc_words: "I can only compute expressions with numbers (+ − × ÷, brackets, powers). I cannot solve word problems — that needs a big AI, which is not built in here. Try it yourself or check the Problem set!",
+        calc_badWrite: "❌ I did not understand. Write like: 12 + 8 × 3", calc_div0: "❌ You cannot divide by zero (or the number is too big).", calc_badCheck: "❌ I did not understand. Check the brackets and signs.",
+        helper_title: "🤖 Helper", helper_sub: "Ask about a topic — I will explain simply. Or tap a topic button.",
+        ph_helper: "e.g. what are fractions?", helper_askBtn: "Ask",
+        helper_greeting: "Hi! I am the MathAi helper 🤖 I explain school math in simple words. Tap a topic below or type a question — for example \"what are fractions?\".",
+        helper_fallback: "For now I explain these topics:", kb_hide: "▼ Hide",
+        diff_all: "🎚️ Any", diff_easy: "🟢 Easy", diff_medium: "🟡 Medium", diff_hard: "🔴 Hard",
+        difftag_easy: "Easy", difftag_medium: "Medium", difftag_hard: "Hard",
+        medals_label: "🏅 Awards:", medal_need: "Earned for solving {n} tasks",
+        hint_more: "➕ One more step", why_prefix: "🤔 Why:", speak_title: "🔊 Read aloud",
+        selftest_btn: "🧪 Test the app", selftest_ok: "✅ Check passed: all {n} tasks are graded correctly!",
+        selftest_bad: "⚠️ Something is wrong with tasks #: {n}"
+    },
+    en: {
+        tab_collection: '📚 Problems', tab_duel: '⚔️ Duel', tab_calc: '🧮 Calculator', tab_helper: '🤖 Helper',
+        langLabel: '🌐 Language:', themeLabel: '🎨 Theme:', kbBtn: '⌨️ Keyboard',
+        theme_neon: '🌌 Neon Space', theme_mint: '🌿 Mint', theme_cosmos: '🌙 Cosmos', theme_ocean: '🌊 Ocean', theme_sunset: '🌅 Sunset', theme_alps: '🏔️ Swiss Alps',
+        coll_title: '📚 Problem set', coll_sub: 'Solve it yourself. Stuck? Open the hint with the full solution.',
+        btn_musicOn: '🎵 Play music', btn_musicOff: '🔇 Stop music', btn_random: '🎲 Random task',
+        btn_timerHide: '⏱️ Hide timer', btn_timerShow: '⏱️ Show timer',
+        filter_all: 'All', cat_arithmetic: 'Arithmetic', cat_algebra: 'Algebra', cat_geometry: 'Geometry', cat_fractions: 'Fractions', cat_analysis: 'Calculus',
+        ph_answer: 'Your answer…', btn_check: 'Check', btn_hint: '💡 Hint', btn_showAns: '🙋 Show answer',
+        res_correct: '✅ Correct! Great job!', res_wrong: '❌ Not quite. Try again or open the hint.',
+        res_showAns: '🙋 Correct answer:', hint_prefix: '💡 Hint:', hint_default: 'Break the task into small steps and solve one at a time.',
+        solved: '✅ Solved: {n} of {t}', streak: '🔥 Streak: {n}', record: '⏱️ Best: {v}', record_none: '—', sec: 's',
+        allDone: '🎉 You solved all 30 tasks! You are a math champion!',
+        duel_title: '⚔️ Online duel', duel_sub: 'Create a room and give your friend the code. Take turns — first to 5 points wins!',
+        duel_notInRoom: 'not in a room', duel_create: 'Create room', ph_roomCode: 'Room code', duel_join: 'Join',
+        duel_codeLabel: 'Room code:', duel_copy: '📋 Copy code', duel_copied: 'copied ✓', duel_copyManual: 'copy manually:',
+        duel_me: 'You', duel_friend: 'Friend', duel_waiting: 'Waiting for a friend…', duel_answerBtn: 'Answer', duel_rematch: '🔄 Rematch',
+        duel_yourTurn: 'Your turn! Solve the task.', duel_friendTurn: "Friend's turn…", duel_youWin: '🏆 You won!', duel_youLose: 'Your friend reached 5 points. Better luck next time!',
+        log_created: 'Room created. Give your friend the code:', log_joining: 'Joining room', log_startedHost: 'Friend joined! The game has started.', log_started: 'The game has started!',
+        log_youRight: 'You answered correctly (+1)! Turn passes to your friend. Your score:', log_youWrong: 'You were wrong. Turn passes to your friend.',
+        log_friendRight: 'Friend answered correctly (+1).', log_friendWrong: 'Friend was wrong.', log_rematch: 'Rematch! New game.', log_askHost: 'Asking the host to start a rematch…',
+        status_ready: 'room {room} is ready', status_short: 'room code is too short', status_joining: 'joining room {room}',
+        status_needRoom: 'first create or enter a room code', status_online: 'online · room {room}',
+        status_rate: 'too many actions, waiting 3 seconds', status_rate2: 'rate limit, waiting 3 seconds', status_reconnect: 'reconnecting to the room',
+        calc_title: '🧮 Calculator', calc_sub: 'Type an expression with numbers — it solves automatically. + − × ÷, brackets and powers (^) work.',
+        ph_calc: 'e.g. 48 × 25 + 100', calc_solve: 'Solve',
+        calc_words: 'I can only compute expressions with numbers (+ − × ÷, brackets, powers). I cannot solve word problems — that needs a big AI, which is not built in here. Try it yourself or check the Problem set!',
+        calc_badWrite: '❌ I did not understand. Write like: 12 + 8 × 3', calc_div0: '❌ You cannot divide by zero (or the number is too big).', calc_badCheck: '❌ I did not understand. Check the brackets and signs.',
+        helper_title: '🤖 Helper', helper_sub: 'Ask about a topic — I will explain simply. Or tap a topic button.',
+        ph_helper: 'e.g. what are fractions?', helper_askBtn: 'Ask',
+        helper_greeting: 'Hi! I am the MathAi helper 🤖 I explain school math in simple words. Tap a topic below or type a question — for example "what are fractions?".',
+        helper_fallback: 'For now I explain these topics:', kb_hide: '▼ Hide',
+        diff_all: '🎚️ Any', diff_easy: '🟢 Easy', diff_medium: '🟡 Medium', diff_hard: '🔴 Hard',
+        difftag_easy: 'Easy', difftag_medium: 'Medium', difftag_hard: 'Hard',
+        medals_label: '🏅 Awards:', medal_need: 'Earned for solving {n} tasks',
+        hint_more: '➕ One more step', why_prefix: '🤔 Why:', speak_title: '🔊 Read aloud',
+        selftest_btn: '🧪 Test the app', selftest_ok: '✅ Check passed: all {n} tasks are graded correctly!',
+        selftest_bad: '⚠️ Something is wrong with tasks #: {n}'
+    },
+    ar: {
+        tab_collection: '📚 التمارين', tab_duel: '⚔️ مبارزة', tab_calc: '🧮 آلة حاسبة', tab_helper: '🤖 مساعد',
+        langLabel: '🌐 اللغة:', themeLabel: '🎨 السمة:', kbBtn: '⌨️ لوحة المفاتيح',
+        theme_neon: '🌌 فضاء نيون', theme_mint: '🌿 نعناعي', theme_cosmos: '🌙 كون', theme_ocean: '🌊 محيط', theme_sunset: '🌅 غروب', theme_alps: '🏔️ جبال الألب',
+        coll_title: '📚 مجموعة التمارين', coll_sub: 'حُلّ بنفسك. إذا واجهت صعوبة، افتح التلميح مع الشرح.',
+        btn_musicOn: '🎵 تشغيل الموسيقى', btn_musicOff: '🔇 إيقاف الموسيقى', btn_random: '🎲 تمرين عشوائي',
+        btn_timerHide: '⏱️ إخفاء المؤقّت', btn_timerShow: '⏱️ إظهار المؤقّت',
+        filter_all: 'الكل', cat_arithmetic: 'الحساب', cat_algebra: 'الجبر', cat_geometry: 'الهندسة', cat_fractions: 'الكسور', cat_analysis: 'التحليل',
+        ph_answer: 'إجابتك…', btn_check: 'تحقّق', btn_hint: '💡 تلميح', btn_showAns: '🙋 أظهر الإجابة',
+        res_correct: '✅ صحيح! أحسنت!', res_wrong: '❌ ليس تماماً. حاول مرة أخرى أو افتح التلميح.',
+        res_showAns: '🙋 الإجابة الصحيحة:', hint_prefix: '💡 تلميح:', hint_default: 'قسّم التمرين إلى خطوات صغيرة وحُلّها واحدة تلو الأخرى.',
+        solved: '✅ حُلّ: {n} من {t}', streak: '🔥 السلسلة: {n}', record: '⏱️ الأفضل: {v}', record_none: '—', sec: 'ث',
+        allDone: '🎉 لقد حللت كل الـ30 تمريناً! أنت بطل الرياضيات!',
+        duel_title: '⚔️ مبارزة عبر الإنترنت', duel_sub: 'أنشئ غرفة وأعطِ صديقك الرمز. تلعبان بالتناوب — أول من يصل إلى 5 نقاط يفوز!',
+        duel_notInRoom: 'لست في غرفة', duel_create: 'أنشئ غرفة', ph_roomCode: 'رمز الغرفة', duel_join: 'انضمّ',
+        duel_codeLabel: 'رمز الغرفة:', duel_copy: '📋 انسخ الرمز', duel_copied: 'تم النسخ ✓', duel_copyManual: 'انسخ يدوياً:',
+        duel_me: 'أنت', duel_friend: 'صديق', duel_waiting: 'بانتظار صديق…', duel_answerBtn: 'أجب', duel_rematch: '🔄 مباراة جديدة',
+        duel_yourTurn: 'دورك! حُلّ التمرين.', duel_friendTurn: 'دور صديقك…', duel_youWin: '🏆 لقد فزت!', duel_youLose: 'حصل صديقك على 5 نقاط. حظاً أوفر في المرة القادمة!',
+        log_created: 'تم إنشاء الغرفة. أعطِ صديقك الرمز:', log_joining: 'جارٍ الدخول إلى الغرفة', log_startedHost: 'انضمّ صديقك! بدأت اللعبة.', log_started: 'بدأت اللعبة!',
+        log_youRight: 'أجبت بشكل صحيح (+1)! الدور ينتقل لصديقك. نتيجتك:', log_youWrong: 'أخطأت. الدور ينتقل لصديقك.',
+        log_friendRight: 'أجاب صديقك بشكل صحيح (+1).', log_friendWrong: 'أخطأ صديقك.', log_rematch: 'مباراة جديدة! لعبة جديدة.', log_askHost: 'نطلب من المضيف بدء مباراة جديدة…',
+        status_ready: 'الغرفة {room} جاهزة', status_short: 'رمز الغرفة قصير جداً', status_joining: 'جارٍ الدخول إلى الغرفة {room}',
+        status_needRoom: 'أنشئ غرفة أو أدخل رمزاً أولاً', status_online: 'متصل · الغرفة {room}',
+        status_rate: 'إجراءات كثيرة، ننتظر 3 ثوانٍ', status_rate2: 'تجاوز الحد، ننتظر 3 ثوانٍ', status_reconnect: 'إعادة الاتصال بالغرفة',
+        calc_title: '🧮 آلة حاسبة', calc_sub: 'اكتب مثالاً بالأرقام — يُحلّ تلقائياً. تعمل + − × ÷ والأقواس والأسس (^).',
+        ph_calc: 'مثال: 48 × 25 + 100', calc_solve: 'احسب',
+        calc_words: 'أستطيع حساب الأمثلة بالأرقام فقط (+ − × ÷، الأقواس، الأسس). لا أستطيع حل المسائل الكلامية — يحتاج ذلك إلى ذكاء اصطناعي كبير غير مدمج هنا. جرّب بنفسك أو اطّلع على مجموعة التمارين!',
+        calc_badWrite: '❌ لم أفهم المثال. اكتب هكذا: 12 + 8 × 3', calc_div0: '❌ لا يمكن القسمة على صفر (أو أن الرقم كبير جداً).', calc_badCheck: '❌ لم أفهم المثال. تحقّق من الأقواس والإشارات.',
+        helper_title: '🤖 مساعد', helper_sub: 'اسأل عن موضوع — سأشرح ببساطة. أو اضغط زر موضوع.',
+        ph_helper: 'مثال: ما هي الكسور؟', helper_askBtn: 'اسأل',
+        helper_greeting: 'مرحباً! أنا مساعد MathAi 🤖 أشرح رياضيات المدرسة بكلمات بسيطة. اضغط موضوعاً بالأسفل أو اكتب سؤالاً — مثل «ما هي الكسور؟».',
+        helper_fallback: 'أشرح حالياً هذه المواضيع:', kb_hide: '▼ إخفاء',
+        diff_all: '🎚️ أي', diff_easy: '🟢 سهل', diff_medium: '🟡 متوسط', diff_hard: '🔴 صعب',
+        difftag_easy: 'سهل', difftag_medium: 'متوسط', difftag_hard: 'صعب',
+        medals_label: '🏅 الجوائز:', medal_need: 'تُمنح عند حل {n} تمارين',
+        hint_more: '➕ خطوة أخرى', why_prefix: '🤔 لماذا:', speak_title: '🔊 اقرأ بصوت عالٍ',
+        selftest_btn: '🧪 افحص التطبيق', selftest_ok: '✅ نجح الفحص: كل الـ{n} تمارين تُصحّح بشكل صحيح!',
+        selftest_bad: '⚠️ هناك خطأ في التمارين رقم: {n}'
+    }
+};
+const TASKS_TR = {
+    en: {
+        1: { level: 'Grade 1–4', q: 'Calculate: 347 + 589 − 214', hint: 'Go step by step, left to right.\n```347 + 589 = 936```\n```936 − 214 = 722```' },
+        2: { level: 'Grade 1–4', q: 'Find the product: 48 × 25', hint: 'Trick: 25 = 100 ÷ 4. Multiply by 100, then divide by 4.\n```48 × 100 = 4800```\n```4800 ÷ 4 = 1200```' },
+        3: { level: 'Grade 5–6', q: 'Find the sum: 3/4 + 5/6', hint: 'Bring to a common denominator. LCM(4, 6) = 12.\n```3/4 = 9/12,  5/6 = 10/12```\nNow add the numerators.' },
+        4: { level: 'Grade 5–6', q: 'Compute: 2/3 × 9/4', hint: 'When multiplying fractions, multiply numerators and denominators (you can reduce first).\n```(2 × 9) / (3 × 4) = 18/12 = 3/2```' },
+        5: { level: 'Grade 7–8', q: 'Solve the equation: 2x − 5 = 11', hint: 'Move −5 to the right, then divide by 2.\n```2x = 16``` → ```x = 8```' },
+        6: { level: 'Grade 7–8', q: 'Expand: (x + 3)(x − 3)', hint: 'This is the difference of squares: (a+b)(a−b) = a² − b².\n```x² − 9```' },
+        7: { level: 'Grade 8–9', q: 'Solve the equation: x² − 5x + 6 = 0', hint: "Vieta's rule: find two numbers with sum 5 and product 6.\nThey are 2 and 3. Write: x=2, x=3." },
+        8: { level: 'Grade 7–8', q: 'Find the area of a circle with radius 5 cm. Answer in terms of π.', hint: 'Area of a circle: S = πr².\n```S = π × 5² = 25π```' },
+        9: { level: 'Grade 8–9', q: 'In a right triangle the legs are 6 and 8. Find the hypotenuse.', hint: 'Pythagorean theorem: c² = a² + b².\n```c² = 36 + 64 = 100``` → ```c = 10```' },
+        10: { level: 'Grade 9–10', q: 'Solve the equation: 2x² + 3x − 2 = 0', hint: 'Using the discriminant: D = b² − 4ac.\n```D = 9 + 16 = 25```, √D = 5.\nThen x = (−b ± √D) / (2a).' },
+        11: { level: 'Grade 10–11', q: 'Find the derivative: f(x) = x³ − 4x + 1', hint: 'Rule: derivative of xⁿ = n·xⁿ⁻¹, and a constant gives 0.\n```(x³)′ = 3x²,  (−4x)′ = −4,  (1)′ = 0```' },
+        12: { level: 'Grade 10–11', q: 'Compute: ∫ (2x + 3) dx', hint: "Integrate each term and don't forget + C.\n```∫2x dx = x²,  ∫3 dx = 3x```" },
+        13: { level: 'Grade 5–6', q: 'Find the perimeter of a rectangle with sides 7 cm and 4 cm.', hint: 'Perimeter = 2 × (length + width).\n```2 × (7 + 4) = 22```' },
+        14: { level: 'Grade 6–7', q: 'Compute: 3⅓ − 1¾', hint: 'Convert mixed numbers to improper fractions, common denominator 12.\n```3⅓ = 10/3 = 40/12,  1¾ = 7/4 = 21/12```\nNow subtract: 40/12 − 21/12.' },
+        15: { level: 'Grade 7–8', q: 'Simplify: 3a + 5b − a + 2b', hint: 'Add the a-terms and the b-terms separately.\n```(3a − a) + (5b + 2b) = 2a + 7b```' },
+        16: { level: 'Grade 1', q: 'Calculate: 7 + 6', hint: 'Make 10: 7 + 3 = 10, then 3 more.\n```10 + 3 = 13```' },
+        17: { level: 'Grade 2', q: 'Calculate: 9 × 4', hint: 'It is 9 taken 4 times.\n```9 + 9 + 9 + 9 = 36```' },
+        18: { level: 'Grade 3', q: 'Calculate: 144 ÷ 12', hint: 'How many times does 12 fit into 144?\n```12 × 12 = 144```' },
+        19: { level: 'Grade 4', q: 'Calculate: 256 + 378', hint: 'Add in columns, starting with the ones.\n```256 + 378 = 634```' },
+        20: { level: 'Grade 5', q: 'Reduce the fraction: 8/12', hint: 'Divide the numerator and denominator by 4.\n```8 ÷ 4 = 2,  12 ÷ 4 = 3```' },
+        21: { level: 'Grade 6', q: 'Compute: 5/8 − 1/4', hint: 'Common denominator 8.\n```1/4 = 2/8```\n```5/8 − 2/8 = 3/8```' },
+        22: { level: 'Grade 6', q: 'What percent is 15 of 60?', hint: 'Divide the part by the whole and multiply by 100.\n```15 ÷ 60 × 100 = 25```' },
+        23: { level: 'Grade 7', q: 'Solve the equation: 5x = 45', hint: 'Divide both sides by 5.\n```45 ÷ 5 = 9```' },
+        24: { level: 'Grade 8', q: 'Expand: (x + 4)²', hint: 'Square of a sum: (a+b)² = a² + 2ab + b².\n```x² + 8x + 16```' },
+        25: { level: 'Grade 5', q: 'Find the area of a square with side 6 cm.', hint: 'Area of a square = side × side.\n```6 × 6 = 36```' },
+        26: { level: 'Grade 6', q: 'Find the area of a rectangle 8 cm by 5 cm.', hint: 'Area = length × width.\n```8 × 5 = 40```' },
+        27: { level: 'Grade 9', q: "The sum of a triangle's angles. How many degrees?", hint: 'Every triangle has the same angle sum.\n```180```' },
+        28: { level: 'Grade 9', q: 'Solve the equation: x² = 49', hint: 'The root of 49 is 7, but there is also a minus.\n```x = 7  or  x = -7```' },
+        29: { level: 'Grade 10', q: 'Find the derivative: f(x) = 5x²', hint: 'Rule: (xⁿ)′ = n·xⁿ⁻¹.\n```(5x²)′ = 10x```' },
+        30: { level: 'Grade 11', q: 'Compute: ∫ x² dx', hint: "Increase the power by 1 and divide by the new power, don't forget + C.\n```∫x² dx = x³/3 + C```" }
+    },
+    ar: {
+        1: { level: 'الصفوف 1–4', q: 'احسب: 347 + 589 − 214', hint: 'احسب خطوة بخطوة من اليسار إلى اليمين.\n```347 + 589 = 936```\n```936 − 214 = 722```' },
+        2: { level: 'الصفوف 1–4', q: 'أوجد حاصل الضرب: 48 × 25', hint: 'حيلة: 25 = 100 ÷ 4. اضرب في 100 ثم اقسم على 4.\n```48 × 100 = 4800```\n```4800 ÷ 4 = 1200```' },
+        3: { level: 'الصفوف 5–6', q: 'أوجد المجموع: 3/4 + 5/6', hint: 'وحّد المقامات. م.م.أ(4، 6) = 12.\n```3/4 = 9/12,  5/6 = 10/12```\nثم اجمع البسطين.' },
+        4: { level: 'الصفوف 5–6', q: 'احسب: 2/3 × 9/4', hint: 'عند ضرب الكسور اضرب البسط بالبسط والمقام بالمقام (يمكن الاختصار مسبقاً).\n```(2 × 9) / (3 × 4) = 18/12 = 3/2```' },
+        5: { level: 'الصفوف 7–8', q: 'حُلّ المعادلة: 2x − 5 = 11', hint: 'انقل −5 إلى اليمين ثم اقسم على 2.\n```2x = 16``` → ```x = 8```' },
+        6: { level: 'الصفوف 7–8', q: 'افتح الأقواس: (x + 3)(x − 3)', hint: 'هذه صيغة فرق المربعين: (a+b)(a−b) = a² − b².\n```x² − 9```' },
+        7: { level: 'الصفوف 8–9', q: 'حُلّ المعادلة: x² − 5x + 6 = 0', hint: 'قانون فييت: ابحث عن عددين مجموعهما 5 وحاصل ضربهما 6.\nهما 2 و 3. اكتب: x=2, x=3.' },
+        8: { level: 'الصفوف 7–8', q: 'أوجد مساحة دائرة نصف قطرها 5 سم. الجواب بدلالة π.', hint: 'مساحة الدائرة: S = πr².\n```S = π × 5² = 25π```' },
+        9: { level: 'الصفوف 8–9', q: 'في مثلث قائم الزاوية الضلعان القائمان 6 و 8. أوجد الوتر.', hint: 'نظرية فيثاغورس: c² = a² + b².\n```c² = 36 + 64 = 100``` → ```c = 10```' },
+        10: { level: 'الصفوف 9–10', q: 'حُلّ المعادلة: 2x² + 3x − 2 = 0', hint: 'بالمميّز: D = b² − 4ac.\n```D = 9 + 16 = 25```، √D = 5.\nثم x = (−b ± √D) / (2a).' },
+        11: { level: 'الصفوف 10–11', q: 'أوجد المشتقة: f(x) = x³ − 4x + 1', hint: 'القاعدة: مشتقة xⁿ = n·xⁿ⁻¹، والعدد الثابت يعطي 0.\n```(x³)′ = 3x²,  (−4x)′ = −4,  (1)′ = 0```' },
+        12: { level: 'الصفوف 10–11', q: 'احسب التكامل: ∫ (2x + 3) dx', hint: 'كامل كل حد ولا تنسَ + C.\n```∫2x dx = x²,  ∫3 dx = 3x```' },
+        13: { level: 'الصفوف 5–6', q: 'أوجد محيط مستطيل ضلعاه 7 سم و 4 سم.', hint: 'المحيط = 2 × (الطول + العرض).\n```2 × (7 + 4) = 22```' },
+        14: { level: 'الصفوف 6–7', q: 'احسب: 3⅓ − 1¾', hint: 'حوّل الأعداد الكسرية إلى كسور غير حقيقية، المقام المشترك 12.\n```3⅓ = 10/3 = 40/12,  1¾ = 7/4 = 21/12```\nثم اطرح: 40/12 − 21/12.' },
+        15: { level: 'الصفوف 7–8', q: 'بسّط العبارة: 3a + 5b − a + 2b', hint: 'اجمع حدود a معاً وحدود b معاً.\n```(3a − a) + (5b + 2b) = 2a + 7b```' },
+        16: { level: 'الصف 1', q: 'احسب: 7 + 6', hint: 'أكمل إلى 10: 7 + 3 = 10، ويبقى 3.\n```10 + 3 = 13```' },
+        17: { level: 'الصف 2', q: 'احسب: 9 × 4', hint: 'هذا 9 مأخوذة 4 مرات.\n```9 + 9 + 9 + 9 = 36```' },
+        18: { level: 'الصف 3', q: 'احسب: 144 ÷ 12', hint: 'كم مرة يدخل 12 في 144؟\n```12 × 12 = 144```' },
+        19: { level: 'الصف 4', q: 'احسب: 256 + 378', hint: 'اجمع عمودياً بدءاً من الآحاد.\n```256 + 378 = 634```' },
+        20: { level: 'الصف 5', q: 'اختصر الكسر: 8/12', hint: 'اقسم البسط والمقام على 4.\n```8 ÷ 4 = 2,  12 ÷ 4 = 3```' },
+        21: { level: 'الصف 6', q: 'احسب: 5/8 − 1/4', hint: 'المقام المشترك 8.\n```1/4 = 2/8```\n```5/8 − 2/8 = 3/8```' },
+        22: { level: 'الصف 6', q: 'كم نسبة 15 من 60؟', hint: 'اقسم الجزء على الكل واضرب في 100.\n```15 ÷ 60 × 100 = 25```' },
+        23: { level: 'الصف 7', q: 'حُلّ المعادلة: 5x = 45', hint: 'اقسم الطرفين على 5.\n```45 ÷ 5 = 9```' },
+        24: { level: 'الصف 8', q: 'افتح الأقواس: (x + 4)²', hint: 'صيغة مربع المجموع: (a+b)² = a² + 2ab + b².\n```x² + 8x + 16```' },
+        25: { level: 'الصف 5', q: 'أوجد مساحة مربع طول ضلعه 6 سم.', hint: 'مساحة المربع = الضلع × الضلع.\n```6 × 6 = 36```' },
+        26: { level: 'الصف 6', q: 'أوجد مساحة مستطيل 8 سم في 5 سم.', hint: 'المساحة = الطول × العرض.\n```8 × 5 = 40```' },
+        27: { level: 'الصف 9', q: 'مجموع زوايا المثلث. كم درجة؟', hint: 'مجموع زوايا أي مثلث ثابت.\n```180```' },
+        28: { level: 'الصف 9', q: 'حُلّ المعادلة: x² = 49', hint: 'جذر 49 هو 7، لكن هناك أيضاً سالب.\n```x = 7  أو  x = -7```' },
+        29: { level: 'الصف 10', q: 'أوجد المشتقة: f(x) = 5x²', hint: 'القاعدة: (xⁿ)′ = n·xⁿ⁻¹.\n```(5x²)′ = 10x```' },
+        30: { level: 'الصف 11', q: 'احسب التكامل: ∫ x² dx', hint: 'ارفع الأس بمقدار 1 واقسم على الأس الجديد، ولا تنسَ + C.\n```∫x² dx = x³/3 + C```' }
+    }
+};
+function t(k) { const L = I18N[LANG] || I18N.ru; return (L[k] != null) ? L[k] : (I18N.ru[k] != null ? I18N.ru[k] : k); }
+function tf(task, f) { const tr = TASKS_TR[LANG]; if (tr && tr[task.id] && tr[task.id][f] != null)
+    return tr[task.id][f]; return task[f]; }
+function kbList() { return (typeof KNOWLEDGE_TR !== 'undefined' && KNOWLEDGE_TR[LANG]) ? KNOWLEDGE_TR[LANG] : KNOWLEDGE; }
+const _memStore = {};
+const MEM = { setItem: function (k, v) { _memStore[k] = String(v); }, getItem: function (k) { return (k in _memStore) ? _memStore[k] : null; } };
+function setLang(l) { applyLang(l); }
+function applyLang(lang) {
+    LANG = 'en';
+    try {
+        MEM.setItem('mathai_lang', LANG);
+    }
+    catch (e) { }
+    const html = document.documentElement;
+    html.setAttribute('lang', LANG);
+    html.setAttribute('dir', LANG === 'ar' ? 'rtl' : 'ltr');
+    document.querySelectorAll('[data-i18n]').forEach(el => { const v = t(el.getAttribute('data-i18n')); if (v != null)
+        el.textContent = v; });
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => { const v = t(el.getAttribute('data-i18n-ph')); if (v != null)
+        el.placeholder = v; });
+    const ls = document.getElementById('langSelect');
+    if (ls)
+        ls.value = LANG;
+    if (typeof buildMusicOptions === 'function')
+        buildMusicOptions();
+    if (typeof renderTasks === 'function') {
+        renderTasks(currentFilter);
+        updateProgress();
+        updateStats();
+        checkAllDone();
+    }
+    const mb = document.getElementById('musicBtn');
+    if (mb)
+        mb.textContent = (typeof musicOn !== 'undefined' && musicOn) ? t('btn_musicOff') : t('btn_musicOn');
+    const tb = document.getElementById('timerToggleBtn');
+    if (tb)
+        tb.textContent = (typeof timerOn !== 'undefined' && timerOn) ? t('btn_timerHide') : t('btn_timerShow');
+    const kh = document.querySelector('.kb-hide');
+    if (kh)
+        kh.textContent = t('kb_hide');
+    if (typeof buildHelperChips === 'function') {
+        buildHelperChips();
+        helperReset();
+    }
+    const st = document.querySelector('[data-mp-status]');
+    if (st && (typeof MP_ROOM === 'undefined' || !MP_ROOM))
+        st.textContent = t('duel_notInRoom');
+    if (typeof MP_ROOM !== 'undefined' && MP_ROOM && typeof renderDuel === 'function')
+        renderDuel();
+}
+function initLang() {
+    let saved = 'ru';
+    try {
+        saved = MEM.getItem('mathai_lang') || 'ru';
+    }
+    catch (e) { }
+    applyLang(saved);
+}
+let currentFilter = 'all';
+let currentDiff = 'all';
+const hintStep = {};
+const wrongCount = {};
+const solvedSet = new Set();
+function taskDiff(task) {
+    const m = String(task.level).match(/\d+/);
+    const g = m ? Number(m[0]) : 5;
+    if (g <= 6)
+        return 'easy';
+    if (g <= 8)
+        return 'medium';
+    return 'hard';
+}
+function playWin() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const notes = [523, 659, 784];
+        notes.forEach((f, i) => {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.type = 'triangle';
+            o.frequency.value = f;
+            o.connect(g);
+            g.connect(ctx.destination);
+            const t = ctx.currentTime + i * 0.12;
+            g.gain.setValueAtTime(0.0001, t);
+            g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+            o.start(t);
+            o.stop(t + 0.2);
+        });
+    }
+    catch (e) { }
+}
+function playLose() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const notes = [392, 311, 233];
+        notes.forEach((f, i) => {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.type = 'sine';
+            o.frequency.value = f;
+            o.connect(g);
+            g.connect(ctx.destination);
+            const t = ctx.currentTime + i * 0.15;
+            g.gain.setValueAtTime(0.0001, t);
+            g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+            o.start(t);
+            o.stop(t + 0.25);
+        });
+    }
+    catch (e) { }
+}
+function escHtml(t) {
+    return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function filterTasks(cat, btn) {
+    currentFilter = cat;
+    btn.closest('.filter-row').querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    renderTasks(currentFilter);
+}
+function filterDiff(diff, btn) {
+    currentDiff = diff;
+    btn.closest('.filter-row').querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    renderTasks(currentFilter);
+}
+function visibleTasks() {
+    let list = currentFilter === 'all' ? TASKS : TASKS.filter(t => t.cat === currentFilter);
+    if (currentDiff !== 'all')
+        list = list.filter(t => taskDiff(t) === currentDiff);
+    return list;
+}
+function renderTasks(cat) {
+    currentFilter = cat;
+    const list = document.getElementById('tasksList');
+    const filtered = visibleTasks();
+    list.innerHTML = '';
+    filtered.forEach(task => {
+        const d = taskDiff(task);
+        const card = document.createElement('div');
+        card.className = 'task-card' + (solvedSet.has(task.id) ? ' solved' : '');
+        card.id = 'task-' + task.id;
+        card.innerHTML = `
+      <div class="task-meta">
+        <span class="task-tag">${catLabel(task.cat)}</span>
+        <span class="task-diff ${d}">${t('difftag_' + d)}</span>
+        <span class="task-level">${escHtml(tf(task, 'level'))}</span>
+      </div>
+      <div class="task-q">${escHtml(tf(task, 'q'))}</div>
+      <div class="task-actions">
+        <input class="task-input" type="text" placeholder="${t('ph_answer')}" id="ans-${task.id}" onfocus="taskFocus(${task.id})" onkeydown="if(event.key==='Enter') checkAnswer(${task.id})">
+        <button class="task-btn check" onclick="checkAnswer(${task.id})">${t('btn_check')}</button>
+        <button class="task-btn hint" id="hint-btn-${task.id}" onclick="getHint(${task.id})">${t('btn_hint')}</button>
+        <button class="task-btn hint" title="${t('speak_title')}" onclick="speakTask(${task.id})">🔊</button>
+      </div>
+      <div class="task-result" id="res-${task.id}"></div>
+      <button class="task-btn hint" id="show-btn-${task.id}" style="display:none;margin-top:10px;" onclick="showAnswer(${task.id})">${t('btn_showAns')}</button>
+      <div class="task-hint-box" id="hint-${task.id}"></div>
+    `;
+        list.appendChild(card);
+    });
+}
+function catLabel(cat) {
+    return t('cat_' + cat);
+}
+function norm(s) {
+    return String(s).toLowerCase()
+        .replace(/\s+/g, '')
+        .replace(/\^2/g, '²').replace(/\^3/g, '³')
+        .replace(/[−–—]/g, '-')
+        .replace(/pi/g, 'π')
+        .replace(/[*·×]/g, '')
+        .replace(/(cm|mm|dm|km|kg|m|g|l)[²³23]?\.?/g, '')
+        .replace(/degrees?/g, '')
+        .replace(/[%°]/g, '')
+        .replace(/\.+$/, '');
+}
+function parts(s) {
+    return s.split(/[,;]/).map(p => p.replace(/^x=/, '')).filter(Boolean).sort();
+}
+function termSet(s) {
+    const withSign = s.replace(/^([^+-])/, '+$1');
+    const m = withSign.match(/[+-][^+-]+/g);
+    return m ? m.slice().sort() : null;
+}
+function answersMatch(user, correct) {
+    const u = norm(user), c = norm(correct);
+    if (u === c)
+        return true;
+    const cp = parts(c);
+    if (cp.length > 1) {
+        const up = parts(u);
+        return up.length === cp.length && up.every((v, i) => v === cp[i]);
+    }
+    const ut = termSet(u), ct = termSet(c);
+    if (ut && ct && ut.length > 1 && ut.length === ct.length && ut.every((v, i) => v === ct[i]))
+        return true;
+    return u.replace(/^x=/, '') === c.replace(/^x=/, '');
+}
+function checkAnswer(id) {
+    const task = TASKS.find(t => t.id === id);
+    const inp = document.getElementById('ans-' + id);
+    const res = document.getElementById('res-' + id);
+    if (!inp.value.trim())
+        return;
+    const isRight = answersMatch(inp.value, task.answer);
+    res.className = 'task-result ' + (isRight ? 'correct' : 'wrong');
+    res.textContent = isRight ? t('res_correct') : t('res_wrong');
+    if (!isRight) {
+        wrongCount[id] = (wrongCount[id] || 0) + 1;
+        streak = 0;
+        updateStats();
+        playLose();
+        if (!hintStep[id])
+            getHint(id);
+        if (wrongCount[id] >= 3) {
+            document.getElementById('show-btn-' + id).style.display = 'inline-block';
+        }
+    }
+    else {
+        solvedSet.add(id);
+        const card = document.getElementById('task-' + id);
+        if (card)
+            card.classList.add('solved');
+        streak++;
+        if (focusTime[id]) {
+            const secs = Math.round((Date.now() - focusTime[id]) / 100) / 10;
+            if (secs > 0 && (bestTime === null || secs < bestTime))
+                bestTime = secs;
+        }
+        updateProgress();
+        updateStats();
+        checkAllDone();
+        playWin();
+    }
+    saveProgress();
+}
+let streak = 0;
+let bestTime = null;
+let timerOn = true;
+const focusTime = {};
+function toggleTimer() {
+    timerOn = !timerOn;
+    document.getElementById('timerToggleBtn').textContent = timerOn ? t('btn_timerHide') : t('btn_timerShow');
+    updateStats();
+}
+function taskFocus(id) {
+    if (!focusTime[id])
+        focusTime[id] = Date.now();
+}
+function updateStats() {
+    const el = document.getElementById('statsLine');
+    if (!el)
+        return;
+    let text = t('streak').replace('{n}', streak);
+    if (timerOn)
+        text += ' &nbsp;·&nbsp; ' + t('record').replace('{v}', bestTime === null ? t('record_none') : (bestTime + ' ' + t('sec')));
+    el.innerHTML = text;
+}
+function checkAllDone() {
+    const banner = document.getElementById('allDoneBanner');
+    if (banner)
+        banner.style.display = solvedSet.size >= TASKS.length ? 'block' : 'none';
+}
+function randomTask() {
+    const filtered = visibleTasks();
+    if (!filtered.length)
+        return;
+    const pick = filtered[Math.floor(Math.random() * filtered.length)];
+    const card = document.getElementById('task-' + pick.id);
+    if (!card)
+        return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.remove('flash');
+    void card.offsetWidth;
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 1300);
+}
+function updateProgress() {
+    document.getElementById('solvedCounter').textContent = t('solved').replace('{n}', solvedSet.size).replace('{t}', TASKS.length);
+    const pct = Math.round(solvedSet.size / TASKS.length * 100);
+    document.getElementById('progressFill').style.width = pct + '%';
+    updateMedals();
+}
+const MEDALS = [
+    { emoji: '🌟', need: 1 },
+    { emoji: '🥉', need: 5 },
+    { emoji: '🥈', need: 15 },
+    { emoji: '🥇', need: 30 },
+];
+function updateMedals() {
+    const el = document.getElementById('medalsLine');
+    if (!el)
+        return;
+    const badges = MEDALS.map(m => {
+        const got = solvedSet.size >= m.need;
+        return `<span class="medal ${got ? 'got' : 'locked'}" title="${t('medal_need').replace('{n}', m.need)}">${got ? m.emoji : '⚪'}</span>`;
+    }).join('');
+    el.innerHTML = `<span style="font-family:var(--font-head);font-weight:700;color:var(--ink-muted);">${t('medals_label')}</span>${badges}`;
+}
+function showAnswer(id) {
+    const task = TASKS.find(t => t.id === id);
+    const res = document.getElementById('res-' + id);
+    res.className = 'task-result correct';
+    res.textContent = t('res_showAns') + ' ' + task.answer;
+}
+function mdRender(text) {
+    return String(text)
+        .replace(/```([\s\S]*?)```/g, (_, c) => `<div class="math-block">${escHtml(c.trim())}</div>`)
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>');
+}
+function hintSteps(text) {
+    const lines = String(text).split('\n');
+    const steps = [];
+    let buf = [];
+    let inFence = false;
+    for (const ln of lines) {
+        const odd = ((ln.match(/```/g) || []).length % 2) === 1;
+        if (inFence) {
+            buf.push(ln);
+            if (odd) {
+                steps.push(buf.join('\n'));
+                buf = [];
+                inFence = false;
+            }
+        }
+        else if (odd) {
+            buf.push(ln);
+            inFence = true;
+        }
+        else if (ln.trim()) {
+            steps.push(ln);
+        }
+    }
+    if (buf.length)
+        steps.push(buf.join('\n'));
+    return steps.length ? steps : [String(text)];
+}
+function getHint(id) {
+    const task = TASKS.find(t => t.id === id);
+    const steps = hintSteps(tf(task, 'hint') || t('hint_default'));
+    hintStep[id] = Math.min((hintStep[id] || 0) + 1, steps.length);
+    renderHint(id);
+}
+function renderHint(id) {
+    const task = TASKS.find(t => t.id === id);
+    const box = document.getElementById('hint-' + id);
+    if (!box)
+        return;
+    const steps = hintSteps(tf(task, 'hint') || t('hint_default'));
+    const shown = Math.max(1, hintStep[id] || 1);
+    box.style.display = 'block';
+    const body = steps.slice(0, shown).map(mdRender).join('');
+    const more = shown < steps.length
+        ? `<button class="task-btn hint" style="margin-top:10px;" onclick="getHint(${id})">${t('hint_more')} (${shown}/${steps.length})</button>`
+        : '';
+    box.innerHTML = `<strong>${t('hint_prefix')}</strong><br><br>${body}${more}`;
+}
+function speakTask(id) {
+    const task = TASKS.find(t => t.id === id);
+    if (!task || typeof speechSynthesis === 'undefined')
+        return;
+    try {
+        const clean = String(tf(task, 'q')).replace(/```/g, '');
+        const u = new SpeechSynthesisUtterance(clean);
+        u.lang = LANG === 'ru' ? 'en-US' : (LANG === 'ar' ? 'ar-SA' : 'en-US');
+        speechSynthesis.cancel();
+        speechSynthesis.speak(u);
+    }
+    catch (e) { }
+}
+function selfTest() {
+    const bad = [];
+    TASKS.forEach(tk => { if (!answersMatch(tk.answer, tk.answer))
+        bad.push(tk.id); });
+    const el = document.getElementById('selfTestResult');
+    if (!el)
+        return;
+    el.style.display = 'block';
+    if (bad.length) {
+        el.className = 'task-result wrong';
+        el.textContent = t('selftest_bad').replace('{n}', bad.join(', '));
+    }
+    else {
+        el.className = 'task-result correct';
+        el.textContent = t('selftest_ok').replace('{n}', TASKS.length);
+    }
+}
+const SAVE_KEY = 'mathai_progress';
+function saveProgress() {
+    try {
+        MEM.setItem(SAVE_KEY, JSON.stringify({
+            solved: [...solvedSet], streak, bestTime
+        }));
+    }
+    catch (e) { }
+}
+function loadProgress() {
+    try {
+        const raw = MEM.getItem(SAVE_KEY);
+        if (!raw)
+            return;
+        const d = JSON.parse(raw);
+        if (Array.isArray(d.solved))
+            d.solved.forEach(id => solvedSet.add(id));
+        streak = Number(d.streak) || 0;
+        bestTime = (typeof d.bestTime === 'number') ? d.bestTime : null;
+    }
+    catch (e) { }
+}
+loadProgress();
+const MELODIES = [
+    { emoji: '😄', nm: { ru: "Happy", en: 'Happy', ar: 'مرحة' }, speed: 380, notes: [523, 587, 659, 587, 523, 659, 784, 659] },
+    { emoji: '😌', nm: { ru: "Calm", en: 'Calm', ar: 'هادئة' }, speed: 520, notes: [392, 440, 494, 440, 392, 330, 392, 440] },
+    { emoji: '⚡', nm: { ru: "Energetic", en: 'Energetic', ar: 'نشيطة' }, speed: 300, notes: [659, 659, 784, 784, 880, 784, 659, 587] },
+    { emoji: '🚀', nm: { ru: "Space", en: 'Space', ar: 'فضاء' }, speed: 460, notes: [330, 494, 659, 988, 659, 494, 330, 262] },
+    { emoji: '🌊', nm: { ru: "Sea waves", en: 'Sea waves', ar: 'أمواج البحر' }, speed: 480, notes: [392, 440, 392, 349, 330, 349, 392, 440] },
+    { emoji: '🌙', nm: { ru: "Lullaby", en: 'Lullaby', ar: 'تهويدة' }, speed: 600, notes: [523, 523, 784, 784, 880, 880, 784, 659] },
+    { emoji: '🎷', nm: { ru: "Jazz", en: 'Jazz', ar: 'جاز' }, speed: 360, notes: [466, 523, 622, 523, 466, 415, 466, 392] },
+    { emoji: '🥁', nm: { ru: "March", en: 'March', ar: 'مسيرة' }, speed: 340, notes: [523, 523, 523, 392, 659, 659, 659, 523] },
+    { emoji: '💃', nm: { ru: "Dance", en: 'Dance', ar: 'رقص' }, speed: 300, notes: [587, 587, 698, 587, 523, 587, 698, 880] },
+    { emoji: '🕵️', nm: { ru: "Mystery", en: 'Mystery', ar: 'لغز' }, speed: 440, notes: [330, 349, 392, 415, 392, 349, 330, 294] },
+    { emoji: '🏆', nm: { ru: "Victory", en: 'Victory', ar: 'انتصار' }, speed: 320, notes: [523, 659, 784, 1047, 784, 1047, 880, 1047] },
+    { emoji: '🌧️', nm: { ru: "Rain", en: 'Rain', ar: 'مطر' }, speed: 360, notes: [784, 659, 587, 523, 587, 659, 784, 880] },
+];
+let musicCtx = null, musicTimer = null, musicOn = false, musicChoice = 0, noteIdx = 0;
+function buildMusicOptions() {
+    const sel = document.getElementById('musicSelect');
+    if (!sel)
+        return;
+    const cur = musicChoice;
+    sel.innerHTML = MELODIES.map((m, i) => '<option value="' + i + '">' + m.emoji + ' ' + (m.nm[LANG] || m.nm.ru) + '</option>').join('');
+    sel.value = cur;
+}
+function playNote(freq) {
+    const o = musicCtx.createOscillator();
+    const g = musicCtx.createGain();
+    o.type = 'triangle';
+    o.frequency.value = freq;
+    o.connect(g);
+    g.connect(musicCtx.destination);
+    const t = musicCtx.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.12, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.start(t);
+    o.stop(t + 0.35);
+}
+function musicTick() {
+    const tune = MELODIES[musicChoice].notes;
+    playNote(tune[noteIdx % tune.length]);
+    noteIdx++;
+}
+function toggleMusic() {
+    const btn = document.getElementById('musicBtn');
+    if (musicOn) {
+        clearInterval(musicTimer);
+        musicOn = false;
+        btn.textContent = t('btn_musicOn');
+    }
+    else {
+        if (!musicCtx)
+            musicCtx = new (window.AudioContext || window.webkitAudioContext)();
+        noteIdx = 0;
+        musicTimer = setInterval(musicTick, MELODIES[musicChoice].speed);
+        musicOn = true;
+        btn.textContent = t('btn_musicOff');
+    }
+}
+function changeMusic() {
+    musicChoice = parseInt(document.getElementById('musicSelect').value, 10);
+    noteIdx = 0;
+    if (musicOn) {
+        clearInterval(musicTimer);
+        musicTimer = setInterval(musicTick, MELODIES[musicChoice].speed);
+    }
+}
+const WAI_MP_API = "/school-data/multiplayer";
+const MP_PROJECT = "mathai";
+let MP_ROOM = "";
+let MP_PLAYER = "P-" + Math.random().toString(36).slice(2, 7).toUpperCase();
+let mpLastEventId = 0;
+let mpSeq = 0;
+let mpOnline = false;
+let mpPolling = false;
+let mpPausedUntil = 0;
+const mpSeenServer = new Set();
+const mpSeenClient = new Set();
+const mpLastSeqByPlayer = Object.create(null);
+function makeRoomCode() {
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let i = 0; i < 5; i++)
+        code += alphabet[Math.floor(Math.random() * alphabet.length)];
+    return code;
+}
+function setMultiplayerStatus(text, tone = "neutral") {
+    const el = document.querySelector("[data-mp-status]");
+    if (!el)
+        return;
+    el.textContent = text;
+    el.dataset.tone = tone;
+}
+function mpTrim(set, max = 500) {
+    while (set.size > max)
+        set.delete(set.values().next().value);
+}
+function mpEventId() {
+    return MP_PLAYER + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+}
+function normalizeRoomCode(value) {
+    return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+}
+function createMultiplayerRoom() {
+    MP_ROOM = makeRoomCode();
+    resetMultiplayerStream();
+    setMultiplayerStatus(t('status_ready').replace('{room}', MP_ROOM), "online");
+    mpSend("join", { room: MP_ROOM });
+    return MP_ROOM;
+}
+function joinMultiplayerRoom(value) {
+    const room = normalizeRoomCode(value);
+    if (room.length < 4) {
+        setMultiplayerStatus(t('status_short'), "offline");
+        return false;
+    }
+    MP_ROOM = room;
+    resetMultiplayerStream();
+    setMultiplayerStatus(t('status_joining').replace('{room}', MP_ROOM), "neutral");
+    mpSend("join", { room: MP_ROOM });
+    return true;
+}
+function resetMultiplayerStream() {
+    mpLastEventId = 0;
+    mpSeq = 0;
+    mpPausedUntil = 0;
+    mpSeenServer.clear();
+    mpSeenClient.clear();
+    for (const key in mpLastSeqByPlayer)
+        delete mpLastSeqByPlayer[key];
+}
+async function readMultiplayerJson(res) {
+    let data;
+    try {
+        data = await res.json();
+    }
+    catch {
+        throw new Error("multiplayer: server response was not JSON");
+    }
+    if (!res.ok || !data.ok) {
+        const err = new Error(data.error || "multiplayer error");
+        err.status = res.status;
+        throw err;
+    }
+    return data;
+}
+async function mpSend(type, payload = {}) {
+    if (!MP_ROOM) {
+        setMultiplayerStatus(t('status_needRoom'), "offline");
+        return null;
+    }
+    mpOnline = false;
+    setMultiplayerStatus(t('status_reconnect'), "offline");
+    return null;
+}
+function multiplayerPollUrl() {
+    return (WAI_MP_API +
+        "?project=" + encodeURIComponent(MP_PROJECT) +
+        "&room=" + encodeURIComponent(MP_ROOM) +
+        "&since=" + encodeURIComponent(String(mpLastEventId)));
+}
+async function mpPoll() {
+    return;
+}
+let mpRole = "";
+let duelActive = false;
+let duelDone = false;
+let duelOrder = [];
+let duelTurn = 0;
+let scoreHost = 0, scoreGuest = 0;
+const WIN_SCORE = 5;
+const duelLogLines = [];
+function mpEmit(type, payload) { mpSend(type, payload).catch(() => { }); }
+function switchPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('page-' + name).classList.add('active');
+    document.getElementById('tab-' + name).classList.add('active');
+}
+function shuffledOrder() {
+    const a = TASKS.map((_, i) => i);
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+function duelLog(text) {
+    duelLogLines.unshift(text);
+    if (duelLogLines.length > 6)
+        duelLogLines.pop();
+    const el = document.getElementById('duelLog');
+    if (el)
+        el.innerHTML = duelLogLines.map(l => '• ' + escHtml(l)).join('<br>');
+}
+function showDuelRoomUI(code) {
+    document.getElementById('duelLobby').style.display = 'none';
+    document.getElementById('duelRoomBox').style.display = 'flex';
+    document.getElementById('duelBoard').style.display = 'block';
+    document.getElementById('duelCodeShow').textContent = code;
+}
+function duelCreateRoom() {
+    mpRole = 'host';
+    scoreHost = 0;
+    scoreGuest = 0;
+    duelActive = false;
+    duelDone = false;
+    duelTurn = 0;
+    duelOrder = shuffledOrder();
+    const code = createMultiplayerRoom();
+    showDuelRoomUI(code);
+    duelLog(t('log_created') + ' ' + code);
+    renderDuel();
+}
+function duelJoinRoom() {
+    const val = document.getElementById('duelCodeInput').value;
+    mpRole = 'guest';
+    scoreHost = 0;
+    scoreGuest = 0;
+    duelActive = false;
+    duelDone = false;
+    duelTurn = 0;
+    if (joinMultiplayerRoom(val)) {
+        showDuelRoomUI(MP_ROOM);
+        duelLog(t('log_joining') + ' ' + MP_ROOM + '…');
+        renderDuel();
+    }
+}
+function duelCopyCode() {
+    const msg = document.getElementById('duelCopyMsg');
+    const code = document.getElementById('duelCodeShow').textContent;
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(code)
+            .then(() => { msg.textContent = t('duel_copied'); setTimeout(() => msg.textContent = '', 1500); })
+            .catch(() => { msg.textContent = t('duel_copyManual') + ' ' + code; });
+    }
+    else {
+        msg.textContent = t('duel_copyManual') + ' ' + code;
+    }
+}
+function myScore() { return mpRole === 'host' ? scoreHost : scoreGuest; }
+function oppScore() { return mpRole === 'host' ? scoreGuest : scoreHost; }
+function isMyTurn() {
+    if (!duelActive || duelDone)
+        return false;
+    const hostTurn = duelTurn % 2 === 0;
+    return (hostTurn && mpRole === 'host') || (!hostTurn && mpRole === 'guest');
+}
+function renderDuel() {
+    const meScoreEl = document.getElementById('scoreMe');
+    if (!meScoreEl)
+        return;
+    meScoreEl.textContent = myScore();
+    document.getElementById('scoreYou').textContent = oppScore();
+    const turnEl = document.getElementById('duelTurn');
+    const card = document.getElementById('duelTaskCard');
+    const endEl = document.getElementById('duelEnd');
+    const rematch = document.getElementById('duelRematchBtn');
+    document.getElementById('duelMe').classList.toggle('active', isMyTurn());
+    document.getElementById('duelYou').classList.toggle('active', duelActive && !duelDone && !isMyTurn());
+    if (duelDone) {
+        card.style.display = 'none';
+        endEl.style.display = 'block';
+        rematch.style.display = 'inline-block';
+        turnEl.textContent = '';
+        return;
+    }
+    endEl.style.display = 'none';
+    rematch.style.display = 'none';
+    if (!duelActive) {
+        turnEl.textContent = t('duel_waiting');
+        card.style.display = 'none';
+        return;
+    }
+    const task = TASKS[duelOrder[duelTurn % duelOrder.length]];
+    document.getElementById('duelQ').textContent = tf(task, 'q');
+    const btn = document.getElementById('duelCheckBtn');
+    const ans = document.getElementById('duelAns');
+    card.style.display = 'block';
+    if (isMyTurn()) {
+        turnEl.textContent = t('duel_yourTurn');
+        btn.disabled = false;
+        ans.disabled = false;
+    }
+    else {
+        turnEl.textContent = t('duel_friendTurn');
+        btn.disabled = true;
+        ans.disabled = true;
+    }
+}
+function duelStartAsHost() {
+    duelActive = true;
+    duelDone = false;
+    duelTurn = 0;
+    mpEmit('ready', { order: duelOrder, host: MP_PLAYER });
+    duelLog(t('log_startedHost'));
+    renderDuel();
+}
+function duelCheck() {
+    if (!isMyTurn())
+        return;
+    const ans = document.getElementById('duelAns');
+    const val = ans.value.trim();
+    if (!val)
+        return;
+    const task = TASKS[duelOrder[duelTurn % duelOrder.length]];
+    const correct = answersMatch(val, task.answer);
+    if (correct) {
+        if (mpRole === 'host')
+            scoreHost++;
+        else
+            scoreGuest++;
+        playWin();
+        duelLog(t('log_youRight') + ' ' + myScore());
+    }
+    else {
+        playLose();
+        duelLog(t('log_youWrong'));
+    }
+    ans.value = '';
+    duelTurn++;
+    const iWon = myScore() >= WIN_SCORE;
+    mpEmit('answer', { turn: duelTurn, scoreHost, scoreGuest, correct, by: mpRole });
+    if (iWon) {
+        duelDone = true;
+        document.getElementById('duelEnd').textContent = t('duel_youWin');
+        mpEmit('finish', { winner: mpRole });
+    }
+    renderDuel();
+}
+function duelRematch() {
+    if (mpRole === 'host') {
+        duelOrder = shuffledOrder();
+        scoreHost = 0;
+        scoreGuest = 0;
+        duelTurn = 0;
+        duelDone = false;
+        duelActive = true;
+        mpEmit('ready', { order: duelOrder, host: MP_PLAYER, rematch: true });
+        duelLog(t('log_rematch'));
+        renderDuel();
+    }
+    else {
+        mpEmit('restart', {});
+        duelLog(t('log_askHost'));
+    }
+}
+function handleMultiplayerEvent(ev) {
+    const p = ev.payload || {};
+    if (ev.type === 'join') {
+        if (mpRole === 'host' && !duelActive) {
+            duelStartAsHost();
+        }
+        return;
+    }
+    if (ev.type === 'ready') {
+        if (Array.isArray(p.order))
+            duelOrder = p.order;
+        scoreHost = 0;
+        scoreGuest = 0;
+        duelTurn = 0;
+        duelActive = true;
+        duelDone = false;
+        duelLog(p.rematch ? t('log_rematch') : t('log_started'));
+        renderDuel();
+        return;
+    }
+    if (ev.type === 'answer') {
+        scoreHost = Number(p.scoreHost) || 0;
+        scoreGuest = Number(p.scoreGuest) || 0;
+        duelTurn = Number(p.turn) || duelTurn;
+        duelLog(p.correct ? t('log_friendRight') : t('log_friendWrong'));
+        renderDuel();
+        return;
+    }
+    if (ev.type === 'finish') {
+        duelDone = true;
+        const iWin = p.winner === mpRole;
+        document.getElementById('duelEnd').textContent = iWin ? t('duel_youWin') : t('duel_youLose');
+        renderDuel();
+        return;
+    }
+    if (ev.type === 'restart') {
+        if (mpRole === 'host') {
+            duelOrder = shuffledOrder();
+            scoreHost = 0;
+            scoreGuest = 0;
+            duelTurn = 0;
+            duelDone = false;
+            duelActive = true;
+            mpEmit('ready', { order: duelOrder, host: MP_PLAYER, rematch: true });
+            renderDuel();
+        }
+        return;
+    }
+}
+function solveCalc() {
+    const input = document.getElementById('calcInput');
+    const res = document.getElementById('calcResult');
+    const raw = input.value.trim();
+    if (!raw)
+        return;
+    if (/[a-z]/i.test(raw)) {
+        res.className = 'task-result wrong';
+        res.textContent = t('calc_words');
+        return;
+    }
+    let s = raw
+        .replace(/×/g, '*').replace(/·/g, '*')
+        .replace(/÷/g, '/')
+        .replace(/[−–—]/g, '-')
+        .replace(/\^/g, '**')
+        .replace(/,/g, '.')
+        .replace(/\s+/g, '');
+    if (!/^[0-9+\-*/().]+$/.test(s)) {
+        res.className = 'task-result wrong';
+        res.textContent = t('calc_badWrite');
+        return;
+    }
+    try {
+        const val = Function('"use strict";return (' + s + ')')();
+        if (typeof val !== 'number' || Number.isNaN(val))
+            throw new Error('bad');
+        if (!isFinite(val)) {
+            res.className = 'task-result wrong';
+            res.textContent = t('calc_div0');
+            return;
+        }
+        const rounded = Math.round(val * 1e6) / 1e6;
+        res.className = 'task-result correct';
+        res.textContent = '✅ ' + raw + ' = ' + rounded;
+        playWin();
+    }
+    catch (e) {
+        res.className = 'task-result wrong';
+        res.textContent = t('calc_badCheck');
+    }
+}
+function setTheme(name) {
+    document.documentElement.setAttribute('data-theme', name);
+    try {
+        MEM.setItem('mathai_theme', name);
+    }
+    catch (e) { }
+}
+(function initTheme() {
+    let saved = 'neon';
+    try {
+        saved = MEM.getItem('mathai_theme') || 'neon';
+    }
+    catch (e) { }
+    document.documentElement.setAttribute('data-theme', saved);
+    const sel = document.getElementById('themeSelect');
+    if (sel)
+        sel.value = saved;
+})();
+const KB = [
+    ['7', '7'], ['8', '8'], ['9', '9'], ['÷', '÷'], ['×', '×'], ['⌫', '__bs'],
+    ['4', '4'], ['5', '5'], ['6', '6'], ['+', '+'], ['−', '-'], ['C', '__clr'],
+    ['1', '1'], ['2', '2'], ['3', '3'], ['/', '/'], ['^', '^'], ['(', '('],
+    ['0', '0'], ['.', '.'], [',', ','], ['=', '='], ['π', 'π'], [')', ')'],
+    ['x', 'x'], ['a', 'a'], ['b', 'b'], ['c', 'c'], ['²', '²'], ['³', '³'],
+];
+let kbActive = null;
+let kbEnabled = false;
+(function buildKeyboard() {
+    const grid = document.getElementById('kbGrid');
+    if (!grid)
+        return;
+    const ops = '÷×+-/^()=';
+    grid.innerHTML = KB.map(([label, val]) => {
+        let cls = 'kb-key';
+        if (val === '__bs' || val === '__clr')
+            cls += ' fn';
+        else if (val.length === 1 && ops.includes(val))
+            cls += ' op';
+        return '<button type="button" class="' + cls + '" data-k="' + val + '">' + label + '</button>';
+    }).join('') + '<button type="button" class="kb-key fn kb-hide" data-k="__hide">' + t('kb_hide') + '</button>';
+    grid.addEventListener('pointerdown', (e) => {
+        const b = e.target.closest('[data-k]');
+        if (!b)
+            return;
+        e.preventDefault();
+        const k = b.getAttribute('data-k');
+        if (k === '__bs')
+            kbBackspace();
+        else if (k === '__clr')
+            kbClear();
+        else if (k === '__hide') {
+            hideKeyboard();
+            kbEnabled = false;
+        }
+        else
+            kbInsert(k);
+    });
+})();
+document.addEventListener('focusin', (e) => {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && t.type !== 'button') {
+        kbActive = t;
+        if (kbEnabled)
+            showKeyboard();
+    }
+});
+function kbInsert(text) {
+    const el = kbActive;
+    if (!el)
+        return;
+    const s = el.selectionStart, e = el.selectionEnd;
+    if (s == null) {
+        el.value += text;
+    }
+    else {
+        el.value = el.value.slice(0, s) + text + el.value.slice(e);
+        const p = s + text.length;
+        el.setSelectionRange(p, p);
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function kbBackspace() {
+    const el = kbActive;
+    if (!el)
+        return;
+    let s = el.selectionStart, e = el.selectionEnd;
+    if (s == null) {
+        el.value = el.value.slice(0, -1);
+        return;
+    }
+    if (s === e && s > 0) {
+        el.value = el.value.slice(0, s - 1) + el.value.slice(e);
+        s--;
+    }
+    else {
+        el.value = el.value.slice(0, s) + el.value.slice(e);
+    }
+    el.setSelectionRange(s, s);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function kbClear() {
+    const el = kbActive;
+    if (!el)
+        return;
+    el.value = '';
+    if (el.setSelectionRange)
+        el.setSelectionRange(0, 0);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function showKeyboard() {
+    document.getElementById('kbPanel').classList.add('open');
+    if (kbActive)
+        setTimeout(() => kbActive.scrollIntoView({ behavior: 'smooth', block: 'center' }), 90);
+}
+function hideKeyboard() {
+    document.getElementById('kbPanel').classList.remove('open');
+}
+function toggleKeyboard() {
+    const open = document.getElementById('kbPanel').classList.contains('open');
+    if (open) {
+        hideKeyboard();
+        kbEnabled = false;
+    }
+    else {
+        kbEnabled = true;
+        if (!kbActive) {
+            const first = document.querySelector('.page.active .task-input');
+            if (first) {
+                kbActive = first;
+                first.focus();
+            }
+        }
+        showKeyboard();
+    }
+}
+const KNOWLEDGE = [
+    { title: "Fractions", keys: ["fraction", "numerator", "denominator"],
+        text: "**A fraction** is a part of a whole. The bottom (denominator) shows how many parts, the top (numerator) shows how many you took.\nFor example, ¾ of a pizza: cut into 4 parts, took 3.\nTo **add** fractions the denominator must be the same:\n```1/4 + 2/4 = 3/4```\nIf different — bring to a common one:\n```1/2 + 1/3 = 3/6 + 2/6 = 5/6```" },
+    { title: "Reducing fractions", keys: ["reduc", "simplif"],
+        text: "**To reduce a fraction** — divide the top and bottom by the same number.\n```8/12 = (8÷4)/(12÷4) = 2/3```\nDivide by the largest common number — then the fraction is simplest." },
+    { title: "Percent", keys: ["percent"],
+        text: "**Percent** is a hundredth part. 1% = 1/100.\nWhat percent one number is of another: part ÷ whole × 100.\n```15 of 60 = 15 ÷ 60 × 100 = 25%```\nPercent of a number: number × percent ÷ 100.\n```20% of 50 = 50 × 20 ÷ 100 = 10```" },
+    { title: "Equations", keys: ["equation", "unknown", "find x", "solve for"],
+        text: "**An equation** has an unknown (usually x). The goal is to leave x alone on the left.\nRule: move across \"=\" and change the sign.\n```2x − 5 = 11```\n```2x = 11 + 5 = 16```\n```x = 16 ÷ 2 = 8```" },
+    { title: "Expanding brackets", keys: ["bracket", "expand", "difference of squares", "square of a sum", "formula"],
+        text: "Ready-made formulas:\n**Difference of squares:** ```(a − b)(a + b) = a² − b²```\n**Square of a sum:** ```(a + b)² = a² + 2ab + b²```\nExample:\n```(x + 3)² = x² + 6x + 9```" },
+    { title: "Area", keys: ["area"],
+        text: "**Area** is how much space a shape takes.\n**Square:** ```S = side × side```\n**Rectangle:** ```S = length × width```\n**Circle:** ```S = π × r²``` (r — radius)." },
+    { title: "Perimeter", keys: ["perimeter"],
+        text: "**Perimeter** is the length of all sides together (the border).\n**Rectangle:** ```P = 2 × (length + width)```\n**Square:** ```P = 4 × side```" },
+    { title: "Pythagorean theorem", keys: ["pythag", "hypotenuse", "leg"],
+        text: "In a right triangle the square of the hypotenuse (the longest side) equals the sum of the squares of the legs.\n```c² = a² + b²```\nExample: legs 3 and 4:\n```c² = 9 + 16 = 25```, so ```c = 5```" },
+    { title: "Triangle angles", keys: ["angle", "triangle", "degree"],
+        text: "The sum of the three angles of any triangle is always **180°**.\nIf two angles are known, the third = 180 − (first + second).\n```180 − (90 + 40) = 50°```" },
+    { title: "Multiplication", keys: ["multipl", "times table", "times"],
+        text: "**Multiplication** is fast addition of equal numbers.\n```4 × 3 = 4 + 4 + 4 = 12```\nTricks: ×10 — add a zero (7×10=70); ×5 — multiply by 10 and halve." },
+    { title: "Division", keys: ["divi", "divide", "divide"],
+        text: "**Division** is how many times one number fits into another.\n```12 ÷ 3 = 4```, because ```3 × 4 = 12```\nDivision is the opposite of multiplication; check it with multiplication." },
+    { title: "Order of operations", keys: ["order of operation", "precedence", "which first"],
+        text: "We calculate in order:\n1) **brackets** ( )\n2) **powers** ^\n3) **× and ÷** (left to right)\n4) **+ and −** (left to right)\n```2 + 3 × 4 = 2 + 12 = 14``` (multiplication first!)" },
+    { title: "Derivative", keys: ["derivativ"],
+        text: "**The derivative** shows how fast a function changes.\nMain rule (power): ```(xⁿ)′ = n · xⁿ⁻¹```\nA constant becomes 0.\n```(x³ − 4x + 1)′ = 3x² − 4```" },
+    { title: "Integral", keys: ["integral", "antiderivative"],
+        text: "**The integral** is the opposite of the derivative.\nRule: increase the power by 1 and divide by the new power, add + C.\n```∫ x² dx = x³/3 + C```" },
+];
+const KNOWLEDGE_TR = {
+    en: [
+        { title: 'Fractions', keys: ['fraction', 'numerator', 'denominator'],
+            text: '**A fraction** is a part of a whole. The bottom (denominator) shows how many parts, the top (numerator) shows how many you took.\nFor example, ¾ of a pizza: cut into 4 parts, took 3.\nTo **add** fractions the denominator must be the same:\n```1/4 + 2/4 = 3/4```\nIf different — bring to a common one:\n```1/2 + 1/3 = 3/6 + 2/6 = 5/6```' },
+        { title: 'Reducing fractions', keys: ['reduc', 'simplif', 'lowest'],
+            text: '**To reduce a fraction** — divide the top and bottom by the same number.\n```8/12 = (8÷4)/(12÷4) = 2/3```\nDivide by the largest common number — then the fraction is simplest.' },
+        { title: 'Percent', keys: ['percent', '%'],
+            text: '**Percent** is a hundredth part. 1% = 1/100.\nWhat percent one number is of another: part ÷ whole × 100.\n```15 of 60 = 15 ÷ 60 × 100 = 25%```\nPercent of a number: number × percent ÷ 100.\n```20% of 50 = 50 × 20 ÷ 100 = 10```' },
+        { title: 'Equations', keys: ['equation', 'unknown', 'find x', 'solve for'],
+            text: '**An equation** has an unknown (usually x). The goal is to leave x alone on the left.\nRule: move across "=" and change the sign.\n```2x − 5 = 11```\n```2x = 11 + 5 = 16```\n```x = 16 ÷ 2 = 8```' },
+        { title: 'Expanding brackets', keys: ['bracket', 'expand', 'difference of squares', 'square of a sum', 'formula'],
+            text: 'Ready-made formulas:\n**Difference of squares:** ```(a − b)(a + b) = a² − b²```\n**Square of a sum:** ```(a + b)² = a² + 2ab + b²```\nExample:\n```(x + 3)² = x² + 6x + 9```' },
+        { title: 'Area', keys: ['area'],
+            text: '**Area** is how much space a shape takes.\n**Square:** ```S = side × side```\n**Rectangle:** ```S = length × width```\n**Circle:** ```S = π × r²``` (r — radius).' },
+        { title: 'Perimeter', keys: ['perimeter'],
+            text: '**Perimeter** is the length of all sides together (the border).\n**Rectangle:** ```P = 2 × (length + width)```\n**Square:** ```P = 4 × side```' },
+        { title: 'Pythagorean theorem', keys: ['pythag', 'hypotenuse', 'leg'],
+            text: 'In a right triangle the square of the hypotenuse (the longest side) equals the sum of the squares of the legs.\n```c² = a² + b²```\nExample: legs 3 and 4:\n```c² = 9 + 16 = 25```, so ```c = 5```' },
+        { title: 'Triangle angles', keys: ['angle', 'triangle', 'degree'],
+            text: 'The sum of the three angles of any triangle is always **180°**.\nIf two angles are known, the third = 180 − (first + second).\n```180 − (90 + 40) = 50°```' },
+        { title: 'Multiplication', keys: ['multipl', 'times table', 'times'],
+            text: '**Multiplication** is fast addition of equal numbers.\n```4 × 3 = 4 + 4 + 4 = 12```\nTricks: ×10 — add a zero (7×10=70); ×5 — multiply by 10 and halve.' },
+        { title: 'Division', keys: ['divi', 'divide'],
+            text: '**Division** is how many times one number fits into another.\n```12 ÷ 3 = 4```, because ```3 × 4 = 12```\nDivision is the opposite of multiplication; check it with multiplication.' },
+        { title: 'Order of operations', keys: ['order of operation', 'precedence', 'which first'],
+            text: 'We calculate in order:\n1) **brackets** ( )\n2) **powers** ^\n3) **× and ÷** (left to right)\n4) **+ and −** (left to right)\n```2 + 3 × 4 = 2 + 12 = 14``` (multiplication first!)' },
+        { title: 'Derivative', keys: ['derivativ'],
+            text: '**The derivative** shows how fast a function changes.\nMain rule (power): ```(xⁿ)′ = n · xⁿ⁻¹```\nA constant becomes 0.\n```(x³ − 4x + 1)′ = 3x² − 4```' },
+        { title: 'Integral', keys: ['integral', 'antiderivative'],
+            text: '**The integral** is the opposite of the derivative.\nRule: increase the power by 1 and divide by the new power, add + C.\n```∫ x² dx = x³/3 + C```' }
+    ],
+    ar: [
+        { title: 'الكسور', keys: ['كسر', 'كسور', 'بسط', 'مقام'],
+            text: '**الكسر** جزء من الكل. الأسفل (المقام) كم جزءاً قسّمنا، والأعلى (البسط) كم أخذنا.\nمثلاً ¾ من البيتزا: قسّمناها إلى 4 وأخذنا 3.\nلـ**جمع** الكسور يجب أن يكون المقام واحداً:\n```1/4 + 2/4 = 3/4```\nإذا اختلفا نوحّدهما:\n```1/2 + 1/3 = 3/6 + 2/6 = 5/6```' },
+        { title: 'اختصار الكسور', keys: ['اختصار', 'اختصر', 'تبسيط'],
+            text: '**اختصار الكسر** يعني قسمة البسط والمقام على العدد نفسه.\n```8/12 = (8÷4)/(12÷4) = 2/3```\nنقسم على أكبر عدد مشترك فيصبح الكسر أبسط.' },
+        { title: 'النسبة المئوية', keys: ['نسبة', 'مئوي', 'بالمئة', '%'],
+            text: '**النسبة المئوية** جزء من مئة. 1% = 1/100.\nكم نسبة عدد من آخر: الجزء ÷ الكل × 100.\n```15 من 60 = 15 ÷ 60 × 100 = 25%```\nنسبة من عدد: العدد × النسبة ÷ 100.\n```20% من 50 = 50 × 20 ÷ 100 = 10```' },
+        { title: 'المعادلات', keys: ['معادل', 'مجهول', 'معادلة'],
+            text: '**المعادلة** مساواة فيها مجهول (عادةً x). الهدف ترك x وحده على اليسار.\nالقاعدة: عند النقل عبر «=» تتغيّر الإشارة.\n```2x − 5 = 11```\n```2x = 11 + 5 = 16```\n```x = 16 ÷ 2 = 8```' },
+        { title: 'فك الأقواس', keys: ['قوس', 'أقواس', 'فك', 'فرق المربع', 'مربع المجموع', 'صيغة'],
+            text: 'صيغ جاهزة:\n**فرق المربعين:** ```(a − b)(a + b) = a² − b²```\n**مربع المجموع:** ```(a + b)² = a² + 2ab + b²```\nمثال:\n```(x + 3)² = x² + 6x + 9```' },
+        { title: 'المساحة', keys: ['مساح'],
+            text: '**المساحة** مقدار المكان الذي يشغله الشكل.\n**المربع:** ```S = الضلع × الضلع```\n**المستطيل:** ```S = الطول × العرض```\n**الدائرة:** ```S = π × r²``` (r نصف القطر).' },
+        { title: 'المحيط', keys: ['محيط'],
+            text: '**المحيط** طول كل الأضلاع معاً (حدود الشكل).\n**المستطيل:** ```P = 2 × (الطول + العرض)```\n**المربع:** ```P = 4 × الضلع```' },
+        { title: 'نظرية فيثاغورس', keys: ['فيثاغور', 'وتر', 'ضلع قائم'],
+            text: 'في المثلث القائم مربع الوتر (أطول ضلع) يساوي مجموع مربعي الضلعين القائمين.\n```c² = a² + b²```\nمثال: الضلعان 3 و 4:\n```c² = 9 + 16 = 25```، إذاً ```c = 5```' },
+        { title: 'زوايا المثلث', keys: ['زاوية', 'زوايا', 'مثلث', 'درجة'],
+            text: 'مجموع زوايا أي مثلث دائماً **180°**.\nإذا عُرفت زاويتان، الثالثة = 180 − (الأولى + الثانية).\n```180 − (90 + 40) = 50°```' },
+        { title: 'الضرب', keys: ['ضرب', 'جدول'],
+            text: '**الضرب** جمع سريع لأعداد متساوية.\n```4 × 3 = 4 + 4 + 4 = 12```\nحيل: ×10 أضف صفراً (7×10=70)؛ ×5 اضرب في 10 ثم اقسم على 2.' },
+        { title: 'القسمة', keys: ['قسم', 'قسمة', 'اقسم'],
+            text: '**القسمة** كم مرة يدخل عدد في آخر.\n```12 ÷ 3 = 4```، لأن ```3 × 4 = 12```\nالقسمة عكس الضرب، ويمكن التحقّق بالضرب.' },
+        { title: 'ترتيب العمليات', keys: ['ترتيب', 'أولوية', 'أولا'],
+            text: 'نحسب بالترتيب:\n1) **الأقواس** ( )\n2) **الأسس** ^\n3) **× و ÷** (من اليسار لليمين)\n4) **+ و −** (من اليسار لليمين)\n```2 + 3 × 4 = 2 + 12 = 14``` (الضرب أولاً!)' },
+        { title: 'المشتقة', keys: ['مشتق'],
+            text: '**المشتقة** تبيّن مدى سرعة تغيّر الدالة.\nالقاعدة الأساسية (الأس): ```(xⁿ)′ = n · xⁿ⁻¹```\nالعدد الثابت يصبح 0.\n```(x³ − 4x + 1)′ = 3x² − 4```' },
+        { title: 'التكامل', keys: ['تكامل', 'أصلية'],
+            text: '**التكامل** عكس المشتقة.\nالقاعدة: ارفع الأس بمقدار 1 واقسم على الأس الجديد، وأضف + C.\n```∫ x² dx = x³/3 + C```' }
+    ]
+};
+function helperMarkdown(txt) {
+    return txt
+        .replace(/```([\s\S]*?)```/g, (_, c) => '<div class="math-block">' + escHtml(c.trim()) + '</div>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>');
+}
+function helperAddMsg(who, text) {
+    const chat = document.getElementById('helperChat');
+    const div = document.createElement('div');
+    div.className = 'hmsg ' + who;
+    if (who === 'you')
+        div.textContent = text;
+    else
+        div.innerHTML = helperMarkdown(text);
+    chat.appendChild(div);
+    setTimeout(() => div.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50);
+}
+function helperFind(q) {
+    const s = q.toLowerCase();
+    let best = null, bestScore = 0;
+    kbList().forEach(topic => {
+        let score = 0;
+        topic.keys.forEach(k => { if (s.includes(k))
+            score++; });
+        if (s.includes(topic.title.toLowerCase()))
+            score += 2;
+        if (score > bestScore) {
+            bestScore = score;
+            best = topic;
+        }
+    });
+    return bestScore > 0 ? best : null;
+}
+function helperReply(topic) {
+    helperAddMsg('bot', '**' + topic.title + '**\n\n' + topic.text);
+}
+function helperAsk() {
+    const inp = document.getElementById('helperInput');
+    const q = inp.value.trim();
+    if (!q)
+        return;
+    helperAddMsg('you', q);
+    inp.value = '';
+    const topic = helperFind(q);
+    if (topic)
+        helperReply(topic);
+    else
+        helperAddMsg('bot', t('helper_fallback') + '\n' + kbList().map(x => '• ' + x.title).join('\n'));
+}
+function helperTopic(i) {
+    const topic = kbList()[i];
+    helperAddMsg('you', topic.title);
+    helperReply(topic);
+}
+function buildHelperChips() {
+    const chips = document.getElementById('helperChips');
+    if (!chips)
+        return;
+    chips.innerHTML = kbList().map((topic, i) => '<button class="filter-chip" onclick="helperTopic(' + i + ')">' + topic.title + '</button>').join('');
+}
+function helperReset() {
+    const chat = document.getElementById('helperChat');
+    if (chat)
+        chat.innerHTML = '';
+    helperAddMsg('bot', t('helper_greeting'));
+}
+initLang();
+</script>
+</body>
+</html>

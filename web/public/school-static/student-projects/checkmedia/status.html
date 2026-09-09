@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/checkmedia/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
+<title>CheckMedia Assistant — Project Status</title>
+<style>
+  :root{
+    --accent:#7C5CFC; --accent-d:#6a4ce0; --ink:#0A2540; --bg:#eef1f8;
+    --card:#ffffff; --line:#e3e9f2; --muted:#5b6b80;
+    --done:#16a34a; --part:#f59e0b; --todo:#94a3b8;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:linear-gradient(180deg,#f7f9fd 0%,var(--bg) 100%);
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:760px; margin:0 auto; padding:22px 18px 60px; padding:max(22px,env(safe-area-inset-top)) 18px 60px;}
+
+
+  .brand{display:flex; align-items:center; gap:10px; margin-bottom:18px}
+  .mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#9d86ff);
+        box-shadow:0 4px 14px rgba(124,92,252,.35)}
+  .brand b{font-size:16px;letter-spacing:.2px}
+  .brand small{display:block;color:var(--muted);font-weight:500;font-size:12px;margin-top:-2px}
+
+
+  .hero{background:linear-gradient(135deg,#10294a,#0A2540); color:#fff; border-radius:20px;
+        padding:24px 22px; box-shadow:0 18px 40px -18px rgba(10,37,64,.55)}
+  .hero h1{margin:0 0 8px; font-size:24px; line-height:1.25}
+  .hero p{margin:0; color:#cdd9ea; font-size:15px}
+  .hero a{color:#cdbcff}
+
+
+  .prog{background:var(--card); border:1px solid var(--line); border-radius:18px;
+        padding:20px; margin-top:-18px; margin:-18px 6px 0; position:relative;
+        box-shadow:0 12px 30px -16px rgba(10,37,64,.25)}
+  .prog .big{font-size:30px;font-weight:800;letter-spacing:-.5px}
+  .prog .big span{font-size:15px;font-weight:600;color:var(--muted)}
+  .bar{height:14px;border-radius:99px;background:#eef1f7;overflow:hidden;display:flex;margin:14px 0 12px}
+  .bar i{display:block;height:100%}
+  .bar .d{background:var(--done)} .bar .p{background:var(--part)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;
+        padding:6px 11px;border-radius:99px;background:#f3f6fb;color:var(--ink)}
+  .chip .dot{width:9px;height:9px;border-radius:50%}
+  .chip.d .dot{background:var(--done)} .chip.p .dot{background:var(--part)} .chip.t .dot{background:var(--todo)}
+
+
+  .doc{margin-top:26px}
+  .doc h1{font-size:22px;margin:34px 0 6px}
+  .doc h2{font-size:19px;margin:34px 0 6px;padding-top:18px;border-top:1px solid var(--line)}
+  .doc h2:first-child{border-top:0;padding-top:0;margin-top:0}
+  .doc h3{font-size:16px;margin:22px 0 4px}
+  .doc h4{font-size:14px;margin:18px 0 4px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .doc p{margin:10px 0;color:#27384d}
+  .doc ul,.doc ol{margin:10px 0;padding-left:22px}
+  .doc li{margin:6px 0;color:#27384d}
+  .doc a{color:var(--accent-d);text-decoration:none;border-bottom:1px solid rgba(124,92,252,.3)}
+  .doc a:hover{border-bottom-color:var(--accent-d)}
+  .doc code{background:#f1f4f9;border:1px solid var(--line);border-radius:6px;padding:1px 6px;
+            font-size:.86em;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .doc strong{color:var(--ink)}
+  .doc hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+  .doc blockquote{margin:14px 0;padding:12px 16px;background:#f6f8fc;border-left:3px solid var(--accent);
+                  border-radius:0 10px 10px 0;color:var(--muted);font-size:14px}
+  .doc blockquote a{color:var(--accent-d)}
+
+  footer{margin-top:40px;text-align:center;color:var(--muted);font-size:13px}
+  footer .live{display:inline-flex;align-items:center;gap:7px}
+  footer .pulse{width:8px;height:8px;border-radius:50%;background:var(--done);
+                box-shadow:0 0 0 0 rgba(22,163,74,.5);animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(22,163,74,.5)}70%{box-shadow:0 0 0 8px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
+
+  .note{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:14px;
+        padding:16px 18px;font-size:14px}
+  .note b{color:#7c2d12}
+
+  @media (max-width:560px){
+    .wrap{padding:18px 14px 50px}
+    .hero{padding:20px 18px;border-radius:18px}
+    .hero h1{font-size:21px}
+    .prog{margin:-16px 0 0;padding:18px}
+    .prog .big{font-size:26px}
+  }
+</style>
+
+<link href="https://wai.computer/school/projects/checkmedia" rel="canonical"/></head>
+<body>
+<div class="wrap">
+<div class="brand">
+<div class="mark"></div>
+<div><b>CheckMedia Assistant</b><small>Project status for stakeholders</small></div>
+</div>
+<div class="hero">
+<h1 id="goalTitle">Project goals &amp; status</h1>
+<p id="goalSub">Loading the latest from the project file…</p>
+</div>
+<div class="prog" id="progCard" style="display:none">
+<div class="big"><span id="progLead"></span></div>
+<div class="bar"><i class="d" id="barDone"></i><i class="p" id="barPart"></i></div>
+<div class="chips">
+<span class="chip d"><span class="dot"></span><b id="cDone">0</b> done</span>
+<span class="chip p"><span class="dot"></span><b id="cPart">0</b> in progress</span>
+<span class="chip t"><span class="dot"></span><b id="cTodo">0</b> to do</span>
+</div>
+</div>
+<div class="doc" id="doc"></div>
+<footer>
+<div class="live"><span class="pulse"></span> Live view of <code>PROJECT.md</code> · updates automatically</div>
+<div id="updated" style="margin-top:6px"></div>
+</footer>
+</div>
+<script>function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function inline(s) {
+    s = escapeHtml(s);
+    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return s;
+}
+function takeList(lines, i, ordered) {
+    var marker = ordered ? /^\s*\d+\.\s+/ : /^\s*-\s+/;
+    var items = [], cur = null;
+    while (i < lines.length) {
+        var ln = lines[i];
+        if (marker.test(ln)) {
+            if (cur !== null)
+                items.push(cur);
+            cur = ln.replace(marker, '');
+            i++;
+            continue;
+        }
+        if (cur !== null && /^\s+\S/.test(ln) && !/^\s*-\s+/.test(ln) && !/^\s*\d+\.\s+/.test(ln)) {
+            cur += ' ' + ln.trim();
+            i++;
+            continue;
+        }
+        break;
+    }
+    if (cur !== null)
+        items.push(cur);
+    var tag = ordered ? 'ol' : 'ul';
+    return { html: '<' + tag + '>' + items.map(function (t) { return '<li>' + inline(t) + '</li>'; }).join('') + '</' + tag + '>', i: i };
+}
+function mdToHtml(md) {
+    var lines = md.replace(/\r/g, '').split('\n'), html = '', i = 0;
+    while (i < lines.length) {
+        var line = lines[i];
+        if (/^\s*$/.test(line)) {
+            i++;
+            continue;
+        }
+        if (/^---+\s*$/.test(line)) {
+            html += '<hr>';
+            i++;
+            continue;
+        }
+        var h = line.match(/^(#{1,4})\s+(.*)$/);
+        if (h) {
+            var l = h[1].length;
+            html += '<h' + l + '>' + inline(h[2]) + '</h' + l + '>';
+            i++;
+            continue;
+        }
+        if (/^>\s?/.test(line)) {
+            var buf = [];
+            while (i < lines.length && /^>\s?/.test(lines[i])) {
+                buf.push(lines[i].replace(/^>\s?/, ''));
+                i++;
+            }
+            html += '<blockquote>' + inline(buf.join(' ')) + '</blockquote>';
+            continue;
+        }
+        if (/^\s*-\s+/.test(line)) {
+            var u = takeList(lines, i, false);
+            html += u.html;
+            i = u.i;
+            continue;
+        }
+        if (/^\s*\d+\.\s+/.test(line)) {
+            var o = takeList(lines, i, true);
+            html += o.html;
+            i = o.i;
+            continue;
+        }
+        var p = [];
+        while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^#{1,4}\s/.test(lines[i]) &&
+            !/^>\s?/.test(lines[i]) && !/^\s*-\s+/.test(lines[i]) &&
+            !/^\s*\d+\.\s+/.test(lines[i]) && !/^---+\s*$/.test(lines[i])) {
+            p.push(lines[i]);
+            i++;
+        }
+        html += '<p>' + inline(p.join(' ')) + '</p>';
+    }
+    return html;
+}
+function planProgress(md) {
+    var parts = md.split(/\n##\s+/);
+    var plan = null;
+    for (var k = 0; k < parts.length; k++) {
+        if (/Development plan/i.test(parts[k].slice(0, 40))) {
+            plan = parts[k];
+            break;
+        }
+    }
+    if (!plan)
+        return null;
+    var done = 0, part = 0, todo = 0;
+    plan.split('\n').forEach(function (ln) {
+        if (!/^\s*\d+\.\s/.test(ln))
+            return;
+        if (/✅/.test(ln))
+            done++;
+        else if (/🟡/.test(ln))
+            part++;
+        else if (/⬜/.test(ln))
+            todo++;
+    });
+    var total = done + part + todo;
+    return total ? { done: done, part: part, todo: todo, total: total } : null;
+}
+fetch('PROJECT.md', { cache: 'no-store' })
+    .then(function (r) { if (!r.ok)
+    throw new Error(r.status); return r.text(); })
+    .then(function (md) {
+    var g = md.match(/In one line:\*\*\s*([\s\S]*?)(?:\n\s*\n|\n#)/);
+    if (g) {
+        document.getElementById('goalSub').innerHTML = inline(g[1].replace(/\s+/g, ' ').trim());
+    }
+    else {
+        document.getElementById('goalSub').textContent = 'A helper bot that guides confused visitors to the right CheckMedia tool.';
+    }
+    var pr = planProgress(md);
+    if (pr) {
+        document.getElementById('progCard').style.display = 'block';
+        document.getElementById('progLead').innerHTML = '<span style="font-weight:800;font-size:30px;color:#0A2540">' + pr.done + ' / ' + pr.total + '</span> <span>steps done</span>';
+        document.getElementById('barDone').style.width = (pr.done / pr.total * 100) + '%';
+        document.getElementById('barPart').style.width = (pr.part / pr.total * 100) + '%';
+        document.getElementById('cDone').textContent = pr.done;
+        document.getElementById('cPart').textContent = pr.part;
+        document.getElementById('cTodo').textContent = pr.todo;
+    }
+    var u = md.match(/Last updated:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/);
+    if (u) {
+        document.getElementById('updated').textContent = 'Project file last updated ' + u[1];
+    }
+    document.getElementById('doc').innerHTML = mdToHtml(md);
+})
+    .catch(function () {
+    document.getElementById('goalSub').textContent = '';
+    document.getElementById('doc').innerHTML =
+        '<div class="note"><b>Couldn\'t load the project file directly.</b><br><br>' +
+            'This page reads <code>PROJECT.md</code> from the same folder. Most phones and browsers block reading a local file when you just double-click the page, for safety.<br><br>' +
+            '<b>To view it:</b> open this page through a web link (once the project is put online), or serve the folder with a tiny local web server. Then it works on any phone. 📱</div>';
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/mathai/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>MathAi — Your smart math helper</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<style>
+
+  :root {
+    --bg: #F3F5FC;
+    --surface: #FFFFFF;
+    --ink: #171B2E;
+    --ink-muted: #5B6484;
+    --primary: #3D4BC7;
+    --primary-hover: #323EA8;
+    --primary-light: #E6E9FB;
+    --accent: #F2B705;
+    --border: rgba(61,75,199,0.16);
+    --ring: rgba(61,75,199,0.32);
+    --grid-line: rgba(61,75,199,0.07);
+    --ok-ink: #1F6B3A;
+    --ok-bg: #EAF7EE;
+    --ok-border: rgba(31,107,58,0.30);
+    --no-ink: #B3271B;
+    --no-bg: #FDF0EE;
+    --no-border: rgba(179,39,27,0.28);
+    --radius: 18px;
+    --font-head: 'Space Grotesk', system-ui, sans-serif;
+    --font-body: 'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+
+  body {
+    font-family: var(--font-body);
+    background-color: var(--bg);
+    background-image:
+      repeating-linear-gradient(to right, var(--grid-line) 0 1px, transparent 1px 24px),
+      repeating-linear-gradient(to bottom, var(--grid-line) 0 1px, transparent 1px 24px);
+    color: var(--ink);
+    line-height: 1.6;
+    -webkit-text-size-adjust: 100%;
+  }
+
+
+  .door {
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 18px;
+    padding: 28px 20px 32px;
+    position: relative;
+    z-index: 0;
+  }
+
+  .door::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(ellipse 60% 50% at 18% 16%, rgba(61,75,199,0.10) 0%, transparent 70%),
+      radial-gradient(ellipse 50% 40% at 82% 84%, rgba(242,183,5,0.12) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .wordmark {
+    font-family: var(--font-head);
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: -.3px;
+    color: var(--primary);
+  }
+  .wordmark span { color: var(--ink); }
+
+  h1 {
+    font-family: var(--font-head);
+    font-size: clamp(38px, 9vw, 62px);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -1.5px;
+    color: var(--ink);
+  }
+
+
+  .highlight { position: relative; color: var(--primary); white-space: nowrap; }
+  .highlight::after {
+    content: '';
+    position: absolute;
+    bottom: 2px; left: -4px; right: -4px;
+    height: 11px;
+    background: var(--accent);
+    border-radius: 1px;
+    opacity: .6;
+    mix-blend-mode: multiply;
+    z-index: -1;
+  }
+
+
+  .facts {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink-muted);
+    max-width: 420px;
+  }
+
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--primary);
+    border-radius: var(--radius);
+    box-shadow: 0 6px 26px rgba(23,27,46,0.07);
+    padding: 22px 20px;
+    width: 100%;
+    max-width: 460px;
+    transition: border-color .25s, box-shadow .25s;
+  }
+
+  .card.is-solved {
+    border-color: var(--accent);
+    border-left-color: var(--accent);
+    box-shadow: 0 6px 26px rgba(242,183,5,0.28);
+  }
+
+  .card-tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--primary);
+    margin-bottom: 14px;
+  }
+
+
+  .line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px 10px;
+    margin-bottom: 16px;
+  }
+
+  .expr {
+    font-family: var(--font-mono);
+    font-size: clamp(21px, 5.6vw, 30px);
+    font-weight: 500;
+    letter-spacing: -.02em;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  .eq { font-family: var(--font-mono); font-size: clamp(21px, 5.6vw, 30px); color: var(--ink-muted); }
+
+
+  .hero-input {
+    width: 116px;
+    height: 52px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-bottom: 3px solid var(--ring);
+    border-radius: 10px;
+    padding: 0 12px;
+    font-family: var(--font-mono);
+    font-size: 24px;
+    font-weight: 700;
+    text-align: center;
+    color: var(--ink);
+    outline: none;
+    transition: border-color .2s, background .2s;
+  }
+  .hero-input::placeholder { color: var(--ink-muted); opacity: .5; font-weight: 400; }
+  .hero-input:focus { border-color: var(--primary); border-bottom-color: var(--primary); background: #fff; }
+  .card.is-solved .hero-input {
+    border-color: var(--accent);
+    border-bottom-color: var(--accent);
+    background: #FFFBEF;
+  }
+
+  .hero-check {
+    width: 100%;
+    min-height: 52px;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 40px;
+    font-family: var(--font-head);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background .2s, transform .15s;
+    box-shadow: 0 4px 18px rgba(61,75,199,0.28);
+  }
+  .hero-check:hover { background: var(--primary-hover); transform: translateY(-1px); }
+  .hero-check:active { transform: translateY(0); }
+
+  .card.is-solved .hero-check { display: none; }
+
+
+  .verdict {
+    min-height: 24px;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.45;
+    max-width: 420px;
+  }
+  .verdict.is-right { color: var(--ok-ink); }
+  .verdict.is-wrong { color: var(--no-ink); }
+  .verdict.is-right, .verdict.is-wrong { animation: pop .25s ease; }
+  @keyframes pop {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+
+  .hero-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 52px;
+    padding: 12px 28px;
+    border-radius: 40px;
+    font-family: var(--font-head);
+    font-size: 16px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    background: transparent;
+    color: var(--primary);
+    border: 2px solid var(--ring);
+    transition: all .25s;
+  }
+  .hero-cta:hover { background: var(--primary-light); border-color: var(--primary); }
+  .hero-cta.is-hot {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+    box-shadow: 0 6px 24px rgba(61,75,199,0.38);
+    animation: pop .3s ease;
+  }
+  .hero-cta.is-hot:hover { background: var(--primary-hover); }
+
+  @media (max-width: 380px) {
+    .door { gap: 14px; padding: 20px 14px 24px; }
+    .card { padding: 18px 14px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<link href="https://wai.computer/school/projects/mathai" rel="canonical"/></head>
+<body>
+<main class="door">
+<div class="wordmark">Math<span>Ai</span></div>
+<h1>Can you solve it <span class="highlight">in your head</span>?</h1>
+<p class="facts">30 problems · from arithmetic to calculus · challenge a friend</p>
+<form class="card" id="heroCard" novalidate="">
+<div class="card-tag">Problem #1 · arithmetic</div>
+<div class="line">
+<span class="expr">347 + 589 − 214</span>
+<span class="eq">=</span>
+<input aria-label="Your answer" autocomplete="off" class="hero-input" id="heroAns" inputmode="numeric" pattern="[0-9]*" placeholder="?" type="text"/>
+</div>
+<button class="hero-check" id="heroCheck" type="submit">Check</button>
+</form>
+<p aria-live="polite" class="verdict" id="heroVerdict" role="status"></p>
+<a class="hero-cta" href="app/" id="heroCta">Open the collection →</a>
+</main>
+<script>const ANSWER = '722';
+const card = document.getElementById('heroCard');
+const input = document.getElementById('heroAns');
+const verdict = document.getElementById('heroVerdict');
+const cta = document.getElementById('heroCta');
+let tries = 0;
+card.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const val = input.value.trim().replace(/\s+/g, '');
+    if (!val) {
+        input.focus();
+        return;
+    }
+    if (val === ANSWER) {
+        card.classList.add('is-solved');
+        input.readOnly = true;
+        document.getElementById('heroCheck').disabled = true;
+        verdict.className = 'verdict is-right';
+        verdict.textContent = "Correct! 722. There are more problems like this in the collection.";
+        cta.classList.add('is-hot');
+        cta.textContent = "29 more problems in the collection →";
+        return;
+    }
+    tries++;
+    verdict.className = 'verdict is-wrong';
+    verdict.textContent = tries >= 2
+        ? "Not yet. Hint: 347 + 589 = 936. Now subtract 214."
+        : "Not quite. Try again.";
+    input.select();
+});
+</script>
+</body>
+</html>
