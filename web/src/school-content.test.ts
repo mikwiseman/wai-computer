@@ -15,6 +15,8 @@ describe("public school content", () => {
     expect(html).toContain('rel="canonical"');
     expect(html).toContain("WaiWai, LLC");
     expect(html).toContain("Delaware");
+    expect(html).not.toMatch(/wai(?:[ .]|<span[^>]*>\.<\/span>)school/i);
+    expect(html).not.toContain("hello@mail.waiwai.is");
     expect(html).not.toMatch(/Russia|Moscow|RUB\b|₽|Severstal|Severgroup|MIPT|Rosatom|IIDF|Netology|Alfa-Bank|Samolet|Pike Media|https?:\/\/[^\s"<>]*\.ru\b/i);
   });
   it("uses the Delaware course offers and an English enquiry path", () => {
@@ -25,7 +27,7 @@ describe("public school content", () => {
     expect(html).not.toMatch(/buy\.stripe\.com|<form|checkout|subscribe/i);
     expect(html).not.toContain("cal.com");
     expect(html).toContain('href="/school/contact"');
-    expect(read("contact.html")).toContain("mailto:hello@mail.waiwai.is");
+    expect(read("contact.html")).toContain("mailto:hi@wai.computer");
   });
   it("supports reduced motion without hiding content", () => {
     expect(read("index.html")).toContain("prefers-reduced-motion: reduce");

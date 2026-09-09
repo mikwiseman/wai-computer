@@ -1,6 +1,6 @@
 # English school website — 9 September 2026
 
-The public WAI School homepage, all 12 student projects, the gallery and both
+The public wai.computer education homepage, all 12 student projects, the gallery and both
 mentor profiles are available in English under wai.computer. The school seller
 is WaiWai, LLC, Delaware, United States, as explicitly requested by Mik.
 The company address and EUR 700 four-week / EUR 2,500 ten-lesson offers come from
@@ -37,6 +37,10 @@ reports, teaching materials, CRM and existing records were not changed.
 MathAi retains its existing temporary multiplayer rooms. Student apps are
 prototypes; CheckMedia labels its conversation as a demo.
 
+Visible branding and metadata use `wai.computer`, with `hi@wai.computer` for
+contact. The legal operator remains WaiWai, LLC. Gallery players keep the page
+scroll position when they receive keyboard focus.
+
 ## Routing and deployment
 
 Next rewrites serve school pages and `/school/projects/<slug>` including nested
@@ -44,6 +48,10 @@ app pages and assets. The recording application's login, authenticated routes
 and API retain their routes. Public `/ru` marketing routes redirect to English.
 Application `/privacy` and `/terms` identify WaiWai, LLC; existing customer
 billing contracts are not migrated by this publication.
+
+Caddy permits same-origin framing only for `/school/projects/*` and
+`/school-static/student-projects/*`; all other routes retain `DENY`. Changes to
+this policy require Caddy validation and reload in addition to the web deploy.
 
 Run `scripts/deploy-web.sh` from a clean, merged checkout. It builds the web
 image locally for linux/amd64 using the existing Dockerfile and Sentry source

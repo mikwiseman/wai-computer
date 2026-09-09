@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>WAI School — AI projects for children</title>
+<title>wai.computer — AI projects for children</title>
 <meta name="description" content="One-to-one AI project learning for ages 8–15. In a month, your child builds and publishes a website, game or bot with a dedicated mentor.">
 <meta name="robots" content="index,follow">
 <meta name="theme-color" content="#F2ECDF">
@@ -13,15 +13,15 @@
 <link rel="apple-touch-icon" href="/school-static/current/apple-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="en_GB">
-<meta property="og:site_name" content="WAI School">
-<meta property="og:title" content="WAI School — AI projects for children">
+<meta property="og:site_name" content="wai.computer">
+<meta property="og:title" content="wai.computer — AI projects for children">
 <meta property="og:description" content="One-to-one AI project learning for ages 8–15. In a month, your child builds and publishes a website, game or bot with a dedicated mentor.">
 <meta property="og:url" content="https://wai.computer/">
 <meta property="og:image" content="https://wai.computer/school-static/assets/castle.webp">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="WAI School — AI projects for children">
+<meta name="twitter:title" content="wai.computer — AI projects for children">
 <meta name="twitter:description" content="One-to-one AI project learning for ages 8–15. In a month, your child builds and publishes a website, game or bot with a dedicated mentor.">
 <meta name="twitter:image" content="https://wai.computer/school-static/assets/castle.webp">
 <link rel="sitemap" type="application/xml" href="/sitemap.xml">
@@ -33,10 +33,10 @@
     {
       "@type": "EducationalOrganization",
       "@id": "https://wai.computer/#organization",
-      "name": "WAI School",
+      "name": "wai.computer",
       "url": "https://wai.computer/",
       "logo": "https://wai.computer/school-static/current/favicon.svg",
-      "email": "hello@mail.waiwai.is",
+      "email": "hi@wai.computer",
       "legalName": "WaiWai, LLC",
       "address": {"@type":"PostalAddress","streetAddress":"1111B S Governors Ave, STE 28908","addressLocality":"Dover","addressRegion":"DE","postalCode":"19904","addressCountry":"US"}
     },
@@ -44,7 +44,7 @@
       "@type": "WebSite",
       "@id": "https://wai.computer/#website",
       "url": "https://wai.computer/",
-      "name": "WAI School",
+      "name": "wai.computer",
       "inLanguage": "en",
       "publisher": { "@id": "https://wai.computer/#organization" }
     },
@@ -69,7 +69,7 @@
         {
           "@type": "ListItem",
           "position": 1,
-          "name": "WAI School",
+          "name": "wai.computer",
           "item": "https://wai.computer/"
         }
       ]
@@ -189,6 +189,11 @@ body { overflow-x: clip; color: var(--wai-ink); }
   .m-site-header__brand { color: var(--wai-ink); font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 17px; line-height: 1; letter-spacing: -0.02em; text-decoration: none; }
   .m-site-header__brand span { color: var(--wai-orange); }
   .m-site-header__cta { min-height: 44px; box-sizing: border-box; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--wai-orange); color: #FFFFFF; font-weight: 700; font-size: 14px; text-decoration: none; transition: background 180ms ease, transform 160ms var(--wai-ease-out); }
+  @media (max-width: 420px) {
+    .m-site-header { left: 12px; right: 12px; gap: 8px; padding-left: 12px; }
+    .m-site-header__brand { font-size: 15px; }
+    .m-site-header__cta { font-size: 12px; padding-inline: 12px; white-space: nowrap; }
+  }
   .m-site-header__cta:active { transform: scale(0.975); }
 
 
@@ -384,7 +389,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
   .f-final-sheet p { margin: 9px 0 0; font-size: 15px; line-height: 1.45; color: rgba(37,33,25,0.72); }
   .m-final-facts { margin-top: 15px; display: flex; justify-content: center; gap: 7px; flex-wrap: wrap; }
   .f-final-sheet .wai-link-button { width: 100%; margin-top: 18px; }
-  .f-final-logo { margin: 34px auto 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: clamp(36px, 10vw, 44px); line-height: 1; letter-spacing: -0.02em; text-align: center; color: var(--wai-ink); }
+  .f-final-logo { margin: 34px auto 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: clamp(28px, 8vw, 44px); line-height: 1; letter-spacing: -0.02em; text-align: center; color: var(--wai-ink); }
   .f-final-logo span { color: var(--wai-orange); }
 }
 
@@ -933,7 +938,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
       <div data-wai-ref="finHaze" style="position: absolute; inset: 0; background: rgba(242,236,223,0.16); opacity: 0; z-index: 2; will-change: opacity;"></div>
     </template>
     <div data-wai-ref="finGradient" style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(242,236,223,0) 48%, rgba(242,236,223,0.46) 78%, rgba(240,233,219,0.76) 100%); opacity: 0; z-index: 2; will-change: opacity;"></div>
-    <div data-wai-ref="finLogo" data-layout-check="desktop-final-logo" style="position: absolute; left: max(40px, calc((100vw - 1240px) / 2)); top: 84px; opacity: 0; transform: translateY(30px); will-change: opacity, transform; z-index: 3; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 46px; letter-spacing: -0.01em; color: #252119;">wai<span style="color: #D4521E;">.</span>school</div>
+    <div data-wai-ref="finLogo" data-layout-check="desktop-final-logo" style="position: absolute; left: max(40px, calc((100vw - 1240px) / 2)); top: 84px; opacity: 0; transform: translateY(30px); will-change: opacity, transform; z-index: 3; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 46px; letter-spacing: -0.01em; color: #252119;">wai<span style="color: #D4521E;">.</span>computer</div>
     <div data-wai-ref="finCta" data-layout-check="desktop-final-cta" aria-hidden="true" inert style="position: absolute; left: 50%; bottom: 44px; width: min(1240px, calc(100vw - 48px)); box-sizing: border-box; background: rgba(251,248,241,0.92); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: 1px solid rgba(37,33,25,0.08); border-radius: 32px; box-shadow: 0 24px 60px rgba(37,33,25,0.18); display: flex; align-items: center; gap: 40px; padding: 36px 44px; opacity: 0; visibility: hidden; pointer-events: none; transform: translate(-50%, 48px); will-change: opacity, transform; z-index: 6;">
       <div style="position: relative; flex: none;"><div style="width: 140px; height: 140px; border-radius: 50%; overflow: hidden; border: 4px solid #FFFFFF; box-shadow: 0 6px 16px rgba(37,33,25,0.14); background: #EAE3D4;"><img src="/school-static/current/uploads/kid-320.webp" width="320" height="320" decoding="async" alt="Child with a laptop" style="width: 100%; height: 100%; object-fit: cover; display: block;"></div><div style="position: absolute; left: 50%; transform: translateX(-50%); bottom: -12px; white-space: nowrap; padding: 7px 16px; border-radius: 999px; background: #F6DFCF; color: #9A3A14; font-weight: 600; font-size: 15px; border: 3px solid #FBF8F1; box-shadow: 0 4px 10px rgba(37,33,25,0.10); z-index: 2;">Ages 8–15</div></div>
       <div style="flex: 1;">
@@ -945,7 +950,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
           <div style="padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(37,33,25,0.18); font-weight: 600; font-size: 14px; color: rgba(37,33,25,0.66);">free</div>
         </div>
         <nav class="wai-legal-links" aria-label="Contact and documents">
-          <a href="mailto:hello@mail.waiwai.is" target="_blank" rel="noopener" data-analytics-id="contact_telegram" data-analytics-component="final">Email the school</a>
+          <a href="mailto:hi@wai.computer" target="_blank" rel="noopener" data-analytics-id="contact_telegram" data-analytics-component="final">Email the school</a>
           <a href="/legal/privacy" data-analytics-id="legal_privacy" data-analytics-component="final">Data privacy</a>
           <a href="/legal/offer" data-analytics-id="legal_offer" data-analytics-component="final">Terms and company details</a>
         </nav>
@@ -956,9 +961,9 @@ body { overflow-x: clip; color: var(--wai-ink); }
 </div>
 </div>
 </div>
-<main data-wai-ref="compactRoot" class="compact-landing" aria-label="WAI School">
+<main data-wai-ref="compactRoot" class="compact-landing" aria-label="wai.computer">
   <header class="m-site-header" data-m-site-header aria-label="Main navigation">
-    <a class="m-site-header__brand" href="#m-hero-title" aria-label="WAI School, back to top">wai<span>.</span>school</a>
+    <a class="m-site-header__brand" href="#m-hero-title" aria-label="wai.computer, back to top">wai<span>.</span>computer</a>
     <a class="m-site-header__cta" href="/school/contact" target="_blank" rel="noopener" data-analytics-id="sticky_intro_call" data-analytics-component="header">Ask about lessons</a>
   </header>
 
@@ -1185,12 +1190,12 @@ body { overflow-x: clip; color: var(--wai-ink); }
       <div class="m-final-facts"><span class="m-chip">30–45 minutes</span><span class="m-chip m-chip--teal">online</span><span class="m-chip">free</span></div>
       <a class="wai-link-button" href="/school/contact" target="_blank" rel="noopener" data-analytics-id="final_intro_call" data-analytics-component="final">Ask about lessons <span aria-hidden="true">→</span></a>
       <nav class="wai-legal-links wai-legal-links--compact" aria-label="Contact and documents">
-        <a href="mailto:hello@mail.waiwai.is" target="_blank" rel="noopener" data-analytics-id="contact_telegram" data-analytics-component="final">Email the school</a>
+        <a href="mailto:hi@wai.computer" target="_blank" rel="noopener" data-analytics-id="contact_telegram" data-analytics-component="final">Email the school</a>
         <a href="/legal/privacy" data-analytics-id="legal_privacy" data-analytics-component="final">Data privacy</a>
         <a href="/legal/offer" data-analytics-id="legal_offer" data-analytics-component="final">Terms</a>
       </nav>
     </div>
-    <div class="f-final-logo" aria-hidden="true">wai<span>.</span>school</div>
+    <div class="f-final-logo" aria-hidden="true">wai<span>.</span>computer</div>
   </section>
 </main>
 </div>
@@ -1739,6 +1744,6 @@ class Component {
 
 
 
-<footer class="school-company"><p>Wai School is an educational programme of <strong>WaiWai, LLC</strong>, Delaware, United States.</p><p>1111B S Governors Ave, STE 28908, Dover, DE 19904, USA</p><nav aria-label="Company and contact"><a href="/school/contact">Contact</a><a href="/legal/offer">Courses &amp; terms</a><a href="/legal/privacy">Privacy</a></nav></footer>
+<footer class="school-company"><p>wai.computer is an educational programme of <strong>WaiWai, LLC</strong>, Delaware, United States.</p><p>1111B S Governors Ave, STE 28908, Dover, DE 19904, USA</p><nav aria-label="Company and contact"><a href="/school/contact">Contact</a><a href="/legal/offer">Courses &amp; terms</a><a href="/legal/privacy">Privacy</a></nav></footer>
 </body>
 </html>
