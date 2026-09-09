@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Darya Zhuykova — WAI School mentor</title>
+<meta name="description" content="Darya Zhuykova is a WAI School mentor who implements generative AI at Severstal, teaches at MIPT and has a background in psychology. Meet the person teaching your child.">
+<link rel="canonical" href="https://wai.computer/mentors/darya">
+<meta property="og:type" content="profile">
+<meta property="og:url" content="https://wai.computer/mentors/darya">
+<meta property="og:title" content="Darya Zhuykova — WAI School mentor">
+<meta property="og:description" content="She implements generative AI at Severstal, teaches at MIPT and has a background in psychology. Meet the person teaching your child.">
+<meta property="og:image" content="https://wai.computer/school-static/mentors/darya-portrait.jpg">
+<meta property="og:locale" content="en_GB">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/school-static/current/favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="/school-static/current/favicon.ico">
+<link rel="apple-touch-icon" href="/school-static/current/apple-touch-icon.png">
+<link rel="preload" href="/school-static/current/fonts/unbounded-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/school-static/current/fonts/golos-text-latin.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face { font-family:'Golos Text'; font-style:normal; font-weight:400 800; font-display:swap;
+  src:url('/school-static/current/fonts/golos-text-cyrillic-ext.woff2') format('woff2');
+  unicode-range:U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F; }
+@font-face { font-family:'Golos Text'; font-style:normal; font-weight:400 800; font-display:swap;
+  src:url('/school-static/current/fonts/golos-text-latin.woff2') format('woff2');
+  unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family:'Golos Text'; font-style:normal; font-weight:400 800; font-display:swap;
+  src:url('/school-static/current/fonts/golos-text-latin.woff2') format('woff2');
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family:'Unbounded'; font-style:normal; font-weight:500 700; font-display:swap;
+  src:url('/school-static/current/fonts/unbounded-cyrillic-ext.woff2') format('woff2');
+  unicode-range:U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F; }
+@font-face { font-family:'Unbounded'; font-style:normal; font-weight:500 700; font-display:swap;
+  src:url('/school-static/current/fonts/unbounded-latin.woff2') format('woff2');
+  unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family:'Unbounded'; font-style:normal; font-weight:500 700; font-display:swap;
+  src:url('/school-static/current/fonts/unbounded-latin.woff2') format('woff2');
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+:root{
+  --ink:#252119; --white:#FFF;
+  --o100:#F6DFCF; --o500:#D4521E; --t50:#EAF4F1; --t500:#0E8C7E; --t700:#0B6A5F;
+  --e2:0 16px 40px rgba(37,33,25,.12); --e3:0 24px 60px rgba(37,33,25,.18);
+  --muted:rgba(37,33,25,.68); --muted2:rgba(37,33,25,.52); --hair:rgba(37,33,25,.08);
+}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,#F4EEE1 0%,#EFEAE0 100%) fixed;color:var(--ink);
+  font-family:'Golos Text',-apple-system,BlinkMacSystemFont,sans-serif;font-size:17px;line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1040px;margin:0 auto;padding:0 32px}
+h1,h2{font-family:'Unbounded','Golos Text',sans-serif;font-weight:700;margin:0;letter-spacing:-.01em}
+p{margin:0;text-wrap:pretty}
+img{max-width:100%}
+.eyebrow{font-weight:700;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--o500)}
+
+.brandbar{padding:28px 0 0}
+.brandbar a{font-family:'Unbounded',sans-serif;font-weight:700;font-size:15px;color:var(--ink);text-decoration:none}
+.brandbar a:hover{color:var(--o500)}
+.brandbar span{font-size:13px;color:var(--muted2)}
+
+.hero{padding:56px 0 0}
+.grid{display:grid;grid-template-columns:minmax(0,400px) minmax(0,1fr);gap:56px;align-items:center}
+.grid--rev{grid-template-columns:minmax(0,1fr) minmax(0,400px)}
+.portrait-wrap{position:relative}
+.portrait{aspect-ratio:1/1.12;border-radius:24px;overflow:hidden;border:6px solid var(--white);
+  box-shadow:var(--e3);background:#3b3833}
+.portrait img{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 32%}
+.badge{position:absolute;right:-26px;bottom:-26px;width:140px;height:140px;border-radius:50%;
+  background:var(--white);border:1px solid var(--hair);box-shadow:var(--e2);padding:0 16px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:4px}
+.badge b{font-weight:800;font-size:21px;line-height:1.05;color:var(--o500);white-space:nowrap}
+.badge span{font-size:11.5px;font-weight:700;color:var(--muted);max-width:104px;line-height:1.25}
+h1{font-size:54px;line-height:1.08;margin-top:14px}
+.role{margin-top:18px;display:flex;flex-direction:column;gap:6px}
+.role p{font-size:19px;font-weight:700;line-height:1.3}
+.role em{font-style:normal;color:var(--o500)}
+.lead{margin-top:24px;font-size:18px;line-height:1.5;max-width:560px}
+.facts{margin-top:28px;padding-top:24px;border-top:1px solid rgba(37,33,25,.12);
+  display:flex;flex-direction:column;gap:12px}
+.fact{display:grid;grid-template-columns:8px minmax(0,1fr);gap:14px;align-items:start;
+  font-size:15px;line-height:1.45;color:var(--muted)}
+.fact i{width:8px;height:8px;margin-top:8px;border-radius:50%;background:var(--t500)}
+.fact b{color:var(--ink);font-weight:700}
+
+section{padding:92px 0 0}
+h2{font-size:34px;line-height:1.16;margin-top:12px}
+.photo2{aspect-ratio:1/1;border-radius:24px;overflow:hidden;border:6px solid var(--white);
+  box-shadow:var(--e3);background:#4b5a41}
+.photo2 img{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 40%}
+.copy{margin-top:20px;font-size:17px;line-height:1.6;color:var(--muted)}
+.quote{margin-top:26px;padding:24px 28px;border-radius:24px;background:var(--t50);
+  border:1px solid rgba(14,140,126,.20)}
+.quote p{font-weight:700;font-size:19px;line-height:1.45;color:var(--t700)}
+
+.rules{margin-top:32px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.rule{background:var(--o100);border:1px solid rgba(212,82,30,.16);border-radius:24px;padding:26px 28px}
+.rule b{display:block;font-weight:800;font-size:36px;line-height:1;color:var(--o500)}
+.rule h3{font-family:'Unbounded',sans-serif;margin:14px 0 0;font-size:19px;line-height:1.2;font-weight:700}
+.rule p{margin-top:8px;font-size:14.5px;line-height:1.45;color:rgba(37,33,25,.72)}
+
+.also{margin-top:56px;padding-top:24px;border-top:1px solid rgba(37,33,25,.12);
+  font-size:14.5px;line-height:1.5;color:var(--muted2);max-width:720px}
+footer{padding:20px 0 72px;font-size:13px;color:var(--muted2)}
+
+@media (max-width:900px){
+  .wrap{padding:0 20px}
+  .brandbar{padding:20px 0 0}
+  .hero{padding:28px 0 0}
+  .grid,.grid--rev{grid-template-columns:minmax(0,1fr);gap:32px}
+  .photo2{order:-1}
+  .badge{right:-6px;bottom:-20px;width:116px;height:116px;padding:0 12px}
+  .badge b{font-size:17px}
+  .badge span{font-size:10.5px;max-width:92px}
+  h1{font-size:clamp(32px,9vw,42px)}
+  .role{margin-top:14px}
+  .role p{font-size:17px}
+  .lead{font-size:17px;margin-top:20px}
+  section{padding:56px 0 0}
+  h2{font-size:clamp(26px,7vw,30px)}
+  .quote p{font-size:17px}
+  .rules{grid-template-columns:minmax(0,1fr)}
+  .also{margin-top:40px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="brandbar"><a href="/">WAI School</a> <span>· Mentors</span></div>
+
+  <div class="hero">
+    <div class="grid">
+      <div class="portrait-wrap">
+        <div class="portrait"><img src="/school-static/mentors/darya-portrait.jpg" width="640" height="640" alt="Darya Zhuykova" fetchpriority="high"></div>
+        <div class="badge"><b>6 cohorts</b><span>graduated at MIPT</span></div>
+      </div>
+      <div>
+        <div class="eyebrow">WAI School mentor</div>
+        <h1>Darya Zhuykova</h1>
+        <div class="role">
+          <p>Implements generative AI at <em>Severstal</em></p>
+          <p>Lecturer at <em>MIPT</em></p>
+        </div>
+        <p class="lead">She came to AI from psychology. Her interest lies in what happens to a person when they begin thinking alongside a machine.</p>
+        <div class="facts">
+          <div class="fact"><i></i><div><b>Severstal</b> — her main role: introducing generative AI into the daily operations of an industrial company</div></div>
+          <div class="fact"><i></i><div><b>MIPT</b> — 10 active programmes, including Prompt Engineering, Vibe Coding, and Tools and Use Cases</div></div>
+          <div class="fact"><i></i><div><b>25,000 employees</b> at Severgroup have taken her introductory generative AI course</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <div class="grid grid--rev">
+      <div>
+        <div class="eyebrow">How she teaches</div>
+        <h2>She teaches what she does</h2>
+        <p class="copy">Darya applies AI to real processes every day, building bots, automations and prototypes herself. In her lessons, children lead their own projects with an adult nearby to help when needed.</p>
+        <div class="quote"><p>“You cannot learn AI by watching from the sidelines, just as you cannot learn snowboarding from a description.”</p></div>
+      </div>
+      <div class="photo2"><img src="/school-static/mentors/darya-forest.jpg" width="640" height="640" alt="Darya Zhuykova" loading="lazy"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">What she asks of a student</div>
+    <h2>“AI does not make children less capable. The habit of never checking does.”</h2>
+    <div class="rules">
+      <div class="rule"><b>1</b><h3>Check the facts</h3><p>Anything a model produces is a hypothesis until the student checks the source.</p></div>
+      <div class="rule"><b>2</b><h3>Explain what you need</h3><p>Expressing a thought precisely is a skill that matters far beyond AI.</p></div>
+      <div class="rule"><b>3</b><h3>Finish what you started</h3><p>A project is finished when it works and you can show it to someone.</p></div>
+    </div>
+    <p class="also">Darya also speaks at MIPT IT&nbsp;Purple&nbsp;Conf, runs her own workshops at Shenzhen MSU-BIT University, and leads webinars in English for students in Southeast Asia.</p>
+  </section>
+
+  <footer>WAI School</footer>
+</div>
+</body>
+</html>

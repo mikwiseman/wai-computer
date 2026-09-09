@@ -39,11 +39,14 @@ describe("resolveApiProxyTarget", () => {
 });
 
 describe("English school routing", () => {
-  it("overrides only the two approved public pages before filesystem routing", () => {
+  it("overrides school pages while preserving application and API routes", () => {
     expect(schoolRewrites()).toEqual({
       beforeFiles: [
         { source: "/", destination: "/school-static/index.html" },
         { source: "/school/projects", destination: "/school-static/projects.html" },
+        { source: "/projects", destination: "/school-static/projects.html" },
+        { source: "/mentors/dima", destination: "/school-static/mentors/dima.html" },
+        { source: "/mentors/darya", destination: "/school-static/mentors/darya.html" },
       ],
       afterFiles: [
         { source: "/api/:path*", destination: `${resolveApiProxyTarget()}/api/:path*` },

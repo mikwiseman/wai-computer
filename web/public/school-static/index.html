@@ -1,87 +1,1751 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Wai School — Big ideas start small</title>
-  <meta name="description" content="Live, mentor-led AI learning for children. Build a website, game or app through a four-week course (€700), or ten individual lessons (€2,500).">
-  <meta name="theme-color" content="#fff7e7">
-  <link rel="canonical" href="https://wai.computer/">
-  <meta property="og:type" content="website">
-  <meta property="og:title" content="Wai School — Big ideas start small">
-  <meta property="og:description" content="A child's idea. A mentor's guidance. A real project to share.">
-  <meta property="og:url" content="https://wai.computer/">
-  <meta property="og:image" content="https://wai.computer/school-static/assets/castle.webp">
-  <meta name="twitter:card" content="summary_large_image">
-  <link rel="preload" href="/school-static/assets/golos-text-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/school-static/style.css">
-  <script src="/school-static/school.js" defer></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WAI School — AI projects for children</title>
+<meta name="description" content="One-to-one AI project learning for ages 8–15. In a month, your child builds and publishes a website, game or bot with a dedicated mentor.">
+<meta name="robots" content="index,follow">
+<meta name="theme-color" content="#F2ECDF">
+<link rel="canonical" href="https://wai.computer/">
+<link rel="icon" href="/school-static/current/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/school-static/current/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/school-static/current/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="en_GB">
+<meta property="og:site_name" content="WAI School">
+<meta property="og:title" content="WAI School — AI projects for children">
+<meta property="og:description" content="One-to-one AI project learning for ages 8–15. In a month, your child builds and publishes a website, game or bot with a dedicated mentor.">
+<meta property="og:url" content="https://wai.computer/">
+<meta property="og:image" content="https://wai.computer/school-static/assets/castle.webp">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="WAI School — AI projects for children">
+<meta name="twitter:description" content="One-to-one AI project learning for ages 8–15. In a month, your child builds and publishes a website, game or bot with a dedicated mentor.">
+<meta name="twitter:image" content="https://wai.computer/school-static/assets/castle.webp">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<link rel="preload" as="image" href="/school-static/current/parallax/landscape/00-background-clean.webp?v=5" type="image/webp" media="(min-width: 1200px)">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "EducationalOrganization",
+      "@id": "https://wai.computer/#organization",
+      "name": "WAI School",
+      "url": "https://wai.computer/",
+      "logo": "https://wai.computer/school-static/current/favicon.svg",
+      "email": "hello@mail.waiwai.is"
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://wai.computer/#website",
+      "url": "https://wai.computer/",
+      "name": "WAI School",
+      "inLanguage": "en",
+      "publisher": { "@id": "https://wai.computer/#organization" }
+    },
+    {
+      "@type": "Course",
+      "@id": "https://wai.computer/#course",
+      "name": "One-to-one AI project learning for children",
+      "description": "Children build and publish their own AI project with a dedicated mentor.",
+      "provider": { "@id": "https://wai.computer/#organization" },
+      "educationalLevel": "For ages 8–15",
+      "typicalAgeRange": "8-15",
+      "inLanguage": "ru",
+      "hasCourseInstance": {
+        "@type": "CourseInstance",
+        "courseMode": "Online",
+        "courseWorkload": "8 individual lessons this month",
+        "inLanguage": "ru"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": "https://wai.computer/#breadcrumbs",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "WAI School",
+          "item": "https://wai.computer/"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<meta name="wai-build" content="7c6e504e24c3279c7fa311cff655db0e632c3ef94422b216764944a676697c1e">
+<style data-wai-fonts>
+@font-face {
+  font-family: 'Golos Text';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/school-static/current/fonts/golos-text-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'Golos Text';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/school-static/current/fonts/golos-text-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Golos Text';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/school-static/current/fonts/golos-text-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Unbounded';
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  src: url('/school-static/current/fonts/unbounded-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'Unbounded';
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  src: url('/school-static/current/fonts/unbounded-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Unbounded';
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  src: url('/school-static/current/fonts/unbounded-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>
+body { margin: 0; background: linear-gradient(180deg, #F4EEE1 0%, #EFEAE0 100%) fixed; font-family: 'Golos Text', sans-serif; }
+a { color: #D4521E; } a:hover { color: #BC4517; }
+@keyframes waiHeroClouds { 0% { transform: translate3d(0,0,0); } 100% { transform: translate3d(-72px,-9px,0); } }
+@keyframes waiFloat1 { from { transform: translateY(-8px); } to { transform: translateY(10px); } }
+@keyframes waiFloat2 { from { transform: translateY(9px); } to { transform: translateY(-9px); } }
+@keyframes waiFloat3 { from { transform: translateY(-6px); } to { transform: translateY(7px); } }
+
+:root {
+  --wai-ink: #252119;
+  --wai-surface: #FBF8F1;
+  --wai-scene: #F2ECDF;
+  --wai-orange: #BC4517;
+  --wai-orange-dark: #9A3A14;
+  --wai-teal: #0E8C7E;
+  --wai-teal-dark: #0B6A5F;
+  --wai-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --wai-ease-story: cubic-bezier(0.65, 0, 0.35, 1);
+}
+html { scroll-behavior: smooth; }
+body { overflow-x: clip; color: var(--wai-ink); }
+.wai-legal-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 14px; color: rgba(37,33,25,0.62); font-size: 12px; line-height: 1.35; }
+.wai-legal-links a { color: inherit; text-decoration: none; text-underline-offset: 3px; }
+.wai-legal-links a:hover { color: var(--wai-orange-600); text-decoration: underline; }
+.wai-legal-links a:focus-visible { outline: 2px solid var(--wai-orange-500); outline-offset: 4px; border-radius: 3px; }
+.wai-legal-links--compact { justify-content: center; margin-top: 12px; text-align: center; }
+.desktop-landing { display: block; }
+.compact-landing { display: none; }
+.wai-link-button {
+  min-height: 56px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+  gap: 12px; padding: 17px 30px; border-radius: 999px; background: var(--wai-orange); color: #FFFFFF;
+  font-weight: 700; font-size: 17px; text-decoration: none; transition: background 180ms ease, transform 160ms var(--wai-ease-out);
+}
+.wai-link-button:active { transform: scale(0.975); }
+.wai-link-button:focus-visible, .m-route-button:focus-visible, .m-site-header__brand:focus-visible, .m-site-header__cta:focus-visible {
+  outline: 3px solid var(--wai-teal-dark); outline-offset: 4px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .wai-link-button:hover, .m-site-header__cta:hover { background: var(--wai-orange-dark); color: #FFFFFF; }
+}
+@media (max-width: 1199px) {
+  html { scroll-behavior: auto; }
+  body { background-attachment: scroll; }
+  .desktop-landing { display: none !important; }
+  .compact-landing { display: block; overflow: clip; background: var(--wai-scene); }
+
+
+  .m-site-header {
+    position: fixed; left: 20px; right: 20px; top: max(12px, env(safe-area-inset-top)); z-index: 50;
+    opacity: 0; pointer-events: none; transition: opacity 240ms ease;
+    max-width: 960px; min-height: 56px; margin-inline: auto; box-sizing: border-box; padding: 6px 7px 6px 18px;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    border: 1px solid rgba(37,33,25,0.10); border-radius: 999px; background: rgba(251,248,241,0.90);
+    box-shadow: 0 6px 16px rgba(37,33,25,0.12); backdrop-filter: blur(16px);
+  }
+  .m-site-header.is-on { opacity: 1; pointer-events: auto; }
+  .compact-landing:not(.f-js) .m-site-header { opacity: 1; pointer-events: auto; }
+  .m-site-header__brand { color: var(--wai-ink); font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 17px; line-height: 1; letter-spacing: -0.02em; text-decoration: none; }
+  .m-site-header__brand span { color: var(--wai-orange); }
+  .m-site-header__cta { min-height: 44px; box-sizing: border-box; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--wai-orange); color: #FFFFFF; font-weight: 700; font-size: 14px; text-decoration: none; transition: background 180ms ease, transform 160ms var(--wai-ease-out); }
+  .m-site-header__cta:active { transform: scale(0.975); }
+
+
+  .f-section { box-sizing: border-box; max-width: 760px; margin: 0 auto; padding: 64px 20px 0; }
+
+  .f-hero, .f-final, .compact-landing [data-m-flow="why"], .compact-landing [data-m-flow="adults"] {
+    min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; justify-content: center;
+  }
+  .f-section--wide { max-width: none; padding-inline: 0; }
+  .f-head--inset, .f-projects-cta { padding-inline: 20px; box-sizing: border-box; max-width: 760px; margin-inline: auto; }
+
+  .f-hero { position: relative; padding-top: 26px; padding-bottom: max(28px, env(safe-area-inset-bottom)); }
+  .f-hero .m-hero-copy { margin-block: auto; }
+  .f-hero .m-hero-card { margin-top: 0; }
+  .f-hero-bg { position: absolute; top: 0; bottom: 0; left: 50%; width: 100vw; transform: translateX(-50%); pointer-events: none; }
+  .f-hero-bg picture, .f-hero-bg img { width: 100%; height: 100%; }
+  .f-hero-bg img { object-fit: cover; object-position: 58% 42%; display: block; }
+  .f-hero-bg::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(251,248,241,0.72) 0%, rgba(251,248,241,0.66) 46%, var(--wai-scene) 100%); }
+
+  .compact-landing [data-m-flow="adults"] { position: relative; }
+  .f-adults-bg { position: absolute; top: 0; bottom: 0; left: 50%; width: 100vw; transform: translateX(-50%); pointer-events: none; overflow: hidden; }
+  .f-adults-bg picture { display: block; width: 100%; height: 100%; }
+
+  .f-adults-bg img { position: absolute; left: 50%; bottom: 0; width: 175%; height: auto; transform: translateX(-53%); display: block; }
+  .f-adults-bg::after { content: ''; position: absolute; inset: auto 0 0 0; height: 22%; background: linear-gradient(180deg, rgba(240,233,219,0) 0%, var(--wai-scene) 100%); }
+  .compact-landing [data-m-flow="adults"] > .f-head, .compact-landing [data-m-flow="adults"] > .m-evidence { position: relative; }
+  .f-final { padding-bottom: max(40px, env(safe-area-inset-bottom)); }
+
+  .m-eyebrow { font-weight: 800; font-size: 13px; line-height: 1; letter-spacing: 0.14em; text-transform: uppercase; color: var(--wai-orange); }
+  .m-title { margin: 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: clamp(32px, 8.7vw, 42px); line-height: 1.12; letter-spacing: -0.025em; color: var(--wai-ink); text-wrap: balance; }
+  .f-h2 { font-size: clamp(27px, 7.4vw, 34px); }
+  .m-lead { margin: 14px 0 0; font-size: 17px; line-height: 1.48; color: rgba(37,33,25,0.72); text-wrap: pretty; }
+  .f-head .m-eyebrow { margin-bottom: 10px; }
+
+
+  [data-reveal] { opacity: 0; transform: translate3d(0, 16px, 0); transition: opacity 360ms ease, transform 420ms var(--wai-ease-out); }
+  [data-reveal].is-in { opacity: 1; transform: none; }
+  .compact-landing:not(.f-js) [data-reveal] { opacity: 1; transform: none; }
+
+  /* --- hero --- */
+  .f-hero .m-hero-copy { position: relative; width: min(100%, 760px); text-align: center; }
+  .f-hero .m-title { font-size: clamp(30px, 8.6vw, 42px); line-height: 1.08; }
+  .m-hero-card {
+    position: relative; margin-top: 22px; box-sizing: border-box; padding: 18px; border-radius: 28px; background: rgba(251,248,241,0.94);
+    border: 1px solid rgba(37,33,25,0.09); box-shadow: 0 24px 60px rgba(37,33,25,0.17);
+  }
+  .m-hero-card__summary { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
+  .m-hero-card__person { position: relative; display: block; align-self: center; width: 88px; height: 88px; }
+  .m-hero-card__person .m-avatar { width: 88px; height: 88px; border-width: 3px; }
+  .m-hero-card__person .m-chip { position: absolute; left: 50%; bottom: -10px; z-index: 2; min-height: 28px; padding: 5px 11px; justify-content: center; transform: translateX(-50%); border: 2px solid var(--wai-surface); box-shadow: 0 4px 10px rgba(37,33,25,0.10); font-size: 11.5px; white-space: nowrap; }
+  .m-hero-card__copy { width: 100%; min-width: 0; margin-top: 22px; text-align: center; }
+  .m-hero-card__copy strong, .m-hero-card__copy span { display: block; }
+  .m-hero-card__copy strong { font-size: clamp(17px, 4.7vw, 22px); line-height: 1.12; letter-spacing: -0.03em; white-space: normal; text-wrap: balance; }
+  .m-hero-card__copy span { margin-top: 7px; font-size: clamp(15.5px, 4vw, 17px); line-height: 1.42; color: rgba(37,33,25,0.68); }
+  .m-hero-card .wai-link-button { width: 100%; min-height: 52px; margin-top: 18px; padding: 14px 22px; font-size: 15px; }
+  .m-avatar { width: 76px; height: 76px; flex: none; border-radius: 50%; overflow: hidden; border: 3px solid #FFF; box-shadow: 0 6px 16px rgba(37,33,25,0.14); background: #F6DFCF; }
+  .m-avatar img { width: 100%; height: 100%; display: block; object-fit: cover; }
+
+
+  .f-card {
+    position: relative; margin-top: 16px; box-sizing: border-box; padding: 20px 22px; border-radius: 22px;
+    border: 1px solid rgba(37,33,25,0.08); background: var(--wai-surface); box-shadow: 0 16px 40px rgba(37,33,25,0.13);
+  }
+  .f-card h3 { margin: 0; font-size: 20px; line-height: 1.14; letter-spacing: -0.02em; }
+  .f-card p { margin: 8px 0 0; font-size: 14.5px; line-height: 1.45; color: rgba(37,33,25,0.72); }
+  .f-card .m-week-result { margin-top: 14px; }
+  .f-card-people { display: flex; align-items: center; gap: 0; margin-bottom: 12px; }
+  .f-card-people .m-avatar { width: 46px; height: 46px; }
+  .f-card-people .f-avatar-overlap { margin-left: -14px; }
+  .f-section > .f-h2 + .f-card { margin-top: 18px; }
+
+
+  .f-head { margin-bottom: 4px; }
+  .m-week-card {
+    position: relative; margin-top: 16px; box-sizing: border-box; padding: 22px; border-radius: 24px; background: var(--wai-surface);
+    border: 1px solid rgba(37,33,25,0.08); box-shadow: 0 24px 60px rgba(37,33,25,0.16);
+    display: flex; flex-direction: column;
+  }
+  .m-week-number { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .m-week-number strong { font-weight: 800; font-size: 13px; letter-spacing: 0.13em; color: var(--wai-orange); }
+  .m-week-number span { font-weight: 700; font-size: 12px; color: rgba(37,33,25,0.64); }
+  .m-week-card h3 { margin: 10px 0 0; font-weight: 800; font-size: clamp(21px, 5.9vw, 25px); line-height: 1.16; letter-spacing: -0.02em; }
+  .m-week-card p { margin: 8px 0 0; font-size: 14.5px; line-height: 1.45; color: rgba(37,33,25,0.72); }
+  .m-week-result { margin-top: 18px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .m-chip { display: inline-flex; align-items: center; min-height: 28px; box-sizing: border-box; padding: 5px 11px; border-radius: 999px; background: #F6DFCF; color: #9A3A14; font-weight: 700; font-size: 11.5px; }
+  .m-chip--teal { background: #D6ECE6; color: #0B6A5F; }
+  .m-chip--ghost { background: transparent; border: 1px solid rgba(37,33,25,0.18); color: rgba(37,33,25,0.66); }
+  .f-program-final {
+    margin-top: 18px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px;
+    background: var(--wai-surface); border: 1px solid rgba(37,33,25,0.08); box-shadow: 0 24px 60px rgba(37,33,25,0.18);
+    display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px;
+  }
+  .f-program-final__title { font-weight: 800; font-size: 23px; line-height: 1.16; letter-spacing: -0.02em; font-family: 'Unbounded', sans-serif; }
+  .f-program-final .wai-link-button { min-height: 48px; padding: 12px 22px; font-size: 14px; }
+
+
+  .m-adults-stat { margin-top: 20px; display: flex; align-items: center; gap: 14px; }
+  .m-adults-stat strong { font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: clamp(40px, 11vw, 52px); line-height: 1; color: var(--wai-orange); white-space: nowrap; }
+  .m-adults-stat span { max-width: 180px; font-weight: 700; font-size: 13.5px; line-height: 1.3; color: rgba(37,33,25,0.72); }
+  .m-evidence { margin-top: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .m-proof { position: relative; box-sizing: border-box; background: rgba(251,248,241,0.96); border: 1px solid rgba(37,33,25,0.08); box-shadow: 0 16px 40px rgba(37,33,25,0.12); }
+  .m-proof--school { grid-column: 1 / -1; border-radius: 22px; padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; }
+  .m-proof--school small { font-weight: 800; font-size: 10.5px; letter-spacing: 0.12em; color: var(--wai-orange); }
+  .m-proof--school h3 { margin: 2px 0 0; font-size: 20px; }
+  .m-proof--school strong { font-family: 'Unbounded', sans-serif; font-size: clamp(26px, 7vw, 34px); color: var(--wai-orange); }
+  .m-proof--circle { width: 100%; max-width: 132px; aspect-ratio: 1; justify-self: center; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 12px; gap: 6px; }
+  .m-proof--circle img { max-width: 74%; height: 22px; object-fit: contain; }
+  .m-proof--circle strong { font-size: 10.5px; line-height: 1.25; font-weight: 800; color: rgba(37,33,25,0.72); }
+
+
+  .f-people-grid { display: grid; gap: 16px; margin-top: 16px; }
+  .m-founder-card { box-sizing: border-box; padding: 18px; border-radius: 26px; background: var(--wai-surface); border: 1px solid rgba(37,33,25,0.08); box-shadow: 0 16px 40px rgba(37,33,25,0.12); display: flex; flex-direction: column; }
+  .m-founder-photo { position: relative; height: auto; aspect-ratio: 3 / 2; border-radius: 18px; overflow: hidden; background: #F6DFCF; }
+  .m-founder-photo img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 28%; display: block; }
+  .m-founder-role { position: absolute; left: 8px; top: 8px; z-index: 1; min-height: 24px; padding: 4px 9px; font-size: 10.5px; background: rgba(251,248,241,0.94); }
+  .m-founder-card h3 { margin: 14px 0 0; font-size: 20px; }
+  .m-founder-card > p { margin: 4px 0 0; font-size: 13.5px; color: rgba(37,33,25,0.68); }
+  .m-founder-facts { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(37,33,25,0.10); display: grid; gap: 8px; }
+  .m-founder-fact { font-size: 11.5px; line-height: 1.4; color: rgba(37,33,25,0.72); }
+  .m-award-badge { flex: none; padding: 6px 11px; border-radius: 999px; background: rgba(255,248,239,0.16); font-weight: 800; font-size: 11.5px; text-align: center; }
+  .m-founder-award { margin-top: 10px; box-sizing: border-box; min-width: 0; padding: 9px 11px; border-radius: 13px; background: linear-gradient(135deg, #D4521E, #BC4517); color: #FFF8EF; display: flex; align-items: center; gap: 9px; font-size: 11px; line-height: 1.35; }
+  .m-founder-award > span:last-child { flex: 1; min-width: 0; }
+  .m-founder-award .m-award-badge { padding: 4px 8px; font-size: 10.5px; }
+  .m-founder-link { margin-top: auto; padding-top: 12px; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; color: #BC4517; text-decoration: none; }
+  .m-founder-link span { transition: transform 200ms var(--wai-ease-out); }
+  .m-founder-link:active span { transform: translateX(3px); }
+
+
+  .f-projects-scroller {
+    margin-top: 20px; display: flex; gap: 16px; overflow-x: auto; padding: 4px 20px 14px;
+    scroll-snap-type: x mandatory; scrollbar-width: none;
+  }
+  .f-projects-scroller::-webkit-scrollbar { display: none; }
+  .m-project-card { scroll-snap-align: center; width: min(78vw, 520px); flex: none; box-sizing: border-box; display: flex; flex-direction: column; color: inherit; text-decoration: none; }
+  .m-project-media { flex: none; width: 100%; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 24px; background: #15151D; outline: 1px solid rgba(37,33,25,0.08); }
+  .m-project-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .m-project-caption { padding: 14px 2px 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .m-project-caption h3 { margin: 0; font-size: 20px; line-height: 1.2; }
+  .m-project-caption p { margin: 4px 0 0; font-size: 13.5px; color: rgba(37,33,25,0.68); }
+  .m-project-meta { flex: none; font-weight: 800; font-size: 10px; line-height: 1.25; letter-spacing: 0.08em; text-align: right; color: rgba(37,33,25,0.64); }
+  .f-projects-cta { margin-top: 8px; }
+  .f-projects-cta .wai-link-button { min-height: 46px; padding: 12px 18px; font-size: 13px; }
+
+
+
+  .f-benefit-stack { margin-top: 64px; }
+  .f-benefit { margin-top: 14px; }
+  .m-benefit-card {
+    position: relative; min-width: 0; box-sizing: border-box; padding: 20px 22px; border-radius: 22px;
+    border: 1px solid rgba(37,33,25,0.08); background: var(--wai-surface); box-shadow: 0 16px 40px rgba(37,33,25,0.13);
+    display: flex; flex-direction: column;
+  }
+  .m-benefit-card h3 { margin: 0; font-size: 20px; line-height: 1.14; letter-spacing: -0.02em; }
+  .m-benefit-card p { margin: 8px 0 0; font-size: 14.5px; line-height: 1.45; color: rgba(37,33,25,0.72); }
+  .m-benefit-card .m-benefit-description { font-size: 14.5px; line-height: 1.45; }
+  .m-benefit-copy { min-width: 0; }
+  .m-hobby-tags { margin-top: 16px; display: flex; gap: 7px; flex-wrap: wrap; }
+  .m-hobby-tags .m-chip { min-height: 28px; padding: 5px 10px; font-size: 11px; }
+  .m-browser-mock { margin: 16px 0 0; padding: 14px; border-radius: 14px; border: 1px solid rgba(37,33,25,0.10); background: #FFF; }
+  .m-browser-top { display: flex; gap: 4px; }
+  .m-browser-top i { width: 5px; height: 5px; border-radius: 50%; background: rgba(37,33,25,0.20); }
+  .m-browser-line { height: 6px; margin-top: 7px; border-radius: 999px; background: rgba(37,33,25,0.10); }
+  .m-browser-line--short { width: 58%; }
+  .m-browser-mock .m-week-result { margin-top: 10px; }
+  .m-browser-mock .m-chip { min-height: 28px; padding: 5px 10px; font-size: 11px; }
+
+
+  .m-report-card {
+    position: relative; margin-top: 18px; box-sizing: border-box; padding: 22px; border-radius: 24px;
+    border: 1px solid rgba(37,33,25,0.08); background: var(--wai-surface); box-shadow: 0 24px 60px rgba(37,33,25,0.16);
+    display: flex; flex-direction: column;
+  }
+  .m-report-card__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .m-report-card__top span:first-child { padding: 6px 10px; border-radius: 999px; background: #F6DFCF; color: #9A3A14; font-weight: 800; font-size: 10.5px; letter-spacing: 0.05em; }
+  .m-report-card__top span:last-child { font-size: 12px; color: rgba(37,33,25,0.64); }
+  .m-report-card h3 { margin: 15px 0 0; font-size: 24px; }
+  .m-report-label { margin-top: 15px; font-weight: 800; font-size: 10.5px; letter-spacing: 0.1em; color: var(--wai-orange); }
+  .m-report-text { margin-top: 6px; font-size: 14.5px; line-height: 1.45; color: rgba(37,33,25,0.72); }
+  .m-skill { margin-top: 10px; }
+  .m-skill-row { display: flex; justify-content: space-between; font-weight: 700; font-size: 13px; }
+  .m-skill-track { margin-top: 5px; height: 7px; border-radius: 999px; background: rgba(37,33,25,0.10); overflow: hidden; }
+  .m-skill-track span { display: block; height: 100%; border-radius: inherit; background: var(--wai-orange); transform: scaleX(0); transform-origin: left; transition: transform 600ms var(--wai-ease-out); }
+  .m-mentor-note { margin-top: 16px; padding: 13px 15px; border-radius: 14px; background: #F6DFCF; font-size: 13.5px; line-height: 1.38; }
+
+
+  .f-final-sheet {
+    position: relative; width: min(100%, 430px); margin: 0 auto; box-sizing: border-box; padding: 22px; border-radius: 28px;
+    background: rgba(251,248,241,0.94); border: 1px solid rgba(37,33,25,0.08); box-shadow: 0 24px 60px rgba(37,33,25,0.17); text-align: center;
+  }
+  .m-final-person { position: relative; width: 76px; height: 76px; margin: 0 auto; }
+  .m-final-person .m-chip { position: absolute; left: 50%; bottom: -10px; z-index: 2; min-height: 28px; padding: 5px 11px; justify-content: center; transform: translateX(-50%); border: 2px solid var(--wai-surface); box-shadow: 0 4px 10px rgba(37,33,25,0.10); font-size: 11.5px; white-space: nowrap; }
+  .f-final-sheet h2 { margin: 18px 0 0; font-size: 25px; line-height: 1.16; font-family: 'Unbounded', sans-serif; }
+  .f-final-sheet p { margin: 9px 0 0; font-size: 15px; line-height: 1.45; color: rgba(37,33,25,0.72); }
+  .m-final-facts { margin-top: 15px; display: flex; justify-content: center; gap: 7px; flex-wrap: wrap; }
+  .f-final-sheet .wai-link-button { width: 100%; margin-top: 18px; }
+  .f-final-logo { margin: 34px auto 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: clamp(36px, 10vw, 44px); line-height: 1; letter-spacing: -0.02em; text-align: center; color: var(--wai-ink); }
+  .f-final-logo span { color: var(--wai-orange); }
+}
+
+@media (max-width: 767px) {
+  .compact-landing .f-benefit-stack { margin-top: 44px; }
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+
+
+  .m-site-header { left: 32px; right: 32px; }
+  .m-site-header__brand { font-size: 20px; }
+  .f-section { max-width: 960px; padding-inline: 32px; }
+  .f-section--wide { padding-inline: 0; }
+  .f-head--inset, .f-projects-cta { max-width: 960px; padding-inline: 32px; }
+  .f-hero .m-title { font-size: clamp(48px, 6vw, 62px); }
+  .f-people-grid { grid-template-columns: repeat(2, 1fr); }
+  .f-projects-scroller { padding-inline: 32px; gap: 24px; }
+  .m-project-card { width: min(52vw, 480px); }
+  .m-project-media { aspect-ratio: 16 / 10; }
+}
+
+@media (max-width: 374px) {
+  .m-site-header { left: 16px; right: 16px; padding-left: 15px; }
+  .f-section { padding-inline: 16px; }
+  .f-section--wide { padding-inline: 0; }
+  .f-head--inset, .f-projects-cta { padding-inline: 16px; }
+  .f-projects-scroller { padding-inline: 16px; }
+  .m-week-card { padding: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  [data-reveal] { opacity: 1 !important; transform: none !important; transition: none !important; }
+  .m-skill-track span { transition: none !important; }
+}.wai-mentor-card {
+  box-sizing: border-box; position: relative; grid-column: 1 / -1; min-width: 0; padding: 28px 30px;
+  display: grid; grid-template-columns: minmax(0, 1fr); align-content: center; gap: 20px;
+  background: #FBF8F1; border: 1px solid rgba(37,33,25,0.08); border-radius: 24px; box-shadow: 0 16px 40px rgba(37,33,25,0.12);
+}
+.wai-mentor-card__intro { min-width: 0; display: grid; grid-template-columns: 112px minmax(0, 1fr); align-items: center; gap: 20px; }
+.wai-mentor-card__people { position: relative; width: 112px; height: 64px; margin: 0; }
+.wai-mentor-card__avatar {
+  position: absolute; top: 0; box-sizing: border-box; width: 64px; height: 64px; overflow: hidden;
+  border: 3px solid #FFFFFF; border-radius: 50%; box-shadow: 0 6px 16px rgba(37,33,25,0.14); background: #F6DFCF;
+}
+.wai-mentor-card__avatar:first-child { left: 0; }
+.wai-mentor-card__avatar:last-child { left: 48px; }
+.wai-mentor-card__avatar img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.wai-mentor-card__avatar:first-child img { width: 118%; height: 118%; margin: -7% 0 0 -9%; object-position: 50% 45%; }
+.wai-mentor-card__avatar:last-child img { object-position: 50% 26%; }
+.wai-mentor-card__copy { min-width: 0; }
+.wai-mentor-card__copy h3 { margin: 0; font-weight: 700; font-size: 24px; line-height: 1.18; color: #252119; }
+.wai-mentor-card__copy p { margin: 8px 0 0; max-width: 560px; font-size: 14.5px; line-height: 1.45; color: rgba(37,33,25,0.68); text-wrap: pretty; }
+.wai-mentor-card__promise {
+  box-sizing: border-box; width: 100%; min-width: 0; padding: 16px 20px;
+  border: 1px solid rgba(212,82,30,0.16); border-radius: 16px; background: #F6DFCF;
+  display: grid; gap: 14px;
+}
+.wai-mentor-metrics__group span { font-size: 14.5px; }
+.wai-mentor-card__price {
+  position: absolute; top: -64px; right: 24px; z-index: 2; box-sizing: border-box;
+  width: 152px; height: 152px; padding: 10px; border-radius: 50%;
+  background: #0E8C7E; box-shadow: 0 16px 40px rgba(37,33,25,0.12);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  text-align: center; transform: rotate(-7deg);
+}
+.wai-mentor-card__price strong {
+  color: #FFF8EF; font-weight: 800; font-size: 23px;
+  font-variant-numeric: tabular-nums lining-nums; line-height: 1.05; white-space: nowrap;
+}
+.wai-mentor-card__price span { color: #FFF8EF; opacity: 0.85; font-weight: 600; font-size: 12px; line-height: 1; }
+.wai-mentor-metrics__schedule { min-width: 0; display: grid; grid-template-columns: max-content minmax(0,1fr); align-items: center; gap: 16px; }
+.wai-mentor-metrics__schedule strong {
+  display: block; width: max-content; max-width: 100%; color: #9A3A14; font-weight: 800;
+  font-size: 44px; font-variant-numeric: tabular-nums lining-nums; line-height: 1; white-space: nowrap;
+}
+.wai-mentor-metrics__schedule span { display: block; min-width: 0; color: #252119; font-weight: 700; font-size: 20px; line-height: 1.18; text-wrap: pretty; }
+
+@media (max-width: 1199px) {
+  .wai-mentor-card {
+    grid-column: auto; min-width: 0; padding: 16px; gap: 12px;
+    background: #FBF8F1; border-color: rgba(37,33,25,0.08); box-shadow: 0 16px 40px rgba(37,33,25,0.12);
+  }
+  .wai-mentor-card__intro { grid-template-columns: 94px minmax(0,1fr); gap: 12px; }
+  .wai-mentor-card__people { width: 94px; height: 58px; }
+  .wai-mentor-card__avatar { width: 58px; height: 58px; border-width: 2px; }
+  .wai-mentor-card__avatar:last-child { left: 36px; }
+  .wai-mentor-card__copy h3 { font-size: clamp(18px, 5vw, 22px); }
+  .wai-mentor-card__copy p { margin-top: 6px; font-size: 12.5px; line-height: 1.38; }
+  .wai-mentor-card__promise { padding: 12px 14px; }
+  .wai-mentor-card__price { width: 120px; height: 120px; top: -50px; right: 12px; padding: 8px; }
+  .wai-mentor-card__price strong { font-size: 17px; }
+  .wai-mentor-card__price span { font-size: 10.5px; }
+  .wai-mentor-metrics__schedule { gap: 11px; }
+  .wai-mentor-metrics__schedule strong { font-size: clamp(30px, 8vw, 34px); }
+  .wai-mentor-metrics__schedule span { font-size: 14.5px; line-height: 1.35; }
+}
+
+@media (max-width: 767px) {
+  .compact-landing .wai-mentor-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "intro"
+      "promise";
+    align-content: start;
+    align-items: stretch;
+    gap: 0;
+    padding: 24px;
+  }
+  .compact-landing .wai-mentor-card__intro {
+    grid-area: intro;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    align-items: start;
+    gap: 14px;
+  }
+  .compact-landing .wai-mentor-card__people { width: 126px; height: 72px; }
+  .compact-landing .wai-mentor-card__avatar { width: 72px; height: 72px; border-width: 3px; }
+  .compact-landing .wai-mentor-card__avatar:last-child { left: 54px; }
+  .compact-landing .wai-mentor-card__copy h3 {
+    font-size: 24px;
+    line-height: 1.18;
+  }
+  .compact-landing .wai-mentor-card__copy { width: 100%; }
+  .compact-landing .wai-mentor-card__copy p {
+    width: 100%;
+    max-width: none;
+    margin-top: 7px;
+  }
+  .compact-landing .wai-mentor-card__promise {
+    grid-area: promise;
+    margin-top: 20px;
+    padding: 18px 0 0;
+    border-width: 1px 0 0;
+    border-color: rgba(37,33,25,0.11);
+    border-radius: 0;
+    background: transparent;
+  }
+  .compact-landing .wai-mentor-card__price { width: 116px; height: 116px; top: -30px; right: 12px; padding: 8px; }
+  .compact-landing .wai-mentor-card__price strong { font-size: 17px; }
+  .compact-landing .wai-mentor-card__price span { font-size: 10.5px; }
+  .compact-landing .wai-mentor-metrics__schedule {
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .compact-landing .wai-mentor-metrics__schedule strong {
+    color: #D4521E;
+    font-size: 44px;
+    line-height: 1.14;
+  }
+  .compact-landing .wai-mentor-metrics__schedule span {
+    max-width: 260px;
+    font-size: 17px;
+    line-height: 1.35;
+  }
+}
+
+@media (max-width: 767px) and (max-height: 680px) {
+  .compact-landing .wai-mentor-card { padding: 14px; gap: 0; }
+  .compact-landing .wai-mentor-card__intro { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .compact-landing .wai-mentor-card__people { width: 94px; height: 54px; }
+  .compact-landing .wai-mentor-card__avatar { width: 54px; height: 54px; border-width: 2px; }
+  .compact-landing .wai-mentor-card__avatar:last-child { left: 40px; }
+  .compact-landing .wai-mentor-card__copy h3 { font-size: 17px; }
+  .compact-landing .wai-mentor-card__copy p { max-width: none; margin-top: 3px; }
+  .compact-landing .wai-mentor-card__promise { margin-top: 11px; padding: 10px 0 0; }
+  .compact-landing .wai-mentor-card__price { width: 96px; height: 96px; top: -16px; right: 10px; padding: 6px; }
+  .compact-landing .wai-mentor-card__price strong { font-size: 13.5px; }
+  .compact-landing .wai-mentor-card__price span { font-size: 9px; }
+  .compact-landing .wai-mentor-metrics__schedule { grid-template-columns: 44px minmax(0, 1fr); gap: 8px; }
+  .compact-landing .wai-mentor-metrics__schedule strong { font-size: 38px; }
+  .compact-landing .wai-mentor-metrics__schedule span { font-size: 11.5px; line-height: 1.25; }
+}
+
+@container benefits-deck (max-height: 590px) {
+  .compact-landing .wai-mentor-card { padding: 12px; gap: 0; }
+  .compact-landing .wai-mentor-card__intro {
+    grid-template-columns: 76px minmax(0, 1fr); grid-template-rows: auto auto;
+    column-gap: 8px; row-gap: 4px; align-items: center;
+  }
+  .compact-landing .wai-mentor-card__people { grid-column: 1; grid-row: 1; width: 76px; height: 48px; }
+  .compact-landing .wai-mentor-card__avatar { width: 48px; height: 48px; border-width: 2px; }
+  .compact-landing .wai-mentor-card__avatar:last-child { left: 28px; }
+  .compact-landing .wai-mentor-card__copy { display: contents; }
+  .compact-landing .wai-mentor-card__copy h3 { grid-column: 2; grid-row: 1; align-self: center; font-size: 17px; }
+  .compact-landing .wai-mentor-card__copy p { grid-column: 1 / -1; grid-row: 2; margin-top: 0; }
+  .compact-landing .wai-mentor-card__promise { margin-top: 9px; padding: 9px 0 0; }
+  .compact-landing .wai-mentor-card__price { width: 88px; height: 88px; top: -12px; right: 8px; padding: 6px; }
+  .compact-landing .wai-mentor-card__price strong { font-size: 12.5px; }
+  .compact-landing .wai-mentor-card__price span { font-size: 9px; }
+  .compact-landing .wai-mentor-metrics__schedule { grid-template-columns: 42px minmax(0, 1fr); gap: 8px; }
+  .compact-landing .wai-mentor-metrics__schedule strong { font-size: 38px; }
+  .compact-landing .wai-mentor-metrics__schedule span { font-size: 11.5px; line-height: 1.25; }
+}
+
+
+</style>
 </head>
 <body>
-  <a class="skip" href="#main">Skip to content</a>
-  <header class="site-header">
-    <a class="wordmark" href="/" aria-label="Wai School home">wai<span>school</span><i aria-hidden="true">✳</i></a>
-    <nav aria-label="Main navigation"><a href="#journey">The course</a><a href="/school/projects">Student projects</a><a href="#pricing">Pricing</a></nav>
-    <a class="button small" href="mailto:hello@mail.waiwai.is?subject=Wai%20School%20enquiry">Let's talk <span aria-hidden="true">↗</span></a>
-  </header>
-  <main id="main">
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="landscape" aria-hidden="true">
-        <img class="landscape-base" src="/school-static/assets/castle.webp" alt="" width="1920" height="1080" fetchpriority="high">
-        <img class="landscape-clouds" src="/school-static/assets/clouds.webp" alt="" width="1920" height="1080">
-        <img class="landscape-front" src="/school-static/assets/foreground.webp" alt="" width="1920" height="1080">
+<div data-wai-root>
+<div class="desktop-landing">
+<div data-wai-ref="sceneRoot" style="position: relative; height: 1100vh; background: #F2ECDF;">
+  <div style="position: sticky; top: 0; height: 100vh; overflow: hidden; background: #F2ECDF;">
+    <div data-wai-ref="sceneCover" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 1672px; height: 941px; z-index: 0;">
+      <img data-wai-ref="sceneBg" data-desktop-src="/school-static/current/parallax/landscape/00-background-clean.webp?v=5" alt="" draggable="false" decoding="async" fetchpriority="high" style="position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; transform-origin: 58% 52%; will-change: transform, opacity;">
+      <div data-wai-ref="adultCanvas" style="position: absolute; inset: 0; z-index: 1; background: linear-gradient(180deg, #F4EEE1 0%, #EFEAE0 100%); opacity: 0; will-change: opacity;"></div>
+      <div data-wai-ref="sceneCloudTrack" style="position: absolute; inset: 0; z-index: 2; transform-origin: 50% 50%; will-change: transform, opacity;">
+        <img data-desktop-src="/school-static/current/parallax/landscape/01-clouds.webp?v=5" alt="" draggable="false" decoding="async" fetchpriority="high" style="position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.92; will-change: transform; animation: waiHeroClouds 5s ease-in-out infinite alternate;">
       </div>
-      <div class="hero-copy">
-        <p class="eyebrow">Live AI learning for children</p>
-        <h1 id="hero-title">Big ideas<br>start <em>small.</em></h1>
-        <p class="intro">A game. A website. Something nobody has made yet.<br class="desktop-break"> Turn “what if?” into a real project — with AI and a mentor.</p>
-        <a class="button" href="#journey">Explore the course <span aria-hidden="true">↓</span></a>
+      <img data-wai-ref="sceneMid" data-desktop-src="/school-static/current/parallax/landscape/02-midground-occluder.webp?v=5" alt="" draggable="false" decoding="async" fetchpriority="high" style="position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; transform-origin: 58% 52%; will-change: transform, opacity;">
+      <img data-wai-ref="jFg" data-desktop-src="/school-static/current/parallax/landscape/03-foreground.webp?v=5" alt="" draggable="false" decoding="async" fetchpriority="low" style="position: absolute; inset: 0; width: 100%; height: 100%; z-index: 4; opacity: 0; transform: translate3d(320px,150px,0) scale(1); transform-origin: 50% 100%; will-change: transform, opacity;">
+    </div>
+    <div data-wai-ref="heroVeil" style="position: absolute; inset: 0; z-index: 3; pointer-events: none; will-change: opacity;">
+      <div style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(245,239,227,0.42) 0%, rgba(244,238,225,0.58) 26%, rgba(243,237,224,0.74) 46%, rgba(242,235,222,0.90) 70%, rgba(239,233,220,1) 100%);"></div>
+      <div style="position: absolute; inset: 0; background: radial-gradient(ellipse 44% 52% at 58% 36%, rgba(244,238,225,0.72) 0%, rgba(244,238,225,0.38) 44%, rgba(244,238,225,0) 70%);"></div>
+    </div>
+    <div data-screen-label="01 Hero" style="position: absolute; left: 50%; top: 50%; width: 1440px; height: 900px; transform: translate(-50%, -50%); z-index: 4; pointer-events: none;">
+      <h1 data-wai-ref="heroH1" style="position: absolute; left: 0; right: 0; top: 168px; margin: 0; text-align: center; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 82px; line-height: 1.14; letter-spacing: -0.015em; color: #252119; text-wrap: balance; transform: translateY(140px); will-change: transform, opacity;">We teach children<br>to launch projects<br>with AI</h1>
+      <div data-wai-ref="heroCard" aria-hidden="true" inert style="position: absolute; left: 50%; top: 566px; transform: translate(-50%, 36px); opacity: 0; visibility: hidden; width: min(1240px, calc(100vw - 48px)); box-sizing: border-box; background: rgba(251,248,241,0.92); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: 1px solid rgba(37,33,25,0.08); border-radius: 32px; box-shadow: 0 24px 60px rgba(37,33,25,0.18); display: flex; align-items: center; gap: 40px; padding: 36px 44px; pointer-events: none; will-change: opacity, transform;">
+        <div style="position: relative; flex: none;"><div style="width: 140px; height: 140px; border-radius: 50%; overflow: hidden; border: 4px solid #FFFFFF; box-shadow: 0 6px 16px rgba(37,33,25,0.14);"><img src="/school-static/current/uploads/kid-320.webp" width="320" height="320" decoding="async" alt="Child with a laptop" style="width: 100%; height: 100%; object-fit: cover; display: block;"></div><div style="position: absolute; left: 50%; transform: translateX(-50%); bottom: -12px; white-space: nowrap; padding: 7px 16px; border-radius: 999px; background: #F6DFCF; color: #9A3A14; font-weight: 600; font-size: 15px; border: 3px solid #FBF8F1; box-shadow: 0 4px 10px rgba(37,33,25,0.10); z-index: 2;">Ages 8–15</div></div>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 9px;"><div style="font-weight: 700; font-size: 38px; letter-spacing: -0.01em; color: #252119; white-space: nowrap;">A boutique school for AI projects</div><div style="font-size: 23px; color: rgba(37,33,25,0.72);">A real app or game inspired by your child&#x27;s interests</div></div>
+        <a href="https://cal.com/grigoriy-ottens/30min" target="_blank" rel="noopener" data-analytics-id="hero_intro_call" data-analytics-component="hero" style="display: flex; align-items: center; gap: 12px; background: #BC4517; color: #FFFFFF; font-weight: 600; font-size: 19px; padding: 19px 34px; border-radius: 999px; cursor: pointer; flex: none; text-decoration: none;" data-wai-style-hover="background: #9A3A14;">Introductory lesson<span style="font-weight: 400;">→</span></a>
       </div>
-      <div class="hero-note"><span class="note-star" aria-hidden="true">✳</span><p>Less watching.<br><strong>More making.</strong></p></div>
-      <p class="scene-caption">An adventure from first idea to “I made this.”</p>
-    </section>
-    <section class="section statement" aria-labelledby="making-title">
-      <p class="eyebrow">Curiosity is the starting point</p>
-      <h2 id="making-title">From playing with technology<br>to <em>creating with it.</em></h2>
-      <div class="statement-body"><p>Wai School is a project-based learning programme. Children work with a mentor in live online lessons, use AI tools, and build websites, games and small applications around their own interests.</p><p>They practise explaining an idea, asking useful questions, testing the result and improving it. The project grows with them — one working version at a time.</p></div>
-    </section>
-    <section class="journey section" id="journey" aria-labelledby="journey-title">
-      <div class="section-heading"><div><p class="eyebrow">The four-week starting journey</p><h2 id="journey-title">An idea takes shape.</h2></div><p>Real tools. Small steps.<br>A project worth showing.</p></div>
-      <ol class="weeks">
-        <li><span class="week-number">01</span><p class="eyebrow">Imagine &amp; build</p><h3>Make the first version.</h3><p>Choose an idea, describe it clearly to AI and create a first website or interactive prototype.</p><p class="outcome">Takeaway: something you can open.</p></li>
-        <li><span class="week-number">02</span><p class="eyebrow">Remember &amp; improve</p><h3>Keep the good ideas.</h3><p>Give the project useful context, save versions and learn to explain what should change.</p><p class="outcome">Takeaway: a project with a history.</p></li>
-        <li><span class="week-number">03</span><p class="eyebrow">Connect &amp; test</p><h3>Make it do more.</h3><p>Explore AI roles and simple data storage. Test interactions, spot mistakes and refine the experience.</p><p class="outcome">Takeaway: a more capable prototype.</p></li>
-        <li><span class="week-number">04</span><p class="eyebrow">Publish &amp; share</p><h3>Say “I made this.”</h3><p>Prepare a demonstration, publish an appropriate project version and explain how it works.</p><p class="outcome">Takeaway: a project to present.</p></li>
-      </ol>
-      <p class="fine-print">This is the starting curriculum, adapted to the child's age, pace and project. Later modules continue the work; not every project uses every tool.</p>
-    </section>
-    <section class="projects-preview section" aria-labelledby="projects-title">
-      <div class="section-heading"><div><p class="eyebrow">Made during the programme</p><h2 id="projects-title">Ideas, out in the world.</h2></div><a class="text-link" href="/school/projects">Explore student projects <span aria-hidden="true">↗</span></a></div>
-      <a class="featured-project" href="/school/projects#hallownest" aria-label="Explore the Hallownest student game">
-        <img src="/school-static/assets/hallownest.webp" alt="Screenshot of a student-built browser game: a small character in a dark blue fantasy world" width="1400" height="787" loading="lazy">
-        <div class="project-caption"><div><span class="eyebrow">Browser game · Student project</span><h3>A world of their own.</h3><p>Hallownest: from a project page to a playable game, developed through several saved versions.</p></div><span class="round-arrow" aria-hidden="true">↗</span></div>
+      <div data-wai-ref="heroHint" style="position: absolute; left: 50%; transform: translateX(-50%); bottom: 24px; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; color: rgba(37,33,25,0.62); will-change: opacity;">scroll ↓</div>
+    </div>
+    <div data-wai-ref="jAnchorCover" data-screen-label="02 Learning programme" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 1672px; height: 941px; z-index: 4; pointer-events: none;">
+      <div data-wai-ref="jAnchor" data-wai-on-click="jPointClick" style="position: absolute; inset: 0; opacity: 0; pointer-events: none; will-change: opacity;">
+        <div data-point="0" style="position: absolute; left: 54.5%; top: 87%; width: 0; height: 0; cursor: pointer;">
+          <div data-dot style="position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); width: clamp(38px, 3.2vw, 46px); height: clamp(38px, 3.2vw, 46px); border-radius: 50%; background: #D4521E; border: 3px solid #FBF8F1; box-shadow: 0 4px 10px rgba(37,33,25,0.3); color: #FFF8EF; font-weight: 800; font-size: clamp(16px, 1.3vw, 19px); display: flex; align-items: center; justify-content: center; transition: box-shadow 0.3s, transform 0.3s; box-sizing: border-box;">1</div>
+          <div data-chip style="position: absolute; left: 34px; top: -58px; white-space: nowrap; padding: clamp(8px, 0.75vw, 11px) clamp(14px, 1.35vw, 20px); border-radius: 16px; background: rgba(251,248,241,0.94); color: #9A3A14; font-weight: 700; font-size: clamp(13px, 1.15vw, 17px); line-height: 1.4; border: 1px solid rgba(212,82,30,0.25); box-shadow: 0 6px 16px rgba(37,33,25,0.14); backdrop-filter: blur(4px); transition: background 0.3s, color 0.3s, opacity 0.35s, transform 0.35s;">The project idea: a plan<br>and a first website</div>
+          <div style="position: absolute; left: 44px; top: -44px; transform: translate(0, -100%); width: min(400px, 40vw); pointer-events: none;">
+            <div data-card="0" style="box-sizing: border-box; background: #FBF8F1; border: 1px solid rgba(37,33,25,0.08); border-radius: 24px; box-shadow: 0 24px 60px rgba(37,33,25,0.18); padding: clamp(20px, 1.9vw, 26px) clamp(22px, 2vw, 28px); opacity: 0; transform: scale(0.55); transform-origin: left bottom; transition: opacity 0.45s cubic-bezier(0.22,1,0.36,1), transform 0.55s cubic-bezier(0.34,1.4,0.64,1);">
+              <div style="font-weight: 700; font-size: clamp(11px, 0.95vw, 13px); letter-spacing: 0.14em; color: #D4521E;">WEEK 1</div>
+              <div style="margin-top: 10px; font-weight: 700; font-size: clamp(19px, 1.7vw, 24px); line-height: 1.25; color: #252119;">Idea → project website</div>
+              <div style="margin-top: 9px; font-size: clamp(14px, 1.15vw, 16px); line-height: 1.5; color: rgba(37,33,25,0.72);">Discover how AI works and learn to write a four-part prompt.<br><br>Break down the idea: who it is for, why it matters and its main feature.</div>
+            </div>
+          </div>
+        </div>
+        <div data-point="1" style="position: absolute; left: 45.9%; top: 73%; width: 0; height: 0; cursor: pointer;">
+          <div data-dot style="position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); width: clamp(38px, 3.2vw, 46px); height: clamp(38px, 3.2vw, 46px); border-radius: 50%; background: #D4521E; border: 3px solid #FBF8F1; box-shadow: 0 4px 10px rgba(37,33,25,0.3); color: #FFF8EF; font-weight: 800; font-size: clamp(16px, 1.3vw, 19px); display: flex; align-items: center; justify-content: center; transition: box-shadow 0.3s, transform 0.3s; box-sizing: border-box;">2</div>
+          <div data-chip style="position: absolute; left: -30px; top: 30px; transform: translateX(-100%); white-space: nowrap; padding: clamp(8px, 0.75vw, 11px) clamp(14px, 1.35vw, 20px); border-radius: 16px; background: rgba(251,248,241,0.94); color: #9A3A14; font-weight: 700; font-size: clamp(13px, 1.15vw, 17px); line-height: 1.4; border: 1px solid rgba(212,82,30,0.25); box-shadow: 0 6px 16px rgba(37,33,25,0.14); backdrop-filter: blur(4px); transition: background 0.3s, color 0.3s, opacity 0.35s, transform 0.35s;">Project memory:<br>following the plan</div>
+          <div style="position: absolute; left: -46px; top: 0; transform: translate(-100%, -50%); width: min(400px, 40vw); pointer-events: none;">
+            <div data-card="1" style="box-sizing: border-box; background: #FBF8F1; border: 1px solid rgba(37,33,25,0.08); border-radius: 24px; box-shadow: 0 24px 60px rgba(37,33,25,0.18); padding: clamp(20px, 1.9vw, 26px) clamp(22px, 2vw, 28px); opacity: 0; transform: scale(0.55); transform-origin: right center; transition: opacity 0.45s cubic-bezier(0.22,1,0.36,1), transform 0.55s cubic-bezier(0.34,1.4,0.64,1);">
+              <div style="font-weight: 700; font-size: clamp(11px, 0.95vw, 13px); letter-spacing: 0.14em; color: #D4521E;">WEEK 2</div>
+              <div style="margin-top: 10px; font-weight: 700; font-size: clamp(19px, 1.7vw, 24px); line-height: 1.25; color: #252119;">Project memory → first working version</div>
+              <div style="margin-top: 9px; font-size: clamp(14px, 1.15vw, 16px); line-height: 1.5; color: rgba(37,33,25,0.72);">Give the project memory: a brief and a set of rules.<br><br>Build the first version in small steps, one feature at a time.</div>
+            </div>
+          </div>
+        </div>
+        <div data-point="2" style="position: absolute; left: 56.8%; top: 45.5%; width: 0; height: 0; cursor: pointer;">
+          <div data-dot style="position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); width: clamp(38px, 3.2vw, 46px); height: clamp(38px, 3.2vw, 46px); border-radius: 50%; background: #D4521E; border: 3px solid #FBF8F1; box-shadow: 0 4px 10px rgba(37,33,25,0.3); color: #FFF8EF; font-weight: 800; font-size: clamp(16px, 1.3vw, 19px); display: flex; align-items: center; justify-content: center; transition: box-shadow 0.3s, transform 0.3s; box-sizing: border-box;">3</div>
+          <div data-chip style="position: absolute; left: 34px; top: -20px; white-space: nowrap; padding: clamp(8px, 0.75vw, 11px) clamp(14px, 1.35vw, 20px); border-radius: 16px; background: rgba(251,248,241,0.94); color: #9A3A14; font-weight: 700; font-size: clamp(13px, 1.15vw, 17px); line-height: 1.4; border: 1px solid rgba(212,82,30,0.25); box-shadow: 0 6px 16px rgba(37,33,25,0.14); backdrop-filter: blur(4px); transition: background 0.3s, color 0.3s, opacity 0.35s, transform 0.35s;">A team of AI agents<br>and a live database</div>
+          <div style="position: absolute; left: 48px; top: 0; transform: translate(0, -50%); width: min(400px, 40vw); pointer-events: none;">
+            <div data-card="2" style="box-sizing: border-box; background: #FBF8F1; border: 1px solid rgba(37,33,25,0.08); border-radius: 24px; box-shadow: 0 24px 60px rgba(37,33,25,0.18); padding: clamp(20px, 1.9vw, 26px) clamp(22px, 2vw, 28px); opacity: 0; transform: scale(0.55); transform-origin: left center; transition: opacity 0.45s cubic-bezier(0.22,1,0.36,1), transform 0.55s cubic-bezier(0.34,1.4,0.64,1);">
+              <div style="font-weight: 700; font-size: clamp(11px, 0.95vw, 13px); letter-spacing: 0.14em; color: #D4521E;">WEEK 3</div>
+              <div style="margin-top: 10px; font-weight: 700; font-size: clamp(19px, 1.7vw, 24px); line-height: 1.25; color: #252119;">The power of AI</div>
+              <div style="margin-top: 9px; font-size: clamp(14px, 1.15vw, 16px); line-height: 1.5; color: rgba(37,33,25,0.72);">Four AI roles work in parallel to fix and improve the project.<br><br>Connect a database so the project can store information.</div>
+            </div>
+          </div>
+        </div>
+        <div data-point="3" style="position: absolute; left: 59.2%; top: 25.5%; width: 0; height: 0; cursor: pointer;">
+          <div data-dot style="position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); width: clamp(38px, 3.2vw, 46px); height: clamp(38px, 3.2vw, 46px); border-radius: 50%; background: #D4521E; border: 3px solid #FBF8F1; box-shadow: 0 4px 10px rgba(37,33,25,0.3); color: #FFF8EF; font-weight: 800; font-size: clamp(16px, 1.3vw, 19px); display: flex; align-items: center; justify-content: center; transition: box-shadow 0.3s, transform 0.3s; box-sizing: border-box;">4</div>
+          <div data-chip style="position: absolute; left: 36px; top: -22px; white-space: nowrap; padding: clamp(8px, 0.75vw, 11px) clamp(14px, 1.35vw, 20px); border-radius: 16px; background: rgba(251,248,241,0.94); color: #9A3A14; font-weight: 700; font-size: clamp(13px, 1.15vw, 17px); line-height: 1.4; border: 1px solid rgba(212,82,30,0.25); box-shadow: 0 6px 16px rgba(37,33,25,0.14); backdrop-filter: blur(4px); transition: background 0.3s, color 0.3s, opacity 0.35s, transform 0.35s;">A public link<br>and a shared demo day</div>
+          <div style="position: absolute; left: 56px; top: 0; transform: translate(0, -50%); width: min(400px, 40vw); pointer-events: none;">
+            <div data-card="3" style="box-sizing: border-box; background: #FBF8F1; border: 1px solid rgba(37,33,25,0.08); border-radius: 24px; box-shadow: 0 24px 60px rgba(37,33,25,0.18); padding: clamp(20px, 1.9vw, 26px) clamp(22px, 2vw, 28px); opacity: 0; transform: scale(0.55); transform-origin: left center; transition: opacity 0.45s cubic-bezier(0.22,1,0.36,1), transform 0.55s cubic-bezier(0.34,1.4,0.64,1);">
+              <div style="font-weight: 700; font-size: clamp(11px, 0.95vw, 13px); letter-spacing: 0.14em; color: #D4521E;">WEEK 4</div>
+              <div style="margin-top: 10px; font-weight: 700; font-size: clamp(19px, 1.7vw, 24px); line-height: 1.25; color: #252119;">Publish and present</div>
+              <div style="margin-top: 9px; font-size: clamp(14px, 1.15vw, 16px); line-height: 1.5; color: rgba(37,33,25,0.72);">Add the finishing touches and prepare a three-minute presentation.<br><br>A public link and a shared demo day.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-wai-ref="jTitle" style="position: absolute; left: max(40px, calc((100vw - 1240px) / 2)); top: clamp(76px, 13vh, 110px); width: min(520px, 42vw); z-index: 5; opacity: 0; will-change: opacity, transform;">
+      <div style="font-weight: 800; font-size: clamp(20px, 1.9vw, 28px); letter-spacing: 0.12em; color: #D4521E;">1 MONTH</div>
+      <h2 style="margin: 14px 0 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 44px; line-height: 1.18; letter-spacing: -0.01em; color: #252119; text-wrap: balance;">Learning programme</h2>
+      <p style="margin: 24px 0 0; max-width: min(470px, 42vw); font-weight: 700; font-size: clamp(19px, 1.8vw, 26px); line-height: 1.45; color: rgba(37,33,25,0.72); text-wrap: pretty;">8 individual lessons</p>
+    </div>
+    <div data-wai-ref="jShade" style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(242,236,223,0) 82%, rgba(240,233,219,0.5) 100%); z-index: 2; opacity: 0; pointer-events: none; will-change: opacity;"></div>
+    <div data-wai-ref="jHint" style="position: absolute; right: 84px; bottom: 34px; z-index: 5; opacity: 0; padding: 9px 18px; border-radius: 999px; background: rgba(37,33,25,0.82); color: #F2ECDF; font-weight: 600; font-size: 13.5px; backdrop-filter: blur(6px); pointer-events: none; will-change: opacity;">scroll towards the castle ↓</div>
+    <div data-wai-ref="adWrap" data-screen-label="03 We started by teaching adults" style="position: absolute; inset: 0; z-index: 6; pointer-events: none; visibility: hidden;">
+      <div data-wai-ref="adIntro" style="position: absolute; left: max(40px, calc((100vw - 1240px) / 2)); top: 21vh; width: 400px; z-index: 3; opacity: 0; transform: translateY(30px); will-change: opacity, transform;">
+      <h2 style="margin: 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 44px; line-height: 1.18; letter-spacing: -0.01em; color: #252119; text-wrap: balance;">We started by teaching adults</h2>
+      <p style="margin: 22px 0 0; font-size: 17px; line-height: 1.55; color: rgba(37,33,25,0.72); text-wrap: pretty;">Before teaching children, we took this journey with adults and companies.</p>
+      <div style="margin-top: 30px; display: flex; align-items: center; gap: 14px;">
+        <div style="font-weight: 800; font-size: 58px; letter-spacing: -0.02em; color: #D4521E; white-space: nowrap;">2&nbsp;700+</div>
+        <div style="font-size: 15px; line-height: 1.35; color: rgba(37,33,25,0.66); max-width: 170px;">adults have taken our AI programmes</div>
+      </div>
+      <div style="margin-top: 48px;">
+        <div style="font-weight: 700; font-size: 11px; letter-spacing: 0.12em; color: rgba(37,33,25,0.62);">AS FEATURED IN</div>
+        <div style="margin-top: 14px; display: flex; align-items: center; gap: 22px; filter: grayscale(1); opacity: 0.55;">
+          <img src="/school-static/current/uploads/rbc.svg" alt="RBC" style="height: 17px; width: auto;">
+          <img src="/school-static/current/uploads/vc-ru-color.svg" alt="vc.ru" style="height: 16px; width: auto;">
+          <img src="/school-static/current/uploads/hitech.svg" alt="Hightech" style="height: 14px; width: auto;">
+          <img src="/school-static/current/uploads/rb.svg" alt="RB.RU" style="height: 15px; width: auto;">
+          <img src="/school-static/current/uploads/frii-color.svg" alt="IIDF" style="height: 20px; width: auto;">
+        </div>
+      </div>
+    </div>
+    <div data-wai-ref="adStage" style="position: absolute; left: 50%; top: 50%; width: 1440px; height: 920px; transform: translate(-50%, -50%); will-change: transform; z-index: 1;">
+      <div data-wai-ref="adWc" style="position: absolute; left: 570px; top: 140px; width: 380px; opacity: 0; will-change: opacity, transform;">
+        <div style="box-sizing: border-box; background: #FBF8F1; border: 1px solid rgba(37,33,25,0.08); border-radius: 32px; box-shadow: 0 16px 40px rgba(37,33,25,0.12); padding: 28px 30px; animation: waiFloat1 9s ease-in-out infinite alternate;">
+          <div style="font-weight: 700; font-size: 11px; letter-spacing: 0.12em; color: #D4521E;">OUR SCHOOL FOR ADULTS</div>
+          <div style="margin-top: 12px; font-weight: 700; font-size: 26px; color: #252119;">Wai Combinator</div>
+          <div style="margin-top: 8px; font-weight: 800; font-size: 58px; letter-spacing: -0.02em; color: #D4521E;">1&nbsp;500+</div>
+          <div style="font-size: 15px; color: rgba(37,33,25,0.66);">graduates</div>
+          <div style="margin-top: 18px; font-size: 14px; line-height: 1.5; color: rgba(37,33,25,0.66);">AI mastery: five weeks, live lectures, a final hackathon and a demo day</div>
+        </div>
+      </div>
+      <div data-wai-ref="adC1" style="position: absolute; left: 1040px; top: 170px; opacity: 0; will-change: opacity, transform;">
+        <div style="animation: waiFloat2 8s ease-in-out 0.6s infinite alternate;">
+          <div style="width: 250px; height: 250px; border-radius: 50%; background: #FFFFFF; border: 1px solid rgba(37,33,25,0.08); box-shadow: 0 16px 40px rgba(37,33,25,0.12); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 26px; box-sizing: border-box;">
+            <img src="/school-static/current/uploads/alfabank.svg" alt="Alfa-Bank" style="height: 26px; width: auto; max-width: 72%;">
+            <div style="margin-top: 12px; font-weight: 700; font-size: 19px; color: #252119;">128 participants</div>
+            <div style="font-size: 13px; color: rgba(37,33,25,0.66);">4 workshops</div>
+          </div>
+        </div>
+      </div>
+      <div data-wai-ref="adC2" style="position: absolute; left: 1090px; top: 480px; opacity: 0; will-change: opacity, transform;">
+        <div style="animation: waiFloat3 9.5s ease-in-out 1.2s infinite alternate;">
+          <div style="width: 270px; height: 270px; border-radius: 50%; background: #FFFFFF; border: 1px solid rgba(37,33,25,0.08); box-shadow: 0 16px 40px rgba(37,33,25,0.12); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 28px; box-sizing: border-box;">
+            <img src="/school-static/current/uploads/samolot.svg" alt="Samolet Group" style="height: 28px; width: auto; max-width: 72%;">
+            <div style="margin-top: 12px; font-weight: 700; font-size: 19px; color: #252119;">1&nbsp;040 professionals</div>
+            <div style="font-size: 13px; color: rgba(37,33,25,0.66);">6-week course</div>
+          </div>
+        </div>
+      </div>
+      <div data-wai-ref="adC3" style="position: absolute; left: 690px; top: 500px; opacity: 0; will-change: opacity, transform;">
+        <div style="animation: waiFloat1 7.5s ease-in-out 1.8s infinite alternate;">
+          <div style="width: 240px; height: 240px; border-radius: 50%; background: #FFFFFF; border: 1px solid rgba(37,33,25,0.08); box-shadow: 0 16px 40px rgba(37,33,25,0.12); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 26px; box-sizing: border-box;">
+            <img src="/school-static/current/uploads/pikemedialab.svg" alt="Pike Media Lab" style="height: 24px; width: auto; max-width: 70%;">
+            <div style="margin-top: 12px; font-weight: 700; font-size: 19px; color: #252119;">97 students</div>
+            <div style="font-size: 13px; color: rgba(37,33,25,0.66);">6-week course</div>
+          </div>
+        </div>
+      </div>
+      <div data-wai-ref="adF" style="position: absolute; left: 580px; top: 140px; width: 740px; opacity: 0; will-change: opacity, transform;">
+        <div style="box-sizing: border-box; background: #FBF8F1; border: 1px solid rgba(37,33,25,0.08); border-radius: 32px; box-shadow: 0 16px 40px rgba(37,33,25,0.12); padding: 36px 44px; animation: waiFloat1 10s ease-in-out infinite alternate;">
+        <div style="font-weight: 700; font-size: 11px; letter-spacing: 0.12em; color: #D4521E;">FOUNDERS</div>
+          <div style="margin-top: 22px; display: flex; gap: 44px;">
+            <div style="flex: 1;">
+              <div style="width: 100%; height: 190px; border-radius: 24px; overflow: hidden; border: 4px solid #FFFFFF; box-shadow: 0 6px 16px rgba(37,33,25,0.14); background: #F6DFCF; box-sizing: border-box;"><img src="/school-static/current/uploads/founder-mik.jpg" alt="Mik Wiseman" draggable="false" style="width: 100%; height: 100%; object-fit: cover; object-position: 50% 28%; display: block;"></div>
+              <div style="margin-top: 16px; font-weight: 700; font-size: 20px; color: #252119;">Mik Wiseman</div>
+              <div style="margin-top: 3px; font-size: 12.5px; color: rgba(37,33,25,0.66);">Technology entrepreneur and developer</div>
+              <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 7px;">
+                <div style="font-size: 13px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="font-weight: 700; color: #252119;">Trinity Monsters</span> — Digital Agency of the Year 2023</div>
+                <div style="font-size: 13px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="font-weight: 700; color: #252119;">WaiWai</span> — an AI agent marketplace</div>
+              </div>
+            </div>
+            <div style="flex: 1;">
+              <div style="width: 100%; height: 190px; border-radius: 24px; overflow: hidden; border: 4px solid #FFFFFF; box-shadow: 0 6px 16px rgba(37,33,25,0.14); background: #F6DFCF; box-sizing: border-box;"><img src="/school-static/current/uploads/founder-grisha.jpg" alt="Grigory Ottens" draggable="false" style="width: 100%; height: 100%; object-fit: cover; object-position: 50% 28%; display: block;"></div>
+              <div style="margin-top: 16px; font-weight: 700; font-size: 20px; color: #252119;">Grigory Ottens</div>
+              <div style="margin-top: 3px; font-size: 12.5px; color: rgba(37,33,25,0.66);">EdTech entrepreneur</div>
+              <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 7px;">
+                <div style="font-size: 13px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="font-weight: 700; color: #252119;">Yoga Academy</span> — a leading Russian-language yoga school</div>
+                <div style="font-size: 13px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="font-weight: 700; color: #252119;">Netology · Coursiv</span> <span style="font-style: italic;">(USA)</span> — former senior executive</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div data-wai-ref="adRibbon" style="position: absolute; left: 580px; top: 620px; width: 740px; opacity: 0; will-change: opacity, transform;">
+        <div style="box-sizing: border-box; background: #FBF8F1; border: 1px solid rgba(37,33,25,0.08); border-radius: 24px; box-shadow: 0 16px 40px rgba(37,33,25,0.12); padding: 20px 24px; display: flex; align-items: center; gap: 24px; animation: waiFloat2 9s ease-in-out 0.8s infinite alternate;">
+          <div style="flex: none; box-sizing: border-box; background: radial-gradient(circle at 34% 28%, #E2703C 0%, #D4521E 62%, #BC4517 100%); border-radius: 20px; box-shadow: 0 10px 24px rgba(212,82,30,0.30); padding: 14px 20px; text-align: center;">
+            <div style="font-weight: 800; font-size: 34px; letter-spacing: -0.02em; color: #FFF8EF; white-space: nowrap;">1st place</div>
+            <div style="margin-top: 2px; font-weight: 600; font-size: 12px; color: rgba(255,248,239,0.92); white-space: nowrap;">ETHGlobal · New York</div>
+          </div>
+          <div>
+            <div style="font-weight: 700; font-size: 15px; line-height: 1.35; color: #D4521E;">Mik wins an international competition</div>
+            <div style="margin-top: 5px; font-size: 12.5px; line-height: 1.45; color: rgba(37,33,25,0.66);">At ETHGlobal in New York, a competition bringing together 600 engineers from around the world, Mik took first place.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-wai-ref="adHint" style="position: absolute; left: 50%; transform: translateX(-50%); bottom: 12px; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; color: rgba(37,33,25,0.62); z-index: 7; opacity: 0; will-change: opacity;">scroll ↓</div>
+    </div>
+  </div>
+</div>
+
+<div data-screen-label="04 Made by children" data-layout-check="desktop-projects" style="position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; padding: 130px 40px 150px; box-sizing: border-box;">
+  <div style="position: relative; width: 1240px; max-width: 100%; display: flex; align-items: flex-end; justify-content: space-between; gap: 40px;">
+    <div style="max-width: 640px;">
+      <h2 style="margin: 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 44px; line-height: 1.18; letter-spacing: -0.01em; color: #252119; text-wrap: balance;">Made by children</h2>
+      <p style="margin: 18px 0 0; font-size: 17px; line-height: 1.55; color: rgba(37,33,25,0.72); text-wrap: pretty;">Real products inspired by hobbies. Open them and try them out.</p>
+    </div>
+  </div>
+  <div style="position: relative; width: 1240px; max-width: 100%; margin-top: 64px; display: flex; gap: 32px;">
+    <div style="width: 600px; display: flex; flex-direction: column; gap: 52px;">
+      <a data-wai-ref="pT1" data-wai-on-mouseenter="e1" data-wai-on-mouseleave="l1" href="https://wai.school/g2/project/hallownest/app/" target="_blank" rel="noopener" aria-label="Open the Flying Castle game" style="display: block; color: inherit; text-decoration: none; opacity: 0; transform: translateY(46px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1), transform 0.8s cubic-bezier(0.22,1,0.36,1); will-change: transform, opacity;">
+        <div style="position: relative; width: 100%; height: 380px; border-radius: 24px; background: #10192C; overflow: hidden; outline: 1px solid rgba(37,33,25,0.08);">
+          <div data-wai-ref="pPar1" style="position: absolute; left: 0; right: 0; top: -34px; bottom: -34px; will-change: transform;">
+            <div data-wai-ref="pSc1" style="width: 100%; height: 100%; transition: transform 0.35s cubic-bezier(0.22,1,0.36,1); will-change: transform;">
+              <img src="/school-static/current/uploads/hallownest-cover.webp" alt="Game scene: a traveller with a lantern in a ruined castle" draggable="false" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%;">
+            </div>
+          </div>
+          <div data-wai-ref="pP1" style="position: absolute; right: 20px; bottom: 20px; opacity: 0; transition: opacity 0.2s cubic-bezier(0.23,1,0.32,1); padding: 9px 18px; border-radius: 999px; background: rgba(251,248,241,0.92); color: #252119; font-weight: 600; font-size: 13.5px; backdrop-filter: blur(6px); pointer-events: none;">play →</div>
+        </div>
+        <div style="margin-top: 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px;">
+          <div><div style="font-weight: 700; font-size: 19px; color: #252119;">Flying Castle</div><div style="margin-top: 4px; font-size: 14.5px; color: rgba(37,33,25,0.66);">An indie game about a traveller</div></div>
+          <div style="font-weight: 700; font-size: 11.5px; letter-spacing: 0.1em; color: rgba(37,33,25,0.62); white-space: nowrap;">AGE 14 · WEEK 4</div>
+        </div>
       </a>
-      <p class="fine-print">Actual student work, with mentor and AI assistance. Examples are anonymized. Project interfaces may be in Russian; English descriptions do not imply lessons were delivered in English.</p>
-    </section>
-    <section class="how section" aria-labelledby="how-title">
-      <div><p class="eyebrow">People, not just prompts</p><h2 id="how-title">A mentor beside them.<br>A project that's theirs.</h2><p>Live online sessions combine conversation, screen sharing and hands-on building. Lesson materials and workbooks help children turn a big task into manageable steps.</p></div>
-      <dl class="delivery"><div><dt>Live guidance</dt><dd>A mentor helps the child reason through a problem, review AI output and decide what to try next.</dd></div><div><dt>Learning by making</dt><dd>Websites, games and useful tools become a place to practise prompts, design, logic and testing.</dd></div><div><dt>Visible progress</dt><dd>Saved project versions and parent reports document what was worked on and what comes next.</dd></div></dl>
-    </section>
-    <section class="team section" aria-labelledby="team-title">
-      <div class="team-intro"><p class="eyebrow">The people behind Wai School</p><h2 id="team-title">Technology meets<br>teaching.</h2><p>Founded by Mik Wiseman and Grigory Ottens. Product engineering and educational design come together in a programme built around children's ideas.</p></div>
-      <figure><img src="/school-static/assets/mik.jpg" alt="Mik Wiseman, Wai School co-founder" width="480" height="560" loading="lazy"><figcaption><h3>Mik Wiseman</h3><p>Co-founder · Engineering &amp; product</p></figcaption></figure>
-      <figure><img src="/school-static/assets/grisha.jpg" alt="Grigory Ottens, Wai School co-founder" width="480" height="560" loading="lazy"><figcaption><h3>Grigory Ottens</h3><p>Co-founder · Education &amp; curriculum</p></figcaption></figure>
-    </section>
-    <section class="pricing section" id="pricing" aria-labelledby="pricing-title">
-      <div class="section-heading"><div><p class="eyebrow">Choose a starting point</p><h2 id="pricing-title">Room for every big idea.</h2></div><p>Online. Mentor-led.<br>Built around making.</p></div>
-      <div class="offers">
-        <article class="offer"><p class="eyebrow">Wai School</p><h3>Four-week course</h3><p class="price">€700</p><p>A structured introduction to building with AI.</p><ul><li>Four weeks of guided project learning</li><li>Live online lessons and mentor feedback</li><li>Lesson materials and project exercises</li><li>Project development and parent progress reports</li></ul><a class="button" href="mailto:hello@mail.waiwai.is?subject=Wai%20School%20four-week%20course">Ask about the course <span aria-hidden="true">↗</span></a></article>
-        <article class="offer personal"><p class="eyebrow">Personal course</p><h3>Ten individual lessons</h3><p class="price">€2,500</p><p>One-to-one attention for a personal project.</p><ul><li>Ten individual, live online lessons</li><li>A project direction agreed with the mentor</li><li>Materials and feedback adapted to the child</li><li>Project development and parent progress reports</li></ul><a class="button" href="mailto:hello@mail.waiwai.is?subject=Wai%20School%20personal%20course">Discuss a personal course <span aria-hidden="true">↗</span></a></article>
+      <a data-wai-ref="pT2" data-wai-on-mouseenter="e2" data-wai-on-mouseleave="l2" href="https://wai.school/g3/project/block-modz/" target="_blank" rel="noopener" aria-label="Open the Block Modz project" style="display: block; color: inherit; text-decoration: none; opacity: 0; transform: translateY(46px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1), transform 0.8s cubic-bezier(0.22,1,0.36,1); will-change: transform, opacity;">
+        <div data-project-shot="block-modz" style="position: relative; width: 100%; height: 380px; border-radius: 24px; background: #26080A; overflow: hidden; outline: 1px solid rgba(37,33,25,0.08);">
+          <div data-wai-ref="pPar2" style="position: absolute; left: 0; right: 0; top: -34px; bottom: -34px; will-change: transform;">
+            <div data-wai-ref="pSc2" style="width: 100%; height: 100%; transition: transform 0.35s cubic-bezier(0.22,1,0.36,1); will-change: transform;">
+              <img src="/school-static/current/uploads/block-modz-cover.webp" alt="Minecraft mod gallery with realistic textures and a download button" draggable="false" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 100% 50%;">
+            </div>
+          </div>
+          <div data-wai-ref="pP2" style="position: absolute; right: 20px; bottom: 20px; opacity: 0; transition: opacity 0.2s cubic-bezier(0.23,1,0.32,1); padding: 9px 18px; border-radius: 999px; background: rgba(251,248,241,0.92); color: #252119; font-weight: 600; font-size: 13.5px; backdrop-filter: blur(6px); pointer-events: none;">explore mods →</div>
+        </div>
+        <div style="margin-top: 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px;">
+          <div><div style="font-weight: 700; font-size: 19px; color: #252119;">Block Modz</div><div style="margin-top: 4px; font-size: 14.5px; color: rgba(37,33,25,0.66);">Minecraft mods</div></div>
+          <div style="font-weight: 700; font-size: 11.5px; letter-spacing: 0.1em; color: rgba(37,33,25,0.62); white-space: nowrap;">AGE 11 · WEEK 3</div>
+        </div>
+      </a>
+      <a href="/school/projects" target="_blank" rel="noopener" style="box-sizing: border-box; width: 100%; padding: 22px 34px; border-radius: 999px; background: #BC4517; color: #FFFFFF; font-weight: 600; font-size: 19px; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 12px; cursor: pointer; transition: background 0.2s cubic-bezier(0.23,1,0.32,1), transform 0.2s cubic-bezier(0.23,1,0.32,1);" data-wai-style-hover="background: #9A3A14; transform: translateY(-3px);">Explore all student projects<span style="font-weight: 400;">→</span></a>
+    </div>
+    <div style="width: 600px; display: flex; flex-direction: column; gap: 52px; margin-top: 110px;">
+      <a data-wai-ref="pT3" data-wai-on-mouseenter="e3" data-wai-on-mouseleave="l3" href="https://wai.school/g2/project/rifflegg/" target="_blank" rel="noopener" aria-label="Open the RIFFLEGG project" style="display: block; color: inherit; text-decoration: none; opacity: 0; transform: translateY(46px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1) 0.12s, transform 0.8s cubic-bezier(0.22,1,0.36,1) 0.12s; will-change: transform, opacity;">
+        <div data-project-shot="rifflegg" style="position: relative; width: 100%; height: 380px; border-radius: 24px; background: #0B0B13; overflow: hidden; outline: 1px solid rgba(37,33,25,0.08);">
+          <div data-wai-ref="pPar3" style="position: absolute; left: 0; right: 0; top: -34px; bottom: -34px; will-change: transform;">
+            <div data-wai-ref="pSc3" style="width: 100%; height: 100%; transition: transform 0.35s cubic-bezier(0.22,1,0.36,1); will-change: transform;">
+              <img src="/school-static/current/uploads/rifflegg-match.webp" alt="Gaming league interface with match creation, mode, stakes and duration" draggable="false" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 100% 50%;">
+            </div>
+          </div>
+          <div data-wai-ref="pP3" style="position: absolute; right: 20px; bottom: 20px; opacity: 0; transition: opacity 0.2s cubic-bezier(0.23,1,0.32,1); padding: 9px 18px; border-radius: 999px; background: rgba(251,248,241,0.92); color: #252119; font-weight: 600; font-size: 13.5px; backdrop-filter: blur(6px); pointer-events: none;">explore the league →</div>
+        </div>
+        <div style="margin-top: 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px;">
+          <div><div style="font-weight: 700; font-size: 19px; color: #252119;">RIFFLEGG</div><div style="margin-top: 4px; font-size: 14.5px; color: rgba(37,33,25,0.66);">A personal CS2 league</div></div>
+          <div style="font-weight: 700; font-size: 11.5px; letter-spacing: 0.1em; color: rgba(37,33,25,0.62); white-space: nowrap;">AGE 13 · WEEK 4</div>
+        </div>
+      </a>
+      <a data-wai-ref="pT4" data-wai-on-mouseenter="e4" data-wai-on-mouseleave="l4" href="https://wai.school/g2/project/bouquet/" target="_blank" rel="noopener" aria-label="Open the FLEUR flower personality quiz" style="display: block; color: inherit; text-decoration: none; opacity: 0; transform: translateY(46px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1) 0.12s, transform 0.8s cubic-bezier(0.22,1,0.36,1) 0.12s; will-change: transform, opacity;">
+        <div data-project-shot="fleur" style="position: relative; width: 100%; height: 380px; border-radius: 24px; background: #15151D; overflow: hidden; outline: 1px solid rgba(37,33,25,0.08);">
+          <div data-wai-ref="pPar4" style="position: absolute; left: 0; right: 0; top: -34px; bottom: -34px; will-change: transform;">
+            <div data-wai-ref="pSc4" style="width: 100%; height: 100%; transition: transform 0.35s cubic-bezier(0.22,1,0.36,1); will-change: transform;">
+              <img src="/school-static/current/uploads/bouquet-v2.webp" alt="FLEUR flower quiz and a collage of bouquets" draggable="false" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 18% 50%; transform: translate3d(6px,-6px,0) scale(1.02); transform-origin: center;">
+            </div>
+          </div>
+          <div data-wai-ref="pP4" style="position: absolute; right: 20px; bottom: 20px; opacity: 0; transition: opacity 0.2s cubic-bezier(0.23,1,0.32,1); padding: 9px 18px; border-radius: 999px; background: rgba(251,248,241,0.92); color: #252119; font-weight: 600; font-size: 13.5px; backdrop-filter: blur(6px); pointer-events: none;">take the quiz →</div>
+        </div>
+        <div style="margin-top: 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px;">
+          <div><div style="font-weight: 700; font-size: 19px; color: #252119;">FLEUR</div><div style="margin-top: 4px; font-size: 14.5px; color: rgba(37,33,25,0.66);">A flower personality quiz</div></div>
+          <div style="font-weight: 700; font-size: 11.5px; letter-spacing: 0.1em; color: rgba(37,33,25,0.62); white-space: nowrap;">AGE 14 · WEEK 4</div>
+        </div>
+      </a>
+    </div>
+  </div>
+</div>
+
+<div data-wai-ref="vrWrap" style="height: 340vh;">
+  <div data-screen-label="05 Support and progress reports" style="position: sticky; top: 0; height: 100vh; overflow: hidden;">
+    <div data-wai-ref="vrStage" style="position: absolute; left: 50%; top: 50%; width: 1440px; height: 780px; opacity: 1; transform: translate(-50%, -50%); will-change: opacity, transform;">
+      <div data-wai-ref="vrLa" style="position: absolute; left: 100px; top: 70px; width: 1240px; will-change: opacity, transform;">
+        <h2 style="margin: 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 44px; line-height: 1.18; letter-spacing: -0.01em; color: #252119; text-wrap: balance;">Guidance all the way to launch</h2>
+            <div style="margin-top: 40px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px;">
+              <article class="wai-mentor-card m-benefit-card" data-layout-check="mentor-card">
+  <div class="wai-mentor-card__intro">
+    <div class="wai-mentor-card__people" aria-label="A child and a dedicated mentor">
+      <div class="wai-mentor-card__avatar m-avatar"><img src="/school-static/current/uploads/kid-320.webp" width="320" height="320" decoding="async" alt="Child with a laptop" draggable="false"></div>
+      <div class="wai-mentor-card__avatar m-avatar"><img src="/school-static/current/uploads/mentor-cut-320.webp" width="320" height="320" decoding="async" alt="A wizard mentor"></div>
+    </div>
+    <div class="wai-mentor-card__copy m-benefit-copy">
+      <h3>A mentor who builds</h3>
+      <p class="m-benefit-description">Helps your child launch a project at their own pace.</p>
+    </div>
+  </div>
+  <div class="wai-mentor-card__promise wai-mentor-metrics" data-layout-check="mentor-metrics">
+    <div class="wai-mentor-metrics__schedule" aria-label="8 one-to-one or paired lessons per month" data-layout-check="mentor-metric">
+      <strong data-layout-role="value">8</strong>
+      <span data-layout-role="label">one-to-one or paired lessons per month</span>
+    </div>
+    <div class="wai-mentor-metrics__schedule wai-mentor-metrics__group" aria-label="2 group sessions per month: a demo day and a hackathon" data-layout-check="mentor-metric">
+      <strong data-layout-role="value">2</strong>
+      <span data-layout-role="label">group sessions per month: a demo day and a hackathon</span>
+    </div>
+  </div>
+  <div class="wai-mentor-card__price" aria-label="Price: from RUB 50,000 per month">
+    <span>from</span><strong>RUB 50,000</strong><span>per month</span>
+  </div>
+</article>
+
+              <div style="box-sizing: border-box; background: #FBF8F1; border: 1px solid rgba(37,33,25,0.08); border-radius: 24px; box-shadow: 0 16px 40px rgba(37,33,25,0.12); padding: 28px 30px; display: flex; flex-direction: column;">
+                <div style="font-weight: 700; font-size: 20px; color: #252119;">Tools, ready to use</div>
+                <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                  <div style="display: flex; gap: 10px; font-size: 14.5px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="flex: none; width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: #D4521E;"></span><span>Claude and ChatGPT run on school accounts</span></div>
+                  <div style="display: flex; gap: 10px; font-size: 14.5px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="flex: none; width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: #D4521E;"></span><span>VPN and hosting are already set up</span></div>
+                </div>
+                <div style="margin-top: auto; padding-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;"><span style="padding: 6px 14px; border-radius: 999px; background: #F6DFCF; font-weight: 600; font-size: 12.5px; color: #9A3A14;">subscriptions included</span><span style="padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(37,33,25,0.18); font-weight: 600; font-size: 12.5px; color: rgba(37,33,25,0.66);">at no extra cost</span></div>
+              </div>
+              <div style="box-sizing: border-box; background: #FBF8F1; border: 1px solid rgba(37,33,25,0.08); border-radius: 24px; box-shadow: 0 16px 40px rgba(37,33,25,0.12); padding: 28px 30px; display: flex; flex-direction: column;"><div style="font-weight: 700; font-size: 20px; color: #252119;">A project inspired by a hobby</div><div style="margin-top: 8px; font-size: 14.5px; line-height: 1.5; color: rgba(37,33,25,0.72);">The idea grows from something your child already loves. Motivation comes naturally.</div><div style="margin-top: auto; padding-top: 16px; display: flex; gap: 7px; flex-wrap: wrap;"><span style="padding: 5px 13px; border-radius: 999px; background: #F6DFCF; font-weight: 600; font-size: 12px; color: #9A3A14;">football</span><span style="padding: 5px 13px; border-radius: 999px; background: #F6DFCF; font-weight: 600; font-size: 12px; color: #9A3A14;">dragons</span><span style="padding: 5px 13px; border-radius: 999px; background: #F6DFCF; font-weight: 600; font-size: 12px; color: #9A3A14;">comics</span><span style="padding: 5px 13px; border-radius: 999px; background: #F6DFCF; font-weight: 600; font-size: 12px; color: #9A3A14;">Minecraft</span><span style="padding: 5px 13px; border-radius: 999px; background: #F6DFCF; font-weight: 600; font-size: 12px; color: #9A3A14;">local history</span></div></div>
+              <div style="box-sizing: border-box; background: #FBF8F1; border: 1px solid rgba(37,33,25,0.08); border-radius: 24px; box-shadow: 0 16px 40px rgba(37,33,25,0.12); padding: 28px 30px; display: flex; flex-direction: column;"><div style="background: #FFFFFF; border: 1px solid rgba(37,33,25,0.10); border-radius: 16px; box-shadow: 0 6px 16px rgba(37,33,25,0.14); padding: 12px 14px; margin-bottom: 14px;"><div style="display: flex; align-items: center; gap: 6px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: rgba(37,33,25,0.18);"></span><span style="width: 7px; height: 7px; border-radius: 50%; background: rgba(37,33,25,0.18);"></span><span style="width: 7px; height: 7px; border-radius: 50%; background: rgba(37,33,25,0.18);"></span><span style="margin-left: 8px; flex: 1; padding: 4px 12px; border-radius: 999px; background: #F2ECDF; font-size: 11.5px; color: rgba(37,33,25,0.66);">dragon-atlas.example</span></div><div style="margin-top: 12px; height: 8px; border-radius: 999px; background: rgba(37,33,25,0.10); width: 82%;"></div><div style="margin-top: 7px; height: 8px; border-radius: 999px; background: rgba(37,33,25,0.10); width: 58%;"></div><div style="margin-top: 12px; display: inline-block; padding: 5px 14px; border-radius: 999px; background: #D4521E; font-weight: 600; font-size: 11px; color: #FFF8EF;">generate →</div></div><div style="font-weight: 700; font-size: 20px; color: #252119;">A real product</div><div style="margin-top: 8px; font-size: 14.5px; line-height: 1.5; color: rgba(37,33,25,0.72);">Your child leaves with a working website, bot or game, ready to use and share.</div></div>
+            </div>
       </div>
-      <p class="fine-print">Prices are in EUR for the stated course, not per lesson. Confirm the teaching language, availability, lesson schedule and applicable enrolment and cancellation terms with the school before paying. This English page describes the programme; it does not promise English-language instruction.</p>
-    </section>
-    <section class="contact section" aria-labelledby="contact-title"><p class="eyebrow">The next adventure starts with a conversation</p><h2 id="contact-title">What would your child<br>love to make?</h2><a class="button" href="mailto:hello@mail.waiwai.is?subject=Wai%20School%20enquiry">Tell us about their idea <span aria-hidden="true">↗</span></a><p>Write in English to <a href="mailto:hello@mail.waiwai.is">hello@mail.waiwai.is</a>.<br>Share their age, interests and a suitable time to talk. Please don't email sensitive information.</p></section>
-  </main>
-  <footer class="site-footer"><a class="wordmark" href="/">wai<span>school</span></a><div><p>Wai School is an educational programme of <strong>WaiWai, LLC</strong>, Delaware, United States.</p><p>1111B S Governors Ave, STE 28908, Dover, DE 19904, USA.</p><p>Company owner: Mikhail Vaysman, professionally known as Mik Wiseman.</p></div><nav aria-label="Footer navigation"><a href="/school/projects">Student projects</a><a href="mailto:hello@mail.waiwai.is">Contact the school</a><a href="/login">WaiComputer sign in</a></nav></footer>
+      <div data-wai-ref="vrLb" style="position: absolute; left: 96px; top: 180px; width: 400px; opacity: 0; visibility: hidden; will-change: opacity, transform;">
+        <h2 style="margin: 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 44px; line-height: 1.18; letter-spacing: -0.01em; color: #252119; text-wrap: balance;">You see every step</h2>
+        <p style="margin: 20px 0 0; font-size: 17px; line-height: 1.55; color: rgba(37,33,25,0.72); text-wrap: pretty;">At the end of each week, the mentor shares a short report: what your child made, the skills they developed and what comes next.</p>
+        <div style="margin-top: 24px; display: flex; gap: 8px; flex-wrap: wrap;">
+          <span style="padding: 6px 14px; border-radius: 999px; background: #D6ECE6; border: 1px solid rgba(14,140,126,0.3); font-weight: 600; font-size: 12.5px; color: #0B6A5F;">at the end of the week</span>
+          <span style="padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(37,33,25,0.18); font-weight: 600; font-size: 12.5px; color: rgba(37,33,25,0.66);">always in your parent account</span>
+        </div>
+      </div>
+      <div data-wai-ref="vrRep" style="position: absolute; left: 620px; top: 84px; width: 730px; opacity: 0; visibility: hidden; will-change: opacity, transform;">
+        <div style="box-sizing: border-box; background: #FBF8F1; border: 1px solid rgba(37,33,25,0.08); border-radius: 32px; box-shadow: 0 24px 60px rgba(37,33,25,0.18); padding: 36px 44px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <span style="padding: 6px 14px; border-radius: 999px; background: #F6DFCF; font-weight: 700; font-size: 12px; letter-spacing: 0.06em; color: #9A3A14;">REPORT 4 · WEEK 4</span>
+            <span style="font-size: 13px; color: rgba(37,33,25,0.62);">12 May · end of the week</span>
+          </div>
+          <div style="margin-top: 14px; font-weight: 700; font-size: 23px; color: #252119;">Dragon Atlas · sample report</div>
+          <div style="margin-top: 16px; font-weight: 700; font-size: 11px; letter-spacing: 0.12em; color: #D4521E;">WHAT WE MADE TODAY</div>
+          <div style="margin-top: 7px; font-size: 14.5px; line-height: 1.5; color: rgba(37,33,25,0.72);">We built a generator for new dragon species. The student broke the task into steps and rewrote the prompt three times.</div>
+          <div style="margin-top: 18px; font-weight: 700; font-size: 11px; letter-spacing: 0.12em; color: #D4521E;">SKILLS</div>
+          <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 13.5px; font-weight: 600; color: #252119;">Defining a task</span><span style="font-weight: 700; font-size: 13px; color: #D4521E;">72%</span></div>
+              <div style="margin-top: 5px; height: 8px; border-radius: 999px; background: rgba(37,33,25,0.10);"><div style="width: 72%; height: 100%; border-radius: 999px; background: #D4521E;"></div></div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 13.5px; font-weight: 600; color: #252119;">Prompting</span><span style="font-weight: 700; font-size: 13px; color: #D4521E;">64%</span></div>
+              <div style="margin-top: 5px; height: 8px; border-radius: 999px; background: rgba(37,33,25,0.10);"><div style="width: 64%; height: 100%; border-radius: 999px; background: #D4521E;"></div></div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 13.5px; font-weight: 600; color: #252119;">Independence</span><span style="font-weight: 700; font-size: 13px; color: #D4521E;">58%</span></div>
+              <div style="margin-top: 5px; height: 8px; border-radius: 999px; background: rgba(37,33,25,0.10);"><div style="width: 58%; height: 100%; border-radius: 999px; background: #D4521E;"></div></div>
+            </div>
+          </div>
+          <div style="margin-top: 18px; background: #F6DFCF; border-radius: 16px; padding: 14px 18px;">
+            <div style="font-weight: 700; font-size: 12.5px; color: #9A3A14;">Mentor&#x27;s comment</div>
+            <div style="margin-top: 5px; font-size: 14px; line-height: 1.5; color: rgba(37,33,25,0.72);">“They no longer wait for a hint — they try first. Ask them about the ash whisperer.”</div>
+          </div>
+          <div style="margin-top: 14px; font-size: 13.5px; color: rgba(37,33,25,0.66);">Next step → a habitat map for each species</div>
+        </div>
+        <div style="position: absolute; right: -26px; top: -22px; background: #FFFFFF; border: 1px solid rgba(37,33,25,0.08); border-radius: 999px; box-shadow: 0 6px 16px rgba(37,33,25,0.14); padding: 12px 22px; display: flex; align-items: center; gap: 10px; transform: rotate(-2deg);">
+          <span style="font-weight: 800; font-size: 20px; color: #D4521E;">+12%</span>
+          <span style="font-size: 12px; line-height: 1.3; color: rgba(37,33,25,0.66); max-width: 120px;">independence<br>this month</span>
+        </div>
+      </div>
+    </div>
+    <div data-wai-ref="vrSh" style="position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; color: rgba(37,33,25,0.62); z-index: 7;">scroll ↓</div>
+  </div>
+</div>
+
+<div data-wai-ref="finalWrap" style="position: relative; height: 190vh; background: #F2ECDF;">
+  <div data-screen-label="06 An individual introduction" style="position: sticky; top: 0; height: 100vh; overflow: hidden; background: #F2ECDF;">
+  <div data-wai-ref="fin" style="position: absolute; inset: 0; width: 100%; height: 100%;">
+    <img data-wai-ref="finBg" data-layout-check="desktop-final-bg" data-desktop-src="/school-static/current/parallax/approach/master.webp?v=3" alt="Castle gates in an autumn forest" decoding="async" loading="lazy" fetchpriority="low" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; transform: scale(1.025); will-change: transform;">
+    <template data-wai-if="hazeFinal" data-wai-if-placeholder="true">
+      <div data-wai-ref="finHaze" style="position: absolute; inset: 0; background: rgba(242,236,223,0.16); opacity: 0; z-index: 2; will-change: opacity;"></div>
+    </template>
+    <div data-wai-ref="finGradient" style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(242,236,223,0) 48%, rgba(242,236,223,0.46) 78%, rgba(240,233,219,0.76) 100%); opacity: 0; z-index: 2; will-change: opacity;"></div>
+    <div data-wai-ref="finLogo" data-layout-check="desktop-final-logo" style="position: absolute; left: max(40px, calc((100vw - 1240px) / 2)); top: 84px; opacity: 0; transform: translateY(30px); will-change: opacity, transform; z-index: 3; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 46px; letter-spacing: -0.01em; color: #252119;">wai<span style="color: #D4521E;">.</span>school</div>
+    <div data-wai-ref="finCta" data-layout-check="desktop-final-cta" aria-hidden="true" inert style="position: absolute; left: 50%; bottom: 44px; width: min(1240px, calc(100vw - 48px)); box-sizing: border-box; background: rgba(251,248,241,0.92); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: 1px solid rgba(37,33,25,0.08); border-radius: 32px; box-shadow: 0 24px 60px rgba(37,33,25,0.18); display: flex; align-items: center; gap: 40px; padding: 36px 44px; opacity: 0; visibility: hidden; pointer-events: none; transform: translate(-50%, 48px); will-change: opacity, transform; z-index: 6;">
+      <div style="position: relative; flex: none;"><div style="width: 140px; height: 140px; border-radius: 50%; overflow: hidden; border: 4px solid #FFFFFF; box-shadow: 0 6px 16px rgba(37,33,25,0.14); background: #EAE3D4;"><img src="/school-static/current/uploads/kid-320.webp" width="320" height="320" decoding="async" alt="Child with a laptop" style="width: 100%; height: 100%; object-fit: cover; display: block;"></div><div style="position: absolute; left: 50%; transform: translateX(-50%); bottom: -12px; white-space: nowrap; padding: 7px 16px; border-radius: 999px; background: #F6DFCF; color: #9A3A14; font-weight: 600; font-size: 15px; border: 3px solid #FBF8F1; box-shadow: 0 4px 10px rgba(37,33,25,0.10); z-index: 2;">Ages 8–15</div></div>
+      <div style="flex: 1;">
+        <div style="font-weight: 700; font-size: 38px; letter-spacing: -0.01em; color: #252119;">Introductory lesson</div>
+        <div style="margin-top: 9px; font-size: 23px; line-height: 1.35; color: rgba(37,33,25,0.72);">See how AI builds a project and find an idea your child will love.</div>
+        <div style="margin-top: 18px; display: flex; gap: 9px; flex-wrap: wrap;">
+          <div style="padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(37,33,25,0.18); font-weight: 600; font-size: 14px; color: rgba(37,33,25,0.66);">30–45 minutes</div>
+          <div style="padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(37,33,25,0.18); font-weight: 600; font-size: 14px; color: rgba(37,33,25,0.66);">online</div>
+          <div style="padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(37,33,25,0.18); font-weight: 600; font-size: 14px; color: rgba(37,33,25,0.66);">free</div>
+        </div>
+        <nav class="wai-legal-links" aria-label="Contact and documents">
+          <a href="https://t.me/gri_ot" target="_blank" rel="noopener" data-analytics-id="contact_telegram" data-analytics-component="final">Telegram: @gri_ot</a>
+          <a href="/legal/privacy" data-analytics-id="legal_privacy" data-analytics-component="final">Data privacy</a>
+          <a href="/legal/offer" data-analytics-id="legal_offer" data-analytics-component="final">Terms and company details</a>
+        </nav>
+      </div>
+      <a href="https://cal.com/grigoriy-ottens/30min" target="_blank" rel="noopener" data-analytics-id="final_intro_call" data-analytics-component="final" style="display: flex; align-items: center; gap: 12px; background: #BC4517; color: #FFFFFF; font-weight: 600; font-size: 19px; padding: 19px 34px; border-radius: 999px; cursor: pointer; flex: none; text-decoration: none;" data-wai-style-hover="background: #9A3A14;">Book a lesson<span style="font-weight: 400;">→</span></a>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+<main data-wai-ref="compactRoot" class="compact-landing" aria-label="WAI School">
+  <header class="m-site-header" data-m-site-header aria-label="Main navigation">
+    <a class="m-site-header__brand" href="#m-hero-title" aria-label="WAI School, back to top">wai<span>.</span>school</a>
+    <a class="m-site-header__cta" href="https://cal.com/grigoriy-ottens/30min" target="_blank" rel="noopener" data-analytics-id="sticky_intro_call" data-analytics-component="header">Book a lesson</a>
+  </header>
+
+  <section class="f-section f-hero" data-m-flow="hero" aria-labelledby="m-hero-title">
+    <div class="f-hero-bg" aria-hidden="true">
+      <picture>
+        <source srcset="/school-static/current/parallax/landscape/00-background-clean.avif?v=5" type="image/avif">
+        <img src="/school-static/current/parallax/landscape/00-background-clean.webp?v=5" alt="" decoding="async" fetchpriority="high" draggable="false">
+      </picture>
+    </div>
+    <div class="m-hero-copy" data-reveal>
+      <div id="m-hero-title" class="m-title" role="heading" aria-level="1">We teach children to launch projects&nbsp;with AI</div>
+    </div>
+    <div class="m-hero-card" data-m-hero-card data-reveal>
+      <div class="m-hero-card__summary">
+        <div class="m-hero-card__person"><div class="m-avatar"><img src="/school-static/current/uploads/kid-320.webp" width="320" height="320" decoding="async" alt="Child with a laptop"></div><span class="m-chip">Ages 8–15</span></div>
+        <div class="m-hero-card__copy"><strong>A boutique school for AI projects</strong><span>A real app or game inspired by your child&#x27;s interests</span></div>
+      </div>
+      <a class="wai-link-button" href="https://cal.com/grigoriy-ottens/30min" target="_blank" rel="noopener" data-analytics-id="hero_intro_call" data-analytics-component="hero">Introductory lesson <span aria-hidden="true">→</span></a>
+    </div>
+  </section>
+
+  <section class="f-section" data-m-flow="why" aria-labelledby="m-why-title">
+    <h2 id="m-why-title" class="m-title f-h2" data-reveal>What makes us boutique</h2>
+    <article class="f-card" data-reveal>
+      <div class="f-card-people">
+        <div class="m-avatar"><img src="/school-static/current/uploads/founder-mik.jpg" alt="Mik Wiseman" loading="lazy"></div>
+        <div class="m-avatar f-avatar-overlap"><img src="/school-static/current/uploads/founder-grisha.jpg" alt="Grigory Ottens" loading="lazy"></div>
+        <div class="m-avatar f-avatar-overlap"><img src="/school-static/current/uploads/mentor-dima.jpg" alt="Dmitry Rubin" loading="lazy"></div>
+        <div class="m-avatar f-avatar-overlap"><img src="/school-static/current/uploads/mentor-darya.jpg" alt="Darya Zhuykova" loading="lazy"></div>
+      </div>
+      <h3>Mentors who build real products</h3>
+      <p>Our mentors have launched businesses and products, and still do. They teach through experience and become role models.</p>
+    </article>
+    <article class="f-card" data-reveal>
+      <h3>One-to-one or in a pair</h3>
+      <p>A mentor works with one child or a pair. Everyone learns at their own pace.</p>
+      <div class="m-week-result"><span class="m-chip">one-to-one</span><span class="m-chip m-chip--teal">in a pair</span></div>
+    </article>
+    <article class="f-card" data-reveal>
+      <h3>A project you can open online</h3>
+      <p>The outcome has a link your child can share with friends and family.</p>
+      <div class="m-week-result"><span class="m-chip">website</span><span class="m-chip">game</span><span class="m-chip">bot</span><span class="m-chip m-chip--teal">published →</span></div>
+    </article>
+  </section>
+
+  <section class="f-section" data-m-flow="adults" aria-labelledby="m-adults-title">
+    <div class="f-adults-bg" aria-hidden="true">
+      <picture>
+        <source srcset="/school-static/current/parallax/landscape/03-foreground.avif?v=5" type="image/avif">
+        <img src="/school-static/current/parallax/landscape/03-foreground.webp?v=5" alt="" loading="lazy" decoding="async" draggable="false">
+      </picture>
+    </div>
+    <header class="f-head" data-reveal>
+      <h2 id="m-adults-title" class="m-title f-h2">We started by teaching adults</h2>
+      <p class="m-lead">Before teaching children, we took this journey with adults and companies.</p>
+      <div class="m-adults-stat"><strong>2&nbsp;700+</strong><span>adults have taken our AI programmes</span></div>
+    </header>
+    <div class="m-evidence" data-m-evidence aria-label="Our adult school and corporate clients" data-reveal>
+      <article class="m-proof m-proof--school" data-m-proof="0"><small>OUR SCHOOL FOR ADULTS</small><h3>Wai Combinator</h3><strong>1 500+</strong></article>
+      <article class="m-proof m-proof--circle m-proof--alfa" data-m-proof="1"><img src="/school-static/current/uploads/alfabank.svg" alt="Alfa-Bank"><strong>128 participants</strong></article>
+      <article class="m-proof m-proof--circle m-proof--samolot" data-m-proof="2"><img src="/school-static/current/uploads/samolot.svg" alt="Samolet Group"><strong>1,040 professionals</strong></article>
+      <article class="m-proof m-proof--circle m-proof--pike" data-m-proof="3"><img src="/school-static/current/uploads/pikemedialab.svg" alt="Pike Media Lab"><strong>97 students</strong></article>
+    </div>
+  </section>
+
+  <section class="f-section" data-m-flow="people" aria-labelledby="m-people-title">
+    <h2 id="m-people-title" class="m-title f-h2" data-reveal>Your children learn from practitioners</h2>
+    <div class="f-people-grid">
+      <article class="m-founder-card" data-reveal>
+        <div class="m-founder-photo"><img src="/school-static/current/uploads/founder-mik.jpg" alt="Mik Wiseman" loading="lazy"><span class="m-chip m-founder-role">co-founder</span></div>
+        <h3>Mik Wiseman</h3><p>Technology entrepreneur and developer</p>
+        <div class="m-founder-facts"><div class="m-founder-fact"><strong>Trinity Monsters:</strong> Digital Agency of the Year 2023</div><div class="m-founder-fact"><strong>WaiWai:</strong> an AI agent marketplace</div></div>
+        <div class="m-founder-award"><span class="m-award-badge">1st place</span><span>ETHGlobal New York — a competition with 600 engineers from around the world</span></div>
+      </article>
+      <article class="m-founder-card" data-reveal>
+        <div class="m-founder-photo"><img src="/school-static/current/uploads/founder-grisha.jpg" alt="Grigory Ottens" loading="lazy"><span class="m-chip m-founder-role">co-founder</span></div>
+        <h3>Grigory Ottens</h3><p>EdTech entrepreneur</p>
+        <div class="m-founder-facts"><div class="m-founder-fact"><strong>Yoga Academy:</strong> a leading Russian-language yoga school</div><div class="m-founder-fact"><strong>Netology · Coursiv:</strong> former senior executive</div></div>
+      </article>
+    </div>
+    <div class="f-people-grid">
+      <article class="m-founder-card" data-reveal>
+        <div class="m-founder-photo"><img src="/school-static/current/uploads/mentor-dima.jpg" alt="Dmitry Rubin" loading="lazy"></div>
+        <h3>Dmitry Rubin</h3><p>Lead mentor · physicist and entrepreneur</p>
+        <div class="m-founder-facts"><div class="m-founder-fact"><strong>6 startups:</strong> 10+ years in venture capital, agricultural drones in Korea</div><div class="m-founder-fact"><strong>Research:</strong> 3 patents and 20+ papers</div><div class="m-founder-fact"><strong>Expert:</strong> IIDF, Rosatom, Forbes columnist</div></div>
+        <a class="m-founder-link" href="/mentors/dima" data-analytics-id="people_mentor_dima" data-analytics-component="people">Meet the mentor <span aria-hidden="true">→</span></a>
+      </article>
+      <article class="m-founder-card" data-reveal>
+        <div class="m-founder-photo"><img src="/school-static/current/uploads/mentor-darya.jpg" alt="Darya Zhuykova" loading="lazy"></div>
+        <h3>Darya Zhuykova</h3><p>Mentor · hands-on generative AI</p>
+        <div class="m-founder-facts"><div class="m-founder-fact"><strong>Severstal:</strong> implements generative AI</div><div class="m-founder-fact"><strong>MIPT:</strong> lecturer, 10 programmes</div><div class="m-founder-fact"><strong>25,000 employees:</strong> have taken her AI course</div></div>
+        <a class="m-founder-link" href="/mentors/darya" data-analytics-id="people_mentor_darya" data-analytics-component="people">Meet the mentor <span aria-hidden="true">→</span></a>
+      </article>
+    </div>
+  </section>
+
+  <section class="f-section f-section--wide" data-m-flow="projects" aria-labelledby="m-projects-title">
+    <header class="f-head f-head--inset" data-reveal>
+      <h2 id="m-projects-title" class="m-title f-h2">Made by children</h2>
+      <p class="m-lead">Real products inspired by hobbies. Every project has a link.</p>
+    </header>
+    <div class="f-projects-scroller" data-reveal>
+      <a class="m-project-card" data-project-shot="hallownest" href="https://wai.school/g2/project/hallownest/app/" target="_blank" rel="noopener">
+        <div class="m-project-media"><picture><source media="(max-width: 767px)" srcset="/school-static/current/uploads/hallownest-mobile-cover.webp"><img src="/school-static/current/uploads/hallownest-cover.webp" alt="Flying Castle game" loading="lazy" decoding="async"></picture></div>
+        <div class="m-project-caption"><div><h3>Flying Castle</h3><p>An indie game about a traveller</p></div><div class="m-project-meta">AGE 14<br>WEEK 4</div></div>
+      </a>
+      <a class="m-project-card" data-project-shot="block-modz" href="https://wai.school/g3/project/block-modz/" target="_blank" rel="noopener">
+        <div class="m-project-media"><picture><source media="(max-width: 767px)" srcset="/school-static/current/uploads/block-modz-mobile-cover.webp"><img src="/school-static/current/uploads/block-modz-cover.webp" alt="Block Modz project" loading="lazy" decoding="async"></picture></div>
+        <div class="m-project-caption"><div><h3>Block Modz</h3><p>Minecraft mods</p></div><div class="m-project-meta">AGE 11<br>WEEK 3</div></div>
+      </a>
+      <a class="m-project-card" data-project-shot="rifflegg" href="https://wai.school/g2/project/rifflegg/" target="_blank" rel="noopener">
+        <div class="m-project-media"><picture><source media="(max-width: 767px)" srcset="/school-static/current/uploads/rifflegg-mobile-cover.webp"><img src="/school-static/current/uploads/rifflegg-match.webp" alt="RIFFLEGG project" loading="lazy" decoding="async"></picture></div>
+        <div class="m-project-caption"><div><h3>RIFFLEGG</h3><p>A personal CS2 league</p></div><div class="m-project-meta">AGE 13<br>WEEK 4</div></div>
+      </a>
+      <a class="m-project-card" data-project-shot="fleur" href="https://wai.school/g2/project/bouquet/" target="_blank" rel="noopener">
+        <div class="m-project-media"><picture><source media="(max-width: 767px)" srcset="/school-static/current/uploads/bouquet-mobile-cover.webp"><img src="/school-static/current/uploads/bouquet-v2.webp" alt="FLEUR project" loading="lazy" decoding="async"></picture></div>
+        <div class="m-project-caption"><div><h3>FLEUR</h3><p>A flower personality quiz</p></div><div class="m-project-meta">AGE 14<br>WEEK 4</div></div>
+      </a>
+    </div>
+    <div class="f-projects-cta" data-reveal>
+      <a class="wai-link-button" href="/school/projects" target="_blank" rel="noopener">All projects <span aria-hidden="true">→</span></a>
+    </div>
+  </section>
+
+  <section class="f-section" data-m-flow="support" aria-labelledby="m-benefits-title">
+    <h2 id="m-benefits-title" class="m-title f-h2" data-reveal>Guidance all the way to launch</h2>
+    <div class="f-benefit-stack" data-reveal>
+      <article class="wai-mentor-card m-benefit-card" data-layout-check="mentor-card">
+  <div class="wai-mentor-card__intro">
+    <div class="wai-mentor-card__people" aria-label="A child and a dedicated mentor">
+      <div class="wai-mentor-card__avatar m-avatar"><img src="/school-static/current/uploads/kid-320.webp" width="320" height="320" decoding="async" alt="Child with a laptop" draggable="false"></div>
+      <div class="wai-mentor-card__avatar m-avatar"><img src="/school-static/current/uploads/mentor-cut-320.webp" width="320" height="320" decoding="async" alt="A wizard mentor"></div>
+    </div>
+    <div class="wai-mentor-card__copy m-benefit-copy">
+      <h3>A mentor who builds</h3>
+      <p class="m-benefit-description">Helps your child launch a project at their own pace.</p>
+    </div>
+  </div>
+  <div class="wai-mentor-card__promise wai-mentor-metrics" data-layout-check="mentor-metrics">
+    <div class="wai-mentor-metrics__schedule" aria-label="8 one-to-one or paired lessons per month" data-layout-check="mentor-metric">
+      <strong data-layout-role="value">8</strong>
+      <span data-layout-role="label">one-to-one or paired lessons per month</span>
+    </div>
+    <div class="wai-mentor-metrics__schedule wai-mentor-metrics__group" aria-label="2 group sessions per month: a demo day and a hackathon" data-layout-check="mentor-metric">
+      <strong data-layout-role="value">2</strong>
+      <span data-layout-role="label">group sessions per month: a demo day and a hackathon</span>
+    </div>
+  </div>
+  <div class="wai-mentor-card__price" aria-label="Price: from RUB 50,000 per month">
+    <span>from</span><strong>RUB 50,000</strong><span>per month</span>
+  </div>
+</article>
+
+    </div>
+    <article class="m-benefit-card m-benefit-card--tools f-benefit" data-reveal>
+      <h3>Tools, ready to use</h3><p class="m-benefit-description">Claude and ChatGPT on school accounts. VPN and hosting are already set up.</p>
+      <div class="m-hobby-tags"><span class="m-chip">subscriptions included</span><span class="m-chip m-chip--ghost">at no extra cost</span></div>
+    </article>
+    <article class="m-benefit-card m-benefit-card--hobby f-benefit" data-reveal>
+      <h3>A project inspired by a hobby</h3><p>The idea grows from something your child already loves. Motivation comes naturally.</p>
+      <div class="m-hobby-tags"><span class="m-chip">football</span><span class="m-chip">dragons</span><span class="m-chip">comics</span><span class="m-chip">Minecraft</span><span class="m-chip">local history</span></div>
+    </article>
+    <article class="m-benefit-card m-benefit-card--product f-benefit" data-reveal>
+      <h3>A real product</h3><p>A working website, bot or game, ready to use and share.</p>
+      <div class="m-browser-mock"><div class="m-browser-top"><i></i><i></i><i></i></div><div class="m-browser-line"></div><div class="m-browser-line m-browser-line--short"></div><div class="m-week-result"><span class="m-chip m-chip--teal">published →</span></div></div>
+    </article>
+  </section>
+
+  <section class="f-section" data-m-flow="report" aria-labelledby="m-report-title">
+    <h2 id="m-report-title" class="m-title f-h2" data-reveal>You see every step</h2>
+    <article class="m-report-card" data-m-report-card data-reveal>
+      <div class="m-report-card__top"><span>REPORT 4 · WEEK 4</span><span>12 May</span></div>
+      <h3>Dragon Atlas</h3>
+      <div class="m-report-label">WHAT WE MADE</div><div class="m-report-text">We built a generator for new species. The student broke the task into steps and rewrote the prompt three times.</div>
+      <div class="m-report-label">SKILLS</div>
+      <div class="m-skill"><div class="m-skill-row"><span>Defining a task</span><span>72%</span></div><div class="m-skill-track"><span data-m-skill=".72"></span></div></div>
+      <div class="m-skill"><div class="m-skill-row"><span>Prompting</span><span>64%</span></div><div class="m-skill-track"><span data-m-skill=".64"></span></div></div>
+      <div class="m-skill"><div class="m-skill-row"><span>Independence</span><span>58%</span></div><div class="m-skill-track"><span data-m-skill=".58"></span></div></div>
+      <div class="m-mentor-note"><strong>Mentor&#x27;s comment</strong><br>They no longer wait for a hint — they try first.</div>
+    </article>
+  </section>
+
+  <section class="f-section" data-m-flow="program" aria-labelledby="m-program-title">
+    <header class="f-head" data-reveal>
+      <div class="m-eyebrow">1 month</div>
+      <h2 id="m-program-title" class="m-title f-h2">Learning programme</h2>
+      <p class="m-lead">8 individual lessons</p>
+    </header>
+    <article class="m-week-card" data-m-week="0" data-reveal>
+      <div class="m-week-number"><strong>WEEK 1</strong><span>01 / 04</span></div>
+      <h3>The idea becomes a first website</h3>
+      <p>Discover how AI works, build a four-part prompt and define the idea: who it is for, why it matters and its main feature.</p>
+      <div class="m-week-result"><span class="m-chip">project plan</span><span class="m-chip m-chip--teal">first publication</span></div>
+    </article>
+    <article class="m-week-card" data-m-week="1" data-reveal>
+      <div class="m-week-number"><strong>WEEK 2</strong><span>02 / 04</span></div>
+      <h3>The project gains memory</h3>
+      <p>Create a project brief and rules. Build a working version in small, clear steps, one feature at a time.</p>
+      <div class="m-week-result"><span class="m-chip">project memory</span><span class="m-chip m-chip--teal">working version</span></div>
+    </article>
+    <article class="m-week-card" data-m-week="2" data-reveal>
+      <div class="m-week-number"><strong>WEEK 3</strong><span>03 / 04</span></div>
+      <h3>Bring in an AI team</h3>
+      <p>Four AI roles work in parallel to fix and improve the product. Add a database so the project can store information.</p>
+      <div class="m-week-result"><span class="m-chip">AI agents</span><span class="m-chip m-chip--teal">database</span></div>
+    </article>
+    <article class="m-week-card" data-m-week="3" data-reveal>
+      <div class="m-week-number"><strong>WEEK 4</strong><span>04 / 04</span></div>
+      <h3>Publish and present</h3>
+      <p>Polish the product, prepare a three-minute talk and present it at a shared demo day. The project gets a public link.</p>
+      <div class="m-week-result"><span class="m-chip">demo day</span><span class="m-chip m-chip--teal">public link</span></div>
+    </article>
+    <div class="f-program-final" data-reveal>
+      <div class="f-program-final__title">Full programme: 3 months</div>
+      <a class="wai-link-button" href="https://cal.com/grigoriy-ottens/30min" target="_blank" rel="noopener" data-analytics-id="program_intro_call" data-analytics-component="program">Find out at an introductory lesson <span aria-hidden="true">→</span></a>
+    </div>
+  </section>
+
+  <section class="f-section f-final" data-m-flow="final" aria-labelledby="m-final-title">
+    <div class="m-final-sheet f-final-sheet" data-m-final-sheet data-reveal>
+      <div class="m-final-person"><div class="m-avatar"><img src="/school-static/current/uploads/kid-320.webp" width="320" height="320" decoding="async" alt="Child with a laptop"></div><span class="m-chip">Ages 8–15</span></div>
+      <h2 id="m-final-title">Introductory lesson</h2><p>See how AI builds a project and find an idea your child will love.</p>
+      <div class="m-final-facts"><span class="m-chip">30–45 minutes</span><span class="m-chip m-chip--teal">online</span><span class="m-chip">free</span></div>
+      <a class="wai-link-button" href="https://cal.com/grigoriy-ottens/30min" target="_blank" rel="noopener" data-analytics-id="final_intro_call" data-analytics-component="final">Book a lesson <span aria-hidden="true">→</span></a>
+      <nav class="wai-legal-links wai-legal-links--compact" aria-label="Contact and documents">
+        <a href="https://t.me/gri_ot" target="_blank" rel="noopener" data-analytics-id="contact_telegram" data-analytics-component="final">Telegram: @gri_ot</a>
+        <a href="/legal/privacy" data-analytics-id="legal_privacy" data-analytics-component="final">Data privacy</a>
+        <a href="/legal/offer" data-analytics-id="legal_offer" data-analytics-component="final">Terms</a>
+      </nav>
+    </div>
+    <div class="f-final-logo" aria-hidden="true">wai<span>.</span>school</div>
+  </section>
+</main>
+</div>
+<script data-wai-runtime="v1">
+(() => {
+  'use strict';
+
+  const props = Object.freeze({"hazeFinal":true,"parallaxOn":true,"fgZoom":0.5,"cloudDrift":160,"doneStyle":"teal"});
+
+class Component {
+  constructor(props) {
+    this.props = Object.freeze({ ...props });
+    this.refs2 = {};
+    this.jP = 0; this.jActive = -2; this.jPending = -1;
+    this.HERO_END = 0.14;
+    this.JOURNEY_START = 0.16;
+    this.JOURNEY_END = 0.62;
+    this.ADULTS_START = 0.72;
+    this.J_SEG_START = 0.24; this.J_SEG_LEN = 0.185;
+    this._shown = [false, false, false, false];
+    this.compactScenes = Object.freeze({
+      media: Object.freeze({
+        origin: Object.freeze({
+          push: [0.145, 0.535],
+          foregroundEnter: [0.17, 0.23],
+          baseExit: [0.535, 0.605],
+          foregroundExit: [0.765, 0.825],
+          worldExit: [0.815, 0.855],
+          baseOpacity: 0.78,
+          baseScaleStart: 1.025,
+          baseScaleEnd: 1.065,
+          baseTravelY: -16,
+          foregroundScaleStart: 1.055,
+          foregroundScaleEnd: 1.105,
+          foregroundTravelX: 14,
+          foregroundTravelY: 12,
+          foregroundPushX: 6,
+          foregroundPushY: -22,
+          foregroundAdultOpacity: 1,
+          heroVeilOpacity: 0.9,
+          programVeilOpacity: 0.34,
+          adultVeilOpacity: 0,
+          phoneAmplitude: 0.82,
+          tightAmplitude: 0.65
+        }),
+        final: Object.freeze({
+          settle: [0, 0.28],
+          veilEnter: [0.16, 0.46],
+          veilOpacityStart: 0.4,
+          veilOpacityEnd: 0.7,
+          scaleStart: 1.035,
+          scaleEnd: 1,
+          travelY: 10
+        })
+      }),
+      adults: Object.freeze({
+        panel: { enter: [0.565, 0.605] },
+        intro: { enter: [0.58, 0.625], exit: [0.765, 0.805] },
+        evidence: { enter: [0.615, 0.65], exit: [0.80, 0.845] },
+        founders: { enter: [0.805, 0.85], travel: [0.855, 0.965] },
+        proofs: { start: 0.625, step: 0.027, duration: 0.035 }
+      })
+    });
+  }
+  renderVals() {
+    this.jActive = -2;
+    const R = (k) => (this['_r_' + k] ||= (el) => { this.refs2[k] = el; });
+    return {
+      compactRoot: R('compactRoot'),
+      finalWrap: R('finalWrap'), fin: R('fin'), finBg: R('finBg'), finHaze: R('finHaze'), finGradient: R('finGradient'), finLogo: R('finLogo'), finCta: R('finCta'), sceneRoot: R('sceneRoot'), sceneCover: R('sceneCover'), sceneBg: R('sceneBg'), sceneMid: R('sceneMid'), adultCanvas: R('adultCanvas'), sceneCloudTrack: R('sceneCloudTrack'), heroVeil: R('heroVeil'), heroH1: R('heroH1'), heroCard: R('heroCard'), heroHint: R('heroHint'),
+      jAnchorCover: R('jAnchorCover'), jFg: R('jFg'), jAnchor: R('jAnchor'), jHint: R('jHint'), jShade: R('jShade'), jTitle: R('jTitle'),
+      adWrap: R('adWrap'), adIntro: R('adIntro'), adStage: R('adStage'), adWc: R('adWc'), adC1: R('adC1'), adC2: R('adC2'), adC3: R('adC3'), adF: R('adF'), adRibbon: R('adRibbon'), adHint: R('adHint'),
+      pT1: R('pT1'), pT2: R('pT2'), pT3: R('pT3'), pT4: R('pT4'),
+      pPar1: R('pPar1'), pPar2: R('pPar2'), pPar3: R('pPar3'), pPar4: R('pPar4'),
+      pSc1: R('pSc1'), pSc2: R('pSc2'), pSc3: R('pSc3'), pSc4: R('pSc4'),
+      pP1: R('pP1'), pP2: R('pP2'), pP3: R('pP3'), pP4: R('pP4'),
+      vrWrap: R('vrWrap'), vrStage: R('vrStage'), vrLa: R('vrLa'), vrLb: R('vrLb'),
+      vrV1: R('vrV1'), vrV2: R('vrV2'), vrV3: R('vrV3'), vrV4: R('vrV4'), vrRep: R('vrRep'), vrSh: R('vrSh'),
+      jPointClick: (this._jpc ||= (e) => {
+        const pt = e.target.closest('[data-point]');
+        const root = this.refs2.sceneRoot;
+        if (!pt || !root) return;
+        const i = parseInt(pt.getAttribute('data-point'), 10);
+        const scrollable = root.offsetHeight - window.innerHeight;
+        const rootTop = root.getBoundingClientRect().top + window.scrollY;
+        const journeyP = Math.min(0.98, this.J_SEG_START + i * this.J_SEG_LEN + this.J_SEG_LEN * 0.55);
+        const targetP = this.JOURNEY_START + journeyP * (this.JOURNEY_END - this.JOURNEY_START);
+        window.scrollTo({ top: rootTop + targetP * scrollable, behavior: 'smooth' });
+      }),
+      e1: (this._e1 ||= () => this.hov(0, true)), l1: (this._l1 ||= () => this.hov(0, false)),
+      e2: (this._e2 ||= () => this.hov(1, true)), l2: (this._l2 ||= () => this.hov(1, false)),
+      e3: (this._e3 ||= () => this.hov(2, true)), l3: (this._l3 ||= () => this.hov(2, false)),
+      e4: (this._e4 ||= () => this.hov(3, true)), l4: (this._l4 ||= () => this.hov(3, false)),
+      hazeFinal: this.props.hazeFinal ?? true
+    };
+  }
+  componentDidMount() {
+    this.reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    this.desktopMedia = window.matchMedia('(min-width: 1200px)');
+    this.isDesktop = this.desktopMedia.matches;
+    this._dirty = true;
+    this._onResize = () => { this.isDesktop = this.desktopMedia.matches; if (this.isDesktop) this.hydrateDesktopMedia(); this.fit(); this._dirty = true; };
+    this._onScroll = () => { this._dirty = true; };
+    this._onModeChange = (event) => {
+      this.isDesktop = event.matches;
+      if (this.isDesktop) this.hydrateDesktopMedia();
+      else this.initCompactFlow();
+      this.fit();
+      this._dirty = true;
+    };
+    window.addEventListener('resize', this._onResize);
+    window.addEventListener('scroll', this._onScroll, { passive: true });
+    if (this.desktopMedia.addEventListener) this.desktopMedia.addEventListener('change', this._onModeChange);
+    else this.desktopMedia.addListener(this._onModeChange);
+    if (this.isDesktop) this.hydrateDesktopMedia();
+    if (!this.isDesktop) this.initCompactFlow();
+    window.waiScrollToProgram = (this._scrollToProgram ||= () => this.scrollToProgram());
+    this.fit();
+    const loop = () => {
+      this._raf = requestAnimationFrame(loop);
+      if (this._dirty) {
+        this._dirty = false;
+        this.tick();
+      }
+    };
+    this._raf = requestAnimationFrame(loop);
+  }
+  componentWillUnmount() {
+    cancelAnimationFrame(this._raf);
+    window.removeEventListener('resize', this._onResize);
+    window.removeEventListener('scroll', this._onScroll);
+    if (this.desktopMedia) {
+      if (this.desktopMedia.removeEventListener) this.desktopMedia.removeEventListener('change', this._onModeChange);
+      else this.desktopMedia.removeListener(this._onModeChange);
+    }
+    this._flowObserver?.disconnect();
+    this._flowHeaderObserver?.disconnect();
+    if (window.waiScrollToProgram === this._scrollToProgram) delete window.waiScrollToProgram;
+  }
+  hydrateDesktopMedia() {
+    const scope = this.refs2.sceneRoot ? this.refs2.sceneRoot.closest('.desktop-landing') : null;
+    if (!scope) return;
+    scope.querySelectorAll('[data-desktop-src]').forEach((img) => {
+      if (!img.getAttribute('src')) img.setAttribute('src', img.getAttribute('data-desktop-src'));
+    });
+  }
+  fit() {
+    if (!this.isDesktop) { this.unit = 1; return; }
+    const w = window.innerWidth || document.documentElement.clientWidth || 1440;
+    const h = window.innerHeight || 900;
+    const AR = 1672 / 941;
+    const cw = Math.max(w, h * AR);
+    ['sceneCover', 'jAnchorCover'].forEach((k) => {
+      const c = this.refs2[k];
+      if (c) { c.style.width = cw + 'px'; c.style.height = (cw / AR) + 'px'; }
+    });
+    this.unit = cw / 1672;
+  }
+  prog(el) {
+    if (!el) return 0;
+    const vh = window.innerHeight;
+    const sc = el.offsetHeight - vh;
+    const rect = el.getBoundingClientRect();
+    return sc > 0 ? Math.min(1, Math.max(0, -rect.top / sc)) : 0;
+  }
+  near(el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    return rect.top < (window.innerHeight || 900) + 300 && rect.bottom > -300;
+  }
+  tick() {
+    if (this.isDesktop) this.tickDesktop();
+    else this.tickCompact();
+  }
+  tickDesktop() {
+    if (!this.unit) this.fit();
+    const vh = window.innerHeight || 900;
+    const vw = window.innerWidth || 1440;
+    const r = this.refs2;
+    const cl = t => Math.max(0, Math.min(1, t));
+    const ez = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+    const S = (el, tr) => { if (el) el.style.transform = tr; };
+    if (r.fin) r.fin.style.transform = 'none';
+    const sceneRaw = this.prog(r.sceneRoot);
+
+    if (r.sceneRoot) {
+      const ph = cl(sceneRaw / this.HERO_END);
+      const t = ez(cl(ph / 0.34));
+      const cp = ez(cl((ph - 0.10) / 0.26));
+      const outT = ez(cl((ph - 0.56) / 0.40));
+      if (r.heroH1) { r.heroH1.style.transform = 'translateY(' + (140 * (1 - t) - 40 * outT) + 'px)'; r.heroH1.style.opacity = String(1 - outT); }
+      if (r.heroCard) {
+        const cardVisibility = cp * (1 - outT);
+        const cardInteractive = cardVisibility >= 0.98;
+        r.heroCard.style.opacity = String(cardVisibility);
+        r.heroCard.style.visibility = cardVisibility <= 0.01 ? 'hidden' : 'visible';
+        r.heroCard.style.pointerEvents = cardInteractive ? 'auto' : 'none';
+        r.heroCard.setAttribute('aria-hidden', cardInteractive ? 'false' : 'true');
+        if ('inert' in r.heroCard) r.heroCard.inert = !cardInteractive;
+        r.heroCard.style.transform = 'translate(-50%,' + (36 * (1 - cp) - 34 * outT) + 'px)';
+      }
+      if (r.heroHint) r.heroHint.style.opacity = String((1 - ez(cl(ph / 0.16))) * (1 - outT));
+      if (r.heroVeil) r.heroVeil.style.opacity = String(1 - outT);
+    }
+    const handoffRaw = cl((sceneRaw - this.JOURNEY_END) / (this.ADULTS_START - this.JOURNEY_END));
+    const uiOut = ez(cl(handoffRaw / 0.24));
+    const worldOut = ez(cl((handoffRaw - 0.08) / 0.92));
+    const cloudOut = ez(cl((handoffRaw - 0.02) / 0.76));
+    const adultP = cl((sceneRaw - this.ADULTS_START) / (1 - this.ADULTS_START));
+
+    if (r.adWrap) {
+      const p = adultP;
+      r.adWrap.style.visibility = p > 0 ? 'visible' : 'hidden';
+      if (r.adStage) {
+        const sc = Math.max(vw / 1440, vh / 920);
+        r.adStage.style.transform = 'translate(-50%, -50%) scale(' + sc + ')';
+      }
+      const introIn = ez(cl((p - 0.015) / 0.10));
+      if (r.adIntro) {
+        r.adIntro.style.opacity = String(introIn);
+        r.adIntro.style.transform = 'translateY(' + (30 * (1 - introIn)) + 'px)';
+      }
+      const reveal = (el, start, out) => {
+        if (!el) return;
+        const vin = ez(cl((p - start) / 0.12));
+        const vout = out == null ? 0 : ez(cl((p - out) / 0.12));
+        const v = vin * (1 - vout);
+        el.style.opacity = String(v);
+        el.style.transform = 'translateY(' + (46 * (1 - vin) - 34 * vout) + 'px)';
+        el.style.visibility = v <= 0.01 ? 'hidden' : 'visible';
+      };
+      reveal(r.adWc, 0.10, 0.46);
+      reveal(r.adC1, 0.17, 0.48);
+      reveal(r.adC2, 0.24, 0.50);
+      reveal(r.adC3, 0.31, 0.52);
+      reveal(r.adF, 0.62);
+      reveal(r.adRibbon, 0.74);
+      if (r.adHint) r.adHint.style.opacity = String(introIn * (1 - ez(cl((p - 0.82) / 0.1))));
+    }
+
+    const jpRaw = cl((sceneRaw - this.JOURNEY_START) / (this.JOURNEY_END - this.JOURNEY_START));
+    if (!this._journeyReady) { this.jP = jpRaw; this._journeyReady = true; }
+    else this.jP += (jpRaw - this.jP) * 0.12;
+    if (Math.abs(jpRaw - this.jP) < 0.0005) this.jP = jpRaw;
+    const jp = this.jP;
+    const jv = handoffRaw > 0 ? 1 : Math.min(jp, jpRaw);
+    const unit = this.unit || 1;
+    const fgZoom = this.props.fgZoom ?? 0.5;
+    const cloudDrift = this.props.cloudDrift ?? 160;
+    const jKey = jv + '|' + handoffRaw + '|' + unit + '|' + fgZoom + '|' + cloudDrift;
+    if (this._jKey !== jKey && this.near(r.sceneRoot)) {
+      this._jKey = jKey;
+      const programStay = 1 - uiOut;
+      if (r.jTitle) { const tv = ez(cl((jv - 0.16) / 0.08)); r.jTitle.style.opacity = String(tv * programStay); r.jTitle.style.transform = 'translateY(' + (26 * (1 - tv) - 28 * uiOut) + 'px)'; }
+      if (r.jAnchor) {
+        const av = ez(cl((jv - 0.20) / 0.08));
+        const a = av * programStay;
+        r.jAnchor.style.opacity = String(a);
+        r.jAnchor.style.pointerEvents = a > 0.01 ? 'auto' : 'none';
+        if (r.jAnchorCover) r.jAnchorCover.style.pointerEvents = a > 0.01 ? 'auto' : 'none';
+      }
+      if (r.jFg) {
+        const fin2 = ez(cl(jv / 0.16));
+        const programScale = 1 + fgZoom * jv;
+        const fgScale = programScale + (1 - programScale) * worldOut;
+        const fgX = (1 - fin2) * 320 * (1 - worldOut) * unit;
+        const fgY = (70 * jv + (1 - fin2) * 150) * (1 - worldOut) * unit;
+        r.jFg.style.opacity = String(fin2);
+        r.jFg.style.transform = 'translate3d(' + fgX + 'px,' + fgY + 'px,0) scale(' + fgScale + ')';
+      }
+      const worldOpacity = 1 - worldOut;
+      const worldTransform = 'translate3d(' + (-220 * worldOut * unit) + 'px,' + (-34 * worldOut * unit) + 'px,0) scale(' + (1 - 0.22 * worldOut) + ')';
+      if (r.sceneBg) { r.sceneBg.style.opacity = String(worldOpacity); r.sceneBg.style.transform = worldTransform; }
+      if (r.sceneMid) { r.sceneMid.style.opacity = String(worldOpacity); r.sceneMid.style.transform = worldTransform; }
+      if (r.adultCanvas) r.adultCanvas.style.opacity = String(worldOut);
+      if (r.sceneCloudTrack) {
+        r.sceneCloudTrack.style.opacity = String(1 - cloudOut);
+        r.sceneCloudTrack.style.transform = 'translate3d(' + ((-cloudDrift * jv - 360 * cloudOut) * unit) + 'px,' + ((-14 * jv - 80 * cloudOut) * unit) + 'px,0) scale(' + (1 + 0.06 * jv + 0.06 * cloudOut) + ')';
+      }
+      const intro = ez(cl(jv / 0.05));
+      if (r.jShade) r.jShade.style.opacity = String(intro * programStay);
+      if (r.jHint) r.jHint.style.opacity = String(intro * programStay * (1 - ez(cl((jv - 0.16) / 0.06))));
+    }
+    this.jPending = jpRaw < this.J_SEG_START ? -1 : Math.min(3, Math.floor((jpRaw - this.J_SEG_START) / this.J_SEG_LEN));
+    this.applyJourneyActive();
+
+    const tiles = [r.pT1, r.pT2, r.pT3, r.pT4];
+    const pars = [r.pPar1, r.pPar2, r.pPar3, r.pPar4];
+    const parallaxOn = this.props.parallaxOn ?? true;
+    tiles.forEach((el, i) => {
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (!this._shown[i] && rect.top < vh * 0.88 && rect.bottom > 0) {
+        this._shown[i] = true;
+        el.style.opacity = '1';
+        el.style.transform = 'translateY(0px)';
+      }
+      const par = pars[i];
+      if (par) {
+        if (!parallaxOn) { par.style.transform = 'translateY(0px)'; return; }
+        const off = (rect.top + rect.height / 2 - vh / 2) * -0.07;
+        const cp = Math.max(-34, Math.min(34, off));
+        par.style.transform = 'translateY(' + cp.toFixed(1) + 'px)';
+      }
+    });
+
+    if (r.vrWrap) {
+      const p = this.prog(r.vrWrap);
+      const finalTop = r.finalWrap ? r.finalWrap.getBoundingClientRect().top : vh;
+      const bridgeRaw = cl((vh - finalTop) / (vh * 0.70));
+      const bridge = this.reduceMotion ? (bridgeRaw > 0 ? 1 : 0) : ez(bridgeRaw);
+      if (r.vrStage) {
+        const sc = Math.min(1, vw / 1440, vh / 780);
+        r.vrStage.style.opacity = String(1 - bridge);
+        r.vrStage.style.transform = 'translate(-50%, -50%) translateY(' + (-24 * bridge) + 'px) scale(' + (sc * (1 - 0.012 * bridge)) + ')';
+      }
+      const reveal = (el, start, out) => {
+        if (!el) return;
+        const vin = start < 0 ? 1 : ez(cl((p - start) / 0.10));
+        const vout = out == null ? 0 : ez(cl((p - out) / 0.10));
+        const v = vin * (1 - vout);
+        el.style.opacity = String(v);
+        el.style.transform = 'translateY(' + (40 * (1 - vin) - 30 * vout) + 'px)';
+        el.style.visibility = v <= 0.01 ? 'hidden' : 'visible';
+      };
+      reveal(r.vrLa, -1, 0.44);
+      reveal(r.vrV1, -1, 0.40);
+      reveal(r.vrV2, 0.06, 0.42);
+      reveal(r.vrV3, 0.13, 0.44);
+      reveal(r.vrV4, 0.20, 0.46);
+      reveal(r.vrLb, 0.58);
+      reveal(r.vrRep, 0.63);
+      if (r.vrSh) r.vrSh.style.opacity = String((1 - ez(cl((p - 0.82) / 0.1))) * (1 - bridge));
+    }
+
+    if (r.finalWrap) {
+      const p = this.prog(r.finalWrap);
+      const settle = ez(cl(p / 0.78));
+      const overlayIn = ez(cl((p - 0.12) / 0.24));
+      const logoIn = ez(cl((p - 0.28) / 0.20));
+      const ctaIn = ez(cl((p - 0.50) / 0.26));
+      const logoY = this.reduceMotion ? 0 : 30 * (1 - logoIn);
+      const ctaY = this.reduceMotion ? 0 : 48 * (1 - ctaIn);
+      if (r.finBg) r.finBg.style.transform = 'scale(' + (1.025 - 0.025 * settle) + ')';
+      if (r.finHaze) r.finHaze.style.opacity = String(overlayIn);
+      if (r.finGradient) r.finGradient.style.opacity = String(overlayIn);
+      if (r.finLogo) {
+        r.finLogo.style.opacity = String(logoIn);
+        r.finLogo.style.transform = 'translateY(' + logoY + 'px)';
+      }
+      if (r.finCta) {
+        const ctaInteractive = ctaIn >= 0.98;
+        r.finCta.style.opacity = String(ctaIn);
+        r.finCta.style.visibility = ctaIn <= 0.01 ? 'hidden' : 'visible';
+        r.finCta.style.pointerEvents = ctaInteractive ? 'auto' : 'none';
+        r.finCta.setAttribute('aria-hidden', ctaInteractive ? 'false' : 'true');
+        if ('inert' in r.finCta) r.finCta.inert = !ctaInteractive;
+        r.finCta.style.transform = 'translate(-50%, ' + ctaY + 'px) scale(' + (0.99 + 0.01 * ctaIn) + ')';
+      }
+    }
+  }
+  initCompactFlow() {
+
+
+
+    const root = this.refs2.compactRoot;
+    if (this._flowInit || !root) return;
+    this._flowInit = true;
+    root.classList.add('f-js');
+    root.querySelectorAll('[data-m-skill]').forEach((bar) => {
+      bar.style.transform = 'scaleX(' + (Number(bar.getAttribute('data-m-skill')) || 0) + ')';
+    });
+    const header = root.querySelector('[data-m-site-header]');
+    const heroSection = root.querySelector('[data-m-flow="hero"]');
+    const finalSection = root.querySelector('[data-m-flow="final"]');
+    if (header && heroSection && 'IntersectionObserver' in window) {
+
+      const edgeVisibility = new Map();
+      this._flowHeaderObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => edgeVisibility.set(entry.target, entry.isIntersecting));
+        let nearEdge = false;
+        edgeVisibility.forEach((value) => { nearEdge = nearEdge || value; });
+        header.classList.toggle('is-on', !nearEdge);
+      }, { rootMargin: '-64px 0px 0px 0px', threshold: 0 });
+      this._flowHeaderObserver.observe(heroSection);
+      if (finalSection) this._flowHeaderObserver.observe(finalSection);
+    } else if (header) {
+      header.classList.add('is-on');
+    }
+    const targets = Array.from(root.querySelectorAll('[data-reveal]'));
+    if (this.reduceMotion || !('IntersectionObserver' in window)) {
+      targets.forEach((el) => el.classList.add('is-in'));
+      return;
+    }
+    this._flowObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-in');
+        this._flowObserver.unobserve(entry.target);
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    targets.forEach((el) => this._flowObserver.observe(el));
+  }
+  tickCompact() {  }
+  scrollToProgram() {
+    if (this.isDesktop) {
+      const root = this.refs2.sceneRoot;
+      if (!root) return;
+      const scrollable = root.offsetHeight - window.innerHeight;
+      const rootTop = root.getBoundingClientRect().top + window.scrollY;
+      const journeyP = this.J_SEG_START + this.J_SEG_LEN * 0.55;
+      const targetP = this.JOURNEY_START + journeyP * (this.JOURNEY_END - this.JOURNEY_START);
+      window.scrollTo({ top: rootTop + targetP * scrollable, behavior: this.reduceMotion ? 'auto' : 'smooth' });
+    } else {
+      const section = this.refs2.compactRoot?.querySelector('[data-m-flow="program"]');
+      section?.scrollIntoView({ block: 'start', behavior: this.reduceMotion ? 'auto' : 'smooth' });
+    }
+  }
+  applyJourneyActive() {
+    if (this.jPending === this.jActive) return;
+    this.jActive = this.jPending;
+    const scope = this.refs2.jAnchor;
+    if (!scope) return;
+    const points = Array.from(scope.querySelectorAll('[data-point]'));
+    const cards = Array.from(scope.querySelectorAll('[data-card]'));
+    const doneStyle = this.props.doneStyle ?? 'teal';
+    points.forEach((pt) => {
+      const i = parseInt(pt.getAttribute('data-point'), 10);
+      const dot = pt.querySelector('[data-dot]');
+      const chip = pt.querySelector('[data-chip]');
+      const on = i === this.jActive;
+      const past = i < this.jActive && this.jActive > -1;
+      pt.style.zIndex = on ? '9' : (past ? '3' : '5');
+      if (dot) {
+        if (!dot.dataset.n) dot.dataset.n = dot.textContent;
+        dot.style.boxShadow = on ? '0 4px 10px rgba(37,33,25,0.3), 0 0 0 8px rgba(212,82,30,0.24)' : '0 4px 10px rgba(37,33,25,0.3)';
+        dot.style.transform = on ? 'translate(-50%, -50%) scale(1.18)' : 'translate(-50%, -50%)';
+        if (past && doneStyle === 'teal') { dot.style.background = '#0E8C7E'; dot.style.opacity = '1'; dot.innerHTML = '<svg width="19" height="17" viewBox="0 0 24 21" aria-hidden="true"><path d="M6.2 1.5 H17.8 L22.5 7.5 L12 19.5 L1.5 7.5 Z" fill="#FFF8EF"></path></svg>'; }
+        else if (past) { dot.style.background = '#D4521E'; dot.style.opacity = '0.45'; dot.textContent = dot.dataset.n; }
+        else { dot.style.background = '#D4521E'; dot.style.opacity = '1'; dot.textContent = dot.dataset.n; }
+      }
+      if (chip) {
+        chip.style.opacity = (on || past) ? '0' : '1';
+        chip.style.pointerEvents = past ? 'none' : '';
+        if (past && doneStyle === 'teal') { chip.style.background = '#D6ECE6'; chip.style.color = '#0B6A5F'; chip.style.borderColor = 'rgba(14,140,126,0.3)'; }
+        else if (past) { chip.style.background = 'rgba(251,248,241,0.6)'; chip.style.color = 'rgba(37,33,25,0.45)'; chip.style.borderColor = 'rgba(37,33,25,0.12)'; }
+        else { chip.style.background = 'rgba(251,248,241,0.94)'; chip.style.color = '#9A3A14'; chip.style.borderColor = 'rgba(212,82,30,0.25)'; }
+      }
+    });
+    cards.forEach((cd) => {
+      const i = parseInt(cd.getAttribute('data-card'), 10);
+      const on = i === this.jActive;
+      cd.style.opacity = on ? '1' : '0';
+      cd.style.transform = on ? 'scale(1)' : 'scale(0.55)';
+      cd.style.pointerEvents = on ? 'auto' : 'none';
+    });
+  }
+  hov(i, on) {
+    const sc = [this.refs2.pSc1, this.refs2.pSc2, this.refs2.pSc3, this.refs2.pSc4][i];
+    const p = [this.refs2.pP1, this.refs2.pP2, this.refs2.pP3, this.refs2.pP4][i];
+    if (sc) sc.style.transform = on ? 'scale(1.028)' : 'scale(1)';
+    if (p) p.style.opacity = on ? '1' : '0';
+  }
+}
+
+  const root = document.querySelector('[data-wai-root]');
+  if (!root) throw new Error('WAI public root is missing');
+
+  const component = new Component(props);
+  const values = component.renderVals();
+  const cleanups = [];
+
+  root.querySelectorAll('template[data-wai-if]').forEach((template) => {
+    const name = template.getAttribute('data-wai-if');
+    if (!(name in props)) throw new Error('Unknown conditional prop: ' + name);
+    if (props[name]) template.replaceWith(template.content.cloneNode(true));
+    else template.remove();
+  });
+
+  root.querySelectorAll('[data-wai-ref]').forEach((element) => {
+    const name = element.getAttribute('data-wai-ref');
+    const callback = values[name];
+    if (typeof callback !== 'function') throw new Error('Unknown ref callback: ' + name);
+    callback(element);
+  });
+
+  const events = Object.freeze({
+    'data-wai-on-click': 'click',
+    'data-wai-on-mouseenter': 'mouseenter',
+    'data-wai-on-mouseleave': 'mouseleave'
+  });
+  Object.entries(events).forEach(([attribute, eventName]) => {
+    root.querySelectorAll('[' + attribute + ']').forEach((element) => {
+      const handlerName = element.getAttribute(attribute);
+      const handler = values[handlerName];
+      if (typeof handler !== 'function') throw new Error('Unknown event binding: ' + eventName + ':' + handlerName);
+      element.addEventListener(eventName, handler);
+      cleanups.push(() => element.removeEventListener(eventName, handler));
+    });
+  });
+
+  root.querySelectorAll('[data-wai-style-hover]').forEach((element) => {
+    const declaration = element.getAttribute('data-wai-style-hover');
+    const probe = document.createElement('span');
+    probe.style.cssText = declaration;
+    const entries = Array.from(probe.style).map((name) => ({
+      name,
+      value: probe.style.getPropertyValue(name),
+      priority: probe.style.getPropertyPriority(name),
+      previousValue: element.style.getPropertyValue(name),
+      previousPriority: element.style.getPropertyPriority(name)
+    }));
+    if (!entries.length) throw new Error('Empty hover style declaration');
+    const enter = () => entries.forEach(({ name, value, priority }) => element.style.setProperty(name, value, priority));
+    const leave = () => entries.forEach(({ name, previousValue, previousPriority }) => {
+      if (previousValue) element.style.setProperty(name, previousValue, previousPriority);
+      else element.style.removeProperty(name);
+    });
+    element.addEventListener('mouseenter', enter);
+    element.addEventListener('mouseleave', leave);
+    element.addEventListener('focus', enter);
+    element.addEventListener('blur', leave);
+    cleanups.push(() => {
+      element.removeEventListener('mouseenter', enter);
+      element.removeEventListener('mouseleave', leave);
+      element.removeEventListener('focus', enter);
+      element.removeEventListener('blur', leave);
+    });
+  });
+
+  component.componentDidMount();
+  document.documentElement.setAttribute('data-wai-runtime-ready', 'true');
+
+  let disposed = false;
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    component.componentWillUnmount();
+    cleanups.forEach((cleanup) => cleanup());
+  };
+  window.addEventListener('pagehide', (event) => {
+    if (!event.persisted) dispose();
+  }, { once: true });
+})();
+</script>
+
+
+
 </body>
 </html>

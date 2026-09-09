@@ -4,11 +4,13 @@ const SITE_URL = "https://wai.computer";
 
 // Bump this string when launching new public surfaces; Next emits it
 // verbatim into the <lastmod> tag.
-const LAST_MODIFIED = "2026-09-02";
+const LAST_MODIFIED = "2026-09-09";
 
 const PUBLIC_PATHS = [
   "/",
   "/school/projects",
+  "/mentors/dima",
+  "/mentors/darya",
   "/ru",
   "/pricing",
   "/ru/pricing",

@@ -23,6 +23,9 @@ export function schoolRewrites() {
     beforeFiles: [
       { source: "/", destination: "/school-static/index.html" },
       { source: "/school/projects", destination: "/school-static/projects.html" },
+      { source: "/projects", destination: "/school-static/projects.html" },
+      { source: "/mentors/dima", destination: "/school-static/mentors/dima.html" },
+      { source: "/mentors/darya", destination: "/school-static/mentors/darya.html" },
     ],
     afterFiles: [
       { source: "/api/:path*", destination: `${resolveApiProxyTarget()}/api/:path*` },
