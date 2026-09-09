@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/checkmedia/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CheckMedia Assistant — Landing</title>
+<style>
+  :root{
+    --navy:#0A2540; --navy2:#0E2E52; --white:#fff;
+    --accent:#7C5CFC; --accent-d:#6845E8; --muted:#9FB3C8;
+    --ink:#0A2540; --soft:#5b7290; --line:#e6edf5; --bg:#f4f7fb;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; line-height:1.5; color:var(--ink); background:#fff}
+  header{position:sticky;top:0;z-index:30;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:15px 32px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand svg{height:22px;width:auto;display:block}
+  .brand .sub{color:var(--muted);font-weight:400;font-size:14px;border-left:1px solid rgba(255,255,255,.2);padding-left:12px}
+
+  .langpick{position:relative}
+  .lang-toggle{display:flex;align-items:center;gap:7px;background:transparent;border:1px solid rgba(255,255,255,.2);color:#fff;padding:8px 14px;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer}
+  .lang-toggle:hover{border-color:var(--accent)}
+  .lang-toggle .chev{font-size:10px;color:var(--muted)}
+  .lang-panel{position:absolute;right:0;top:calc(100% + 8px);width:min(280px,calc(100vw - 36px));background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 50px rgba(10,37,64,.28);padding:12px;z-index:40}
+  .lang-panel input{width:100%;border:1px solid #d8e2ee;border-radius:10px;padding:10px 12px;font-size:14px;outline:none;color:var(--ink)}
+  .lang-panel input:focus{border-color:var(--accent)}
+  .lang-list{max-height:250px;overflow-y:auto;margin-top:10px;display:flex;flex-direction:column;gap:2px}
+  .lang-item{display:flex;align-items:center;justify-content:space-between;gap:10px;background:transparent;border:0;text-align:left;padding:9px 11px;border-radius:9px;cursor:pointer;color:var(--ink);font-size:14px;font-weight:600;width:100%}
+  .lang-item:hover{background:var(--bg)}
+  .lang-item.active{background:#efeaff;color:var(--accent)}
+  .lang-item small{color:var(--soft);font-weight:400;font-size:12px}
+  .lang-none{padding:16px 6px;text-align:center;color:var(--soft);font-size:13.5px}
+  .container{max-width:980px;margin:0 auto;padding:0 24px}
+
+  .hero{background:linear-gradient(165deg,#1c2a66,var(--navy));color:#fff;padding:72px 0 80px;text-align:center}
+  .hero h1{font-size:42px;line-height:1.12;max-width:720px;margin:0 auto 16px}
+  .hero h1 span{color:#b9a6ff}
+  .hero p{color:var(--muted);font-size:18px;max-width:560px;margin:0 auto 28px}
+  .cta{display:inline-block;background:var(--accent);color:#fff;border:0;padding:14px 28px;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;text-decoration:none}
+  .cta:hover{background:var(--accent-d)}
+
+  .band-pain{background:#fff;text-align:center;padding:50px 0 10px}
+  .band-pain h2{font-size:26px;margin-bottom:12px}
+  .band-pain p{color:var(--soft);font-size:17px;max-width:640px;margin:0 auto}
+
+  .how{background:#fff;padding:48px 0 56px}
+  .how h2{text-align:center;font-size:28px;margin-bottom:34px}
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .step{text-align:center;padding:8px}
+  .step .num{width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700;font-size:18px;margin:0 auto 14px}
+  .step h3{font-size:17px;margin-bottom:6px}
+  .step p{color:var(--soft);font-size:14px}
+
+  .trust{background:var(--navy);color:#fff;padding:46px 0;text-align:center}
+  .trust h2{font-size:23px;margin-bottom:24px}
+  .trust-row{display:flex;justify-content:center;gap:14px;flex-wrap:wrap}
+  .trust-chip{display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);padding:12px 18px;border-radius:999px;font-size:14px;font-weight:600}
+  .trust-chip .dot{width:8px;height:8px;border-radius:50%;background:#5BE6A0}
+
+  .final{background:linear-gradient(165deg,#1c2a66,var(--navy));color:#fff;text-align:center;padding:60px 0}
+  .final h2{font-size:30px;margin-bottom:12px}
+  .final p{color:var(--muted);font-size:17px;margin-bottom:26px;max-width:520px;margin-left:auto;margin-right:auto}
+  .final-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+
+  .section{padding:56px 0}
+  .section h2{text-align:center;font-size:28px;margin-bottom:8px}
+  .section .lead{text-align:center;color:var(--soft);margin-bottom:34px}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:start}
+  .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;box-shadow:0 8px 24px rgba(10,37,64,.05);cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .card:hover{border-color:var(--accent);box-shadow:0 10px 28px rgba(124,92,252,.12)}
+  .card .ic{width:38px;height:38px;border-radius:10px;background:var(--navy);color:#b9a6ff;display:grid;place-items:center;font-weight:700;margin-bottom:14px}
+  .card .badge{display:inline-block;font-size:11px;font-weight:700;color:var(--accent);background:#efeaff;padding:3px 9px;border-radius:999px;margin-bottom:8px}
+  .card h3{font-size:17px;margin-bottom:6px}
+  .card p{color:var(--soft);font-size:14px}
+  .card .more{max-height:0;overflow:hidden;transition:max-height .3s ease;color:var(--soft);font-size:14px}
+  .card.open .more{max-height:320px;margin-top:10px}
+  .card .toggle{display:inline-flex;align-items:center;gap:6px;color:var(--accent);font-size:13px;font-weight:600;margin-top:12px}
+  .card .chev{transition:transform .25s}
+  .card.open .chev{transform:rotate(180deg)}
+
+  .who{max-width:560px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}
+  .who-label{color:var(--soft);font-weight:600;font-size:14px}
+  .who-btn{background:#fff;border:1px solid #d8e2ee;color:var(--ink);padding:10px 16px;border-radius:999px;font-size:14px;font-weight:600;cursor:pointer;transition:.15s}
+  .who-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .who-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  .chatwrap{background:var(--bg);padding:60px 0}
+  .chat{max-width:560px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:0 20px 60px rgba(10,37,64,.12)}
+  .chat-top{display:flex;align-items:center;gap:10px;padding:14px 18px;background:var(--navy);color:#fff}
+  .chat-top .ai{width:32px;height:32px;border-radius:9px;background:var(--accent);display:grid;place-items:center;font-weight:700}
+  .chat-top small{color:var(--muted)}
+  .msgs{padding:18px;display:flex;flex-direction:column;gap:11px;min-height:230px;max-height:330px;overflow-y:auto;background:var(--bg)}
+  .bubble{max-width:82%;padding:11px 14px;border-radius:14px;font-size:14.5px}
+  .bot{background:#fff;border:1px solid var(--line);border-bottom-left-radius:4px;align-self:flex-start}
+  .user{background:var(--accent);color:#fff;border-bottom-right-radius:4px;align-self:flex-end}
+  .typing span{width:7px;height:7px;border-radius:50%;background:#90a4bd;display:inline-block;animation:bn 1s infinite;margin:0 1px}
+  .typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+  @keyframes bn{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px;background:var(--bg)}
+  .chip{background:#fff;border:1px solid #d8e2ee;color:var(--ink);padding:8px 12px;border-radius:999px;font-size:13px;cursor:pointer}
+  .chip:hover{border-color:var(--accent);color:var(--accent)}
+  .cta-row{display:flex;gap:8px;flex-wrap:wrap;align-self:flex-start}
+  .cta-btn{border:0;padding:10px 15px;border-radius:11px;font-size:13.5px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
+  .cta-btn.primary{background:var(--accent);color:#fff}
+  .cta-btn.primary:hover{background:var(--accent-d)}
+  .cta-btn.secondary{background:#fff;color:var(--accent);border:1px solid var(--accent)}
+  .cta-btn.secondary:hover{background:#efeaff}
+  .inputbar{display:flex;gap:9px;padding:14px 16px;border-top:1px solid var(--line);background:#fff}
+  .inputbar input{flex:1;background:var(--bg);border:1px solid #d8e2ee;color:var(--ink);padding:11px 13px;border-radius:11px;font-size:14.5px;outline:none}
+  .inputbar button{background:var(--accent);border:0;color:#fff;padding:0 18px;border-radius:11px;font-weight:600;cursor:pointer}
+  .inputbar button:hover{background:var(--accent-d)}
+
+  .rich{align-self:stretch;width:100%;display:flex;flex-direction:column;gap:10px;margin:2px 0}
+  .r-text{background:#fff;border:1px solid var(--line);border-radius:14px;border-bottom-left-radius:4px;padding:11px 14px;font-size:14.5px;align-self:flex-start;max-width:88%}
+  .r-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:0 6px 18px rgba(10,37,64,.06)}
+  .r-card .r-badge{display:inline-block;font-size:11px;font-weight:700;color:var(--accent);background:#efeaff;padding:3px 9px;border-radius:999px;margin-bottom:8px}
+  .r-card h4{font-size:15px;margin-bottom:4px;color:var(--ink)}
+  .r-card p{font-size:13.5px;color:var(--soft)}
+  .r-chart{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .r-chart .r-title{font-size:13.5px;font-weight:700;color:var(--ink)}
+  .r-chart .r-sub{font-size:11.5px;color:var(--soft);margin-bottom:12px}
+  .r-bar{display:flex;align-items:center;gap:10px;margin:7px 0}
+  .r-bar .r-label{font-size:12px;color:var(--soft);width:84px;flex-shrink:0;text-align:right}
+  .r-bar .r-track{flex:1;background:var(--bg);border-radius:999px;height:18px;overflow:hidden}
+  .r-bar .r-fill{height:100%;background:linear-gradient(90deg,var(--accent-d),#b9a6ff);border-radius:999px;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:#fff;font-size:11px;font-weight:700;min-width:38px}
+  .r-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;font-size:13px}
+  .r-table th,.r-table td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line)}
+  .r-table th{background:var(--bg);color:var(--ink);font-weight:700}
+  .r-table tr:last-child td{border-bottom:0}
+  .r-table td.num{text-align:right;font-weight:700;color:var(--accent)}
+  .r-img{width:100%;border-radius:14px;display:block;border:1px solid var(--line)}
+  footer{background:var(--navy);color:var(--muted);text-align:center;padding:28px;font-size:13px}
+  footer .flogo{display:flex;justify-content:center;margin-bottom:10px;opacity:.85}
+  footer .flogo svg{height:18px}
+
+  @media(max-width:760px){.cards{grid-template-columns:1fr}.hero h1{font-size:32px}}
+
+  @media(max-width:560px){
+    header{padding:13px 18px}
+    .brand .sub{display:none}
+    .brand svg{height:19px}
+    .container{padding:0 16px}
+    .hero{padding:48px 0 54px}
+    .hero h1{font-size:26px;line-height:1.2}
+    .hero p{font-size:16px}
+    .cta{display:block;width:100%;padding:15px;font-size:16px}
+    .section{padding:40px 0}
+    .section h2{font-size:23px}
+    .card{padding:20px}
+    .chatwrap{padding:40px 0}
+    .who{gap:8px}
+    .who-label{width:100%;text-align:center;margin-bottom:2px}
+    .who-btn{flex:1;min-width:46%;text-align:center;padding:11px 12px}
+    .msgs{max-height:50vh}
+    .bubble{max-width:88%}
+    .cta-row{width:100%}
+    .cta-btn{flex:1;text-align:center}
+    .inputbar input{font-size:16px}
+    .steps{grid-template-columns:1fr;gap:26px}
+    .how h2,.band-pain h2{font-size:23px}
+    .final h2{font-size:24px}
+    .final-btns a{flex:1;text-align:center}
+  }
+</style>
+
+<link href="https://wai.computer/school/projects/checkmedia" rel="canonical"/></head>
+<body>
+<header>
+<div class="brand">
+<svg aria-label="CheckMedia" fill="none" viewbox="0 0 187 20" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#cmlogo)">
+<path d="M57.4438 17.8562C56.5662 18.8793 54.2594 19.9999 51.2254 19.9999C45.5085 19.9756 41.6973 16.6869 41.6973 11.1814C41.6973 6.04134 45.4584 2.41162 51.2756 2.41162C54.0337 2.41162 56.0647 3.23988 57.0928 3.94634V8.18507C56.0397 6.67471 53.9084 5.21308 51.2756 5.21308C47.4392 5.21308 45.0823 7.62478 45.0823 11.2058C45.0823 14.5188 47.1634 17.1254 51.2004 17.1985C54.2594 17.1985 56.4158 15.8343 57.4438 14.1047V17.8562Z" fill="white"></path>
+<path d="M68.8475 12.3752C68.8475 10.6212 68.1204 9.84169 66.3903 9.81733H66.315C64.1336 9.81733 63.1056 10.8648 63.1056 12.9598V19.7321H60.1719V1.46167H63.1056V10.0366C63.4566 8.55059 65.0864 7.33256 67.4685 7.33256C70.1765 7.35692 71.7812 8.74547 71.7812 11.5957V19.7321H68.8475V12.3752Z" fill="white"></path>
+<path d="M80.909 19.9758C76.7717 20.0001 74.3145 17.7833 74.3145 13.5933C74.3145 9.4033 76.9222 7.28394 80.7084 7.28394C84.3441 7.3083 86.5256 9.47638 86.5256 13.301V14.4703H77.2231C77.4487 16.4922 78.7275 17.5154 81.0093 17.5154C83.291 17.5154 84.8456 16.6627 85.5226 15.5909V18.5141C84.9208 19.1962 83.1907 20.0001 80.909 19.9758ZM77.2732 12.4484H83.5919C83.5167 10.7919 82.4134 9.76871 80.6331 9.76871C78.7526 9.76871 77.5741 10.6944 77.2732 12.4484Z" fill="white"></path>
+<path d="M95.0506 20.0001C91.0387 20.0001 88.3809 17.8564 88.3809 13.5933C88.3809 9.33022 91.0889 7.3083 95.0757 7.28394C96.7556 7.3083 98.2601 7.79551 99.0875 8.40452V11.9612C98.235 10.67 96.9061 9.79307 95.0757 9.76871C92.6685 9.76871 91.3647 11.0111 91.3647 13.4715V13.8369C91.3647 16.3461 92.7688 17.5154 95.1258 17.5154C97.207 17.5154 98.586 16.6627 99.2129 15.5909V18.5141C98.6613 19.1962 97.0816 20.0001 95.0506 20.0001Z" fill="white"></path>
+<path d="M104.828 1.46167V12.3021H106.207L109.718 7.5518H112.977L108.589 13.3009L113.679 19.7321H110.119L106.182 14.6894H104.828V19.7321H101.895V1.46167H104.828Z" fill="white"></path>
+<path d="M132.435 6.91842L126.793 15.9805H125.214L119.447 7.04022V19.7321H116.312V2.67969H120.274L126.091 11.9611L131.858 2.67969H135.569V19.7321H132.435V6.91842Z" fill="white"></path>
+<path d="M145.374 19.9758C141.237 20.0001 138.779 17.7833 138.779 13.5933C138.779 9.4033 141.387 7.28394 145.173 7.28394C148.809 7.3083 150.99 9.47638 150.99 13.301V14.4703H141.688C141.914 16.4922 143.192 17.5154 145.474 17.5154C147.756 17.5154 149.31 16.6627 149.987 15.5909V18.5141C149.386 19.1962 147.656 20.0001 145.374 19.9758ZM141.738 12.4484H148.057C147.982 10.7919 146.878 9.76871 145.098 9.76871C143.217 9.76871 142.039 10.6944 141.738 12.4484Z" fill="white"></path>
+<path d="M165.408 1.46167V19.7321H162.675V17.296C162.198 18.6358 160.869 20 158.262 20C155.077 20 152.846 18.1974 152.846 13.9343C152.846 9.13524 155.077 7.3082 158.512 7.3082C160.493 7.3082 161.847 8.25826 162.499 9.4032V1.46167H165.408ZM155.779 13.8125C155.779 16.4921 157.108 17.4665 159.114 17.4665C161.246 17.4665 162.324 16.3947 162.499 14.592V12.7893C162.324 10.8892 161.07 9.81733 159.164 9.81733C156.807 9.81733 155.779 10.9379 155.779 13.8125Z" fill="white"></path>
+<path d="M170.673 1.24243C171.701 1.24243 172.378 1.87581 172.378 2.82587C172.378 3.77593 171.701 4.43366 170.673 4.43366C169.645 4.43366 168.918 3.80029 168.918 2.82587C168.918 1.85145 169.595 1.24243 170.673 1.24243ZM169.194 7.55181H172.127V19.7321H169.194V7.55181Z" fill="white"></path>
+<path d="M176.191 8.40433C177.018 7.79532 178.523 7.30811 180.679 7.30811C184.34 7.30811 186.145 8.52613 186.145 11.693V19.732H183.387V17.5395C182.785 18.9524 181.256 19.9269 179.25 19.9269C176.717 19.9269 175.213 18.5383 175.213 16.151C175.213 13.3739 177.294 12.5943 180.378 12.5943H183.212V12.0584C183.212 10.3288 182.359 9.79288 180.679 9.79288C178.372 9.79288 177.043 10.6699 176.191 11.961V8.40433ZM183.212 15.4445V14.4457H180.729C178.999 14.4457 178.172 14.7624 178.172 15.8587C178.172 16.7844 178.874 17.369 180.178 17.369C182.158 17.369 183.086 16.2728 183.212 15.4445Z" fill="white"></path>
+<path d="M0.88728 11.8392C-0.105656 12.2484 -0.105656 14.9135 0.88728 19.8343H8.55495C4.6133 14.017 2.06075 11.352 0.88728 11.8392Z" fill="#7C5CFC"></path>
+<path d="M31.3329 0.121917C28.5547 -0.984051 22.5369 5.58842 13.2695 19.8345H31.3329C33.71 7.63958 33.71 1.06711 31.3329 0.121917Z" fill="#7C5CFC"></path>
+</g>
+<defs><clippath id="cmlogo"><rect fill="white" height="20" transform="translate(0.144531)" width="186"></rect></clippath></defs>
+</svg>
+<span class="sub">Assistant</span>
+</div>
+<div class="langpick" hidden="" style="display:none">
+<button class="lang-toggle" id="langToggle"><span id="langCurrent">English</span> <span class="chev">▼</span></button>
+<div class="lang-panel" id="langPanel" style="display:none">
+<input autocomplete="off" data-i18n-ph="search_ph" id="langSearch" placeholder="Search language…" type="text"/>
+<div class="lang-list" id="langList"></div>
+<div class="lang-none" data-i18n="not_available" id="langNone" style="display:none">Not available</div>
+</div>
+</div>
+</header>
+<section class="hero">
+<div class="container">
+<h1 data-i18n="hero_h1">Which CheckMedia tool is <span>right for you</span>?</h1>
+<p data-i18n="hero_p">Describe your startup — the assistant picks a tool, explains it and shows the price. No guessing.</p>
+<a class="cta" data-i18n="hero_cta" href="/school/projects/checkmedia/variant-C-landing.html#chat">Ask the assistant</a>
+</div>
+</section>
+<section class="band-pain">
+<div class="container">
+<h2 data-i18n="pain_h">Confused by CAC, ROI, FP&amp;A?</h2>
+<p data-i18n="pain_p">You don't have to figure it out alone. Tell the assistant your situation in plain words — it reads CheckMedia and points you to the one tool you actually need.</p>
+</div>
+</section>
+<section class="how">
+<div class="container">
+<h2 data-i18n="how_h">How it works</h2>
+<div class="steps">
+<div class="step"><div class="num">1</div><h3 data-i18n="step1_t">Tell it who you are</h3><p data-i18n="step1_d">A startup raising money, or a company watching its marketing budget.</p></div>
+<div class="step"><div class="num">2</div><h3 data-i18n="step2_t">Describe your situation</h3><p data-i18n="step2_d">In your own words — no jargon needed. The assistant understands.</p></div>
+<div class="step"><div class="num">3</div><h3 data-i18n="step3_t">Get your next step</h3><p data-i18n="step3_d">The right tool, what it does, the price, and a button to start.</p></div>
+</div>
+</div>
+</section>
+<section class="section">
+<div class="container">
+<h2 data-i18n="sec_h2">Tools for startups</h2>
+<p class="lead" data-i18n="sec_lead">Tap a card to learn more — or ask the chat below.</p>
+<div class="cards">
+<div class="card" onclick="toggleCard(this)">
+<div class="ic">$</div>
+<span class="badge" data-i18n="badge_free">Free</span>
+<h3>CAC Benchmarks</h3>
+<p data-i18n="c1_d">How much it costs to get a customer in your niche — a number for your pitch.</p>
+<div class="more" data-i18n="c1_m">A free online estimate. Shows the average cost to acquire a customer in your niche — the number investors ask for first.</div>
+<span class="toggle"><span data-i18n="learn_more">Learn more</span> <span class="chev">▾</span></span>
+</div>
+<div class="card" onclick="toggleCard(this)">
+<div class="ic">!</div>
+<h3>Commercial Risk</h3>
+<p data-i18n="c2_d">Show commercial risks before an investor finds them.</p>
+<div class="more" data-i18n="c2_m">Helps you spot weak points early and prepare answers before the investor meeting.</div>
+<span class="toggle"><span data-i18n="learn_more">Learn more</span> <span class="chev">▾</span></span>
+</div>
+<div class="card" onclick="toggleCard(this)">
+<div class="ic">↗</div>
+<h3>Go-to-Market</h3>
+<p data-i18n="c3_d">How much to invest in marketing and how many customers you'll get — for investors.</p>
+<div class="more" data-i18n="c3_m">Calculates marketing spend and customers at your stage. Numbers drop into your financial model.</div>
+<span class="toggle"><span data-i18n="learn_more">Learn more</span> <span class="chev">▾</span></span>
+</div>
+</div>
+</div>
+</section>
+<section class="chatwrap" id="chat">
+<div class="container">
+<div class="chat">
+<div class="chat-top">
+<div class="ai">AI</div>
+<div>
+<div data-i18n="chat_name" style="font-weight:600">CheckMedia Assistant</div>
+<small data-i18n="chat_status">online • replies in seconds</small>
+</div>
+</div>
+<div class="msgs" id="msgs"></div>
+<div class="chips" id="chips"></div>
+<div class="inputbar">
+<input data-i18n-ph="input_ph" id="inp" placeholder="Describe your situation…"/>
+<button data-i18n="send" id="send">Send</button>
+</div>
+</div>
+</div>
+</section>
+<section class="trust">
+<div class="container">
+<h2 data-i18n="trust_h">Why people trust it</h2>
+<div class="trust-row">
+<div class="trust-chip"><span class="dot"></span><span data-i18n="trust1">Demonstrates CheckMedia tool selection</span></div>
+<div class="trust-chip"><span class="dot"></span><span data-i18n="trust2">Free to start — no risk</span></div>
+<div class="trust-chip"><span class="dot"></span><span data-i18n="trust3">Answers in English</span></div>
+</div>
+</div>
+</section>
+<section class="final">
+<div class="container">
+<h2 data-i18n="final_h">Stop guessing. Start asking.</h2>
+<p data-i18n="final_p">Describe your situation and get the right CheckMedia tool in seconds.</p>
+<div class="final-btns">
+<a class="cta-btn primary" data-i18n="cta_try" href="/school/projects/checkmedia/variant-C-landing.html#chat">Try for free</a>
+<a class="cta-btn secondary" data-i18n="cta_call" href="https://checkmedia.com" target="_blank">Book a call</a>
+</div>
+</div>
+</section>
+<footer>
+<div class="flogo">
+<svg aria-label="CheckMedia" fill="none" viewbox="0 0 187 20" xmlns="http://www.w3.org/2000/svg">
+<path d="M57.4438 17.8562C56.5662 18.8793 54.2594 19.9999 51.2254 19.9999C45.5085 19.9756 41.6973 16.6869 41.6973 11.1814C41.6973 6.04134 45.4584 2.41162 51.2756 2.41162C54.0337 2.41162 56.0647 3.23988 57.0928 3.94634V8.18507C56.0397 6.67471 53.9084 5.21308 51.2756 5.21308C47.4392 5.21308 45.0823 7.62478 45.0823 11.2058C45.0823 14.5188 47.1634 17.1254 51.2004 17.1985C54.2594 17.1985 56.4158 15.8343 57.4438 14.1047V17.8562Z" fill="#9FB3C8"></path>
+<path d="M68.8475 12.3752C68.8475 10.6212 68.1204 9.84169 66.3903 9.81733H66.315C64.1336 9.81733 63.1056 10.8648 63.1056 12.9598V19.7321H60.1719V1.46167H63.1056V10.0366C63.4566 8.55059 65.0864 7.33256 67.4685 7.33256C70.1765 7.35692 71.7812 8.74547 71.7812 11.5957V19.7321H68.8475V12.3752Z" fill="#9FB3C8"></path>
+<path d="M80.909 19.9758C76.7717 20.0001 74.3145 17.7833 74.3145 13.5933C74.3145 9.4033 76.9222 7.28394 80.7084 7.28394C84.3441 7.3083 86.5256 9.47638 86.5256 13.301V14.4703H77.2231C77.4487 16.4922 78.7275 17.5154 81.0093 17.5154C83.291 17.5154 84.8456 16.6627 85.5226 15.5909V18.5141C84.9208 19.1962 83.1907 20.0001 80.909 19.9758ZM77.2732 12.4484H83.5919C83.5167 10.7919 82.4134 9.76871 80.6331 9.76871C78.7526 9.76871 77.5741 10.6944 77.2732 12.4484Z" fill="#9FB3C8"></path>
+<path d="M95.0506 20.0001C91.0387 20.0001 88.3809 17.8564 88.3809 13.5933C88.3809 9.33022 91.0889 7.3083 95.0757 7.28394C96.7556 7.3083 98.2601 7.79551 99.0875 8.40452V11.9612C98.235 10.67 96.9061 9.79307 95.0757 9.76871C92.6685 9.76871 91.3647 11.0111 91.3647 13.4715V13.8369C91.3647 16.3461 92.7688 17.5154 95.1258 17.5154C97.207 17.5154 98.586 16.6627 99.2129 15.5909V18.5141C98.6613 19.1962 97.0816 20.0001 95.0506 20.0001Z" fill="#9FB3C8"></path>
+<path d="M104.828 1.46167V12.3021H106.207L109.718 7.5518H112.977L108.589 13.3009L113.679 19.7321H110.119L106.182 14.6894H104.828V19.7321H101.895V1.46167H104.828Z" fill="#9FB3C8"></path>
+<path d="M132.435 6.91842L126.793 15.9805H125.214L119.447 7.04022V19.7321H116.312V2.67969H120.274L126.091 11.9611L131.858 2.67969H135.569V19.7321H132.435V6.91842Z" fill="#9FB3C8"></path>
+<path d="M145.374 19.9758C141.237 20.0001 138.779 17.7833 138.779 13.5933C138.779 9.4033 141.387 7.28394 145.173 7.28394C148.809 7.3083 150.99 9.47638 150.99 13.301V14.4703H141.688C141.914 16.4922 143.192 17.5154 145.474 17.5154C147.756 17.5154 149.31 16.6627 149.987 15.5909V18.5141C149.386 19.1962 147.656 20.0001 145.374 19.9758ZM141.738 12.4484H148.057C147.982 10.7919 146.878 9.76871 145.098 9.76871C143.217 9.76871 142.039 10.6944 141.738 12.4484Z" fill="#9FB3C8"></path>
+<path d="M165.408 1.46167V19.7321H162.675V17.296C162.198 18.6358 160.869 20 158.262 20C155.077 20 152.846 18.1974 152.846 13.9343C152.846 9.13524 155.077 7.3082 158.512 7.3082C160.493 7.3082 161.847 8.25826 162.499 9.4032V1.46167H165.408ZM155.779 13.8125C155.779 16.4921 157.108 17.4665 159.114 17.4665C161.246 17.4665 162.324 16.3947 162.499 14.592V12.7893C162.324 10.8892 161.07 9.81733 159.164 9.81733C156.807 9.81733 155.779 10.9379 155.779 13.8125Z" fill="#9FB3C8"></path>
+<path d="M170.673 1.24243C171.701 1.24243 172.378 1.87581 172.378 2.82587C172.378 3.77593 171.701 4.43366 170.673 4.43366C169.645 4.43366 168.918 3.80029 168.918 2.82587C168.918 1.85145 169.595 1.24243 170.673 1.24243ZM169.194 7.55181H172.127V19.7321H169.194V7.55181Z" fill="#9FB3C8"></path>
+<path d="M176.191 8.40433C177.018 7.79532 178.523 7.30811 180.679 7.30811C184.34 7.30811 186.145 8.52613 186.145 11.693V19.732H183.387V17.5395C182.785 18.9524 181.256 19.9269 179.25 19.9269C176.717 19.9269 175.213 18.5383 175.213 16.151C175.213 13.3739 177.294 12.5943 180.378 12.5943H183.212V12.0584C183.212 10.3288 182.359 9.79288 180.679 9.79288C178.372 9.79288 177.043 10.6699 176.191 11.961V8.40433ZM183.212 15.4445V14.4457H180.729C178.999 14.4457 178.172 14.7624 178.172 15.8587C178.172 16.7844 178.874 17.369 180.178 17.369C182.158 17.369 183.086 16.2728 183.212 15.4445Z" fill="#9FB3C8"></path>
+<path d="M0.88728 11.8392C-0.105656 12.2484 -0.105656 14.9135 0.88728 19.8343H8.55495C4.6133 14.017 2.06075 11.352 0.88728 11.8392Z" fill="#7C5CFC"></path>
+<path d="M31.3329 0.121917C28.5547 -0.984051 22.5369 5.58842 13.2695 19.8345H31.3329C33.71 7.63958 33.71 1.06711 31.3329 0.121917Z" fill="#7C5CFC"></path>
+</svg>
+</div>
+<span data-i18n="footer_note">Demo assistant · answers shown as an example</span>
+</footer>
+<script>var LANGS = [{ code: "en", name: "English", en: "English" }];
+var I18N = {
+    en: { hero_h1: "Which CheckMedia tool is <span>right for you</span>?", hero_p: "Describe your startup — the assistant picks a tool, explains it and shows the price. No guessing.", hero_cta: "Ask the assistant", sec_h2: "Tools for startups", sec_lead: "Tap a card to learn more — or ask the chat below.", badge_free: "Free", c1_d: "How much it costs to get a customer in your niche — a number for your pitch.", c1_m: "A free online estimate. Shows the average cost to acquire a customer in your niche — the number investors ask for first. A safe first step: nothing to pay.", c2_d: "Show commercial risks before an investor finds them.", c2_m: "Helps you spot weak points in your business model in advance and prepare answers before the investor meeting — so tough questions never catch you off guard.", c3_d: "How much to invest in marketing and how many customers you'll get — for investors.", c3_m: "Calculates how much to invest in marketing and how many customers it brings at your stage. The numbers drop straight into your financial model — making the project fundable.", learn_more: "Learn more", who_label: "I am:", who_startup: "A startup / raising money", who_business: "A company / marketing team", chat_name: "CheckMedia Assistant", chat_status: "online • replies in seconds", input_ph: "Describe your situation…", send: "Send", greeting: "Hi! Tell me your situation in your own words, and I'll point you to the right CheckMedia tool.", s_intro: "Great — for startups it's all about showing investors strong numbers. Ask me — or take the next step:", s_q1: "I run a SaaS, investor meeting in 2 months", s_a1: "Start with <b>CAC Benchmarks</b> — it's free. It shows how much it costs to get a customer in your niche. Investors ask for this first. Then we add Go-to-Market for the pitch.", s_q2: "What is CAC and why do I need it?", s_a2: "CAC is how much you spend per customer. Investors use it to see if growth is profitable.", s_q3: "How much does it cost?", s_a3: "<b>CAC Benchmarks is free</b> online. Only Go-to-Market and Risk Assessment are paid, when you reach investor docs.", b_intro: "Got it — for a business it's about proving to finance that marketing works. Ask me — or take the next step:", b_q1: "How do I prove to my CFO that ads pay off?", b_a1: "You'll want <b>AI-based ROI analytics</b> — it shows marketing return in precise numbers finance people trust. You can start with the free CAC Benchmarks.", b_q2: "We have several brands and a big team", b_a2: "Then look at the <b>FP&A tool for brand portfolio</b> — built for big teams on complex projects, it makes spend transparent.", b_q3: "How much does it cost?", b_a3: "<b>CAC Benchmarks is free</b> online to start risk-free. ROI analytics and FP&A are paid tools for ongoing work.", cta_try: "Try for free", cta_call: "Book a call", generic: "Got it. To help precisely — choose above whether you're a startup or a company, and I'll pick a tool.", footer_note: "Demo assistant · answers shown as an example", search_ph: "Search language…", not_available: "Not available" },
+    ru: { hero_h1: "Which CheckMedia tool is <span>right for you</span>?", hero_p: "Describe your startup — the assistant picks a tool, explains it and shows the price. No guessing.", hero_cta: "Ask the assistant", sec_h2: "Tools for startups", sec_lead: "Tap a card to learn more — or ask the chat below.", badge_free: "Free", c1_d: "How much it costs to get a customer in your niche — a number for your pitch.", c1_m: "A free online estimate. Shows the average cost to acquire a customer in your niche — the number investors ask for first. A safe first step: nothing to pay.", c2_d: "Show commercial risks before an investor finds them.", c2_m: "Helps you spot weak points in your business model in advance and prepare answers before the investor meeting — so tough questions never catch you off guard.", c3_d: "How much to invest in marketing and how many customers you'll get — for investors.", c3_m: "Calculates how much to invest in marketing and how many customers it brings at your stage. The numbers drop straight into your financial model — making the project fundable.", learn_more: "Learn more", who_label: "I am:", who_startup: "A startup / raising money", who_business: "A company / marketing team", chat_name: "CheckMedia Assistant", chat_status: "online • replies in seconds", input_ph: "Describe your situation…", send: "Send", greeting: "Hi! Tell me your situation in your own words, and I'll point you to the right CheckMedia tool.", s_intro: "Great — for startups it's all about showing investors strong numbers. Ask me — or take the next step:", s_q1: "I run a SaaS, investor meeting in 2 months", s_a1: "Start with <b>CAC Benchmarks</b> — it's free. It shows how much it costs to get a customer in your niche. Investors ask for this first. Then we add Go-to-Market for the pitch.", s_q2: "What is CAC and why do I need it?", s_a2: "CAC is how much you spend per customer. Investors use it to see if growth is profitable.", s_q3: "How much does it cost?", s_a3: "<b>CAC Benchmarks is free</b> online. Only Go-to-Market and Risk Assessment are paid, when you reach investor docs.", b_intro: "Got it — for a business it's about proving to finance that marketing works. Ask me — or take the next step:", b_q1: "How do I prove to my CFO that ads pay off?", b_a1: "You'll want <b>AI-based ROI analytics</b> — it shows marketing return in precise numbers finance people trust. You can start with the free CAC Benchmarks.", b_q2: "We have several brands and a big team", b_a2: "Then look at the <b>FP&A tool for brand portfolio</b> — built for big teams on complex projects, it makes spend transparent.", b_q3: "How much does it cost?", b_a3: "<b>CAC Benchmarks is free</b> online to start risk-free. ROI analytics and FP&A are paid tools for ongoing work.", cta_try: "Try for free", cta_call: "Book a call", generic: "Got it. To help precisely — choose above whether you're a startup or a company, and I'll pick a tool.", footer_note: "Demo assistant · answers shown as an example", search_ph: "Search language…", not_available: "Not available" },
+    it: { hero_h1: "Quale strumento CheckMedia fa <span>al caso tuo</span>?", hero_p: "Descrivi la tua startup — l'assistente sceglie uno strumento, lo spiega e mostra il prezzo. Senza indovinare.", hero_cta: "Chiedi all'assistente", sec_h2: "Strumenti per startup", sec_lead: "Tocca una scheda per saperne di più — o chiedi alla chat qui sotto.", badge_free: "Gratis", c1_d: "Quanto costa acquisire un cliente nella tua nicchia — un numero per il pitch.", c1_m: "Una stima online gratuita. Mostra il costo medio per acquisire un cliente nella tua nicchia — il numero che gli investitori chiedono per primo. Un primo passo senza rischi: niente da pagare.", c2_d: "Mostra i rischi commerciali prima che li trovi un investitore.", c2_m: "Ti aiuta a individuare in anticipo i punti deboli del modello e a preparare le risposte prima dell'incontro con l'investitore.", c3_d: "Quanto investire nel marketing e quanti clienti otterrai — per gli investitori.", c3_m: "Calcola quanto investire nel marketing e quanti clienti porta nella tua fase. I numeri entrano direttamente nel modello finanziario — il progetto diventa finanziabile.", learn_more: "Scopri di più", who_label: "Sono:", who_startup: "Una startup / in raccolta fondi", who_business: "Un'azienda / team marketing", chat_name: "Assistente CheckMedia", chat_status: "online • risponde in pochi secondi", input_ph: "Descrivi la tua situazione…", send: "Invia", greeting: "Ciao! Ti aiuto a scegliere lo strumento CheckMedia giusto. Scegli sopra chi sei per iniziare.", s_intro: "Ottimo — per le startup conta mostrare agli investitori numeri solidi. Chiedimi pure — o fai subito il passo successivo:", s_q1: "Ho un SaaS, incontro con gli investitori tra 2 mesi", s_a1: "Inizia con <b>CAC Benchmarks</b> — è gratis. Mostra quanto costa acquisire un cliente nella tua nicchia. È il numero che gli investitori chiedono per primo. Poi aggiungiamo Go-to-Market per il pitch.", s_q2: "Cos'è il CAC e perché mi serve?", s_a2: "Il CAC è quanto spendi per ogni cliente. Gli investitori lo usano per capire se la crescita è redditizia.", s_q3: "Quanto costa?", s_a3: "<b>CAC Benchmarks è gratis</b> online. Solo Go-to-Market e Risk Assessment sono a pagamento, quando arrivi ai documenti per gli investitori.", b_intro: "Capito — per un'azienda conta dimostrare alla finanza che il marketing funziona. Chiedimi pure — o fai subito il passo successivo:", b_q1: "Come dimostro al CFO che la pubblicità rende?", b_a1: "Ti serve <b>AI-based ROI analytics</b> — mostra il ritorno del marketing con numeri precisi di cui la finanza si fida. Puoi iniziare dal CAC Benchmarks gratuito.", b_q2: "Abbiamo più brand e un grande team", b_a2: "Allora guarda <b>FP&A tool for brand portfolio</b> — pensato per grandi team e progetti complessi, rende le spese trasparenti.", b_q3: "Quanto costa?", b_a3: "<b>CAC Benchmarks è gratis</b> online per iniziare senza rischi. ROI analytics e FP&A sono strumenti a pagamento per il lavoro continuativo.", cta_try: "Prova gratis", cta_call: "Prenota una call", generic: "Capito. Per aiutarti meglio — scegli sopra se sei una startup o un'azienda e ti indico lo strumento.", footer_note: "Assistente demo · risposte mostrate come esempio", search_ph: "Cerca lingua…", not_available: "Non disponibile" },
+    de: { hero_h1: "Welches CheckMedia-Tool passt <span>zu dir</span>?", hero_p: "Beschreibe dein Startup — der Assistent wählt ein Tool, erklärt es und nennt den Preis. Ohne Raten.", hero_cta: "Den Assistenten fragen", sec_h2: "Tools für Startups", sec_lead: "Tippe auf eine Karte für mehr Infos — oder frag den Chat unten.", badge_free: "Kostenlos", c1_d: "Was es kostet, einen Kunden in deiner Nische zu gewinnen — eine Zahl für den Pitch.", c1_m: "Eine kostenlose Online-Schätzung. Zeigt die durchschnittlichen Kosten, einen Kunden in deiner Nische zu gewinnen — die Zahl, nach der Investoren zuerst fragen. Ein sicherer erster Schritt: nichts zu zahlen.", c2_d: "Zeige kommerzielle Risiken, bevor ein Investor sie findet.", c2_m: "Hilft dir, Schwachstellen im Geschäftsmodell früh zu erkennen und Antworten vor dem Investorengespräch vorzubereiten.", c3_d: "Wie viel ins Marketing investieren und wie viele Kunden du bekommst — für Investoren.", c3_m: "Berechnet, wie viel du ins Marketing investieren solltest und wie viele Kunden das in deiner Phase bringt. Die Zahlen fließen direkt ins Finanzmodell — das Projekt wird finanzierbar.", learn_more: "Mehr erfahren", who_label: "Ich bin:", who_startup: "Ein Startup / Fundraising", who_business: "Ein Unternehmen / Marketing", chat_name: "CheckMedia-Assistent", chat_status: "online • antwortet in Sekunden", input_ph: "Beschreibe deine Situation…", send: "Senden", greeting: "Hi! Ich helfe dir, das passende CheckMedia-Tool zu wählen. Wähle oben aus, wer du bist, um zu starten.", s_intro: "Super — bei Startups geht es darum, Investoren starke Zahlen zu zeigen. Frag mich — oder mach gleich den nächsten Schritt:", s_q1: "Ich habe ein SaaS, Investorentreffen in 2 Monaten", s_a1: "Starte mit <b>CAC Benchmarks</b> — kostenlos. Es zeigt, was es kostet, einen Kunden in deiner Nische zu gewinnen. Diese Zahl fragen Investoren zuerst. Danach ergänzen wir Go-to-Market für den Pitch.", s_q2: "Was ist CAC und warum brauche ich das?", s_a2: "CAC ist, wie viel du pro Kunde ausgibst. Investoren prüfen damit, ob Wachstum profitabel ist.", s_q3: "Was kostet das?", s_a3: "<b>CAC Benchmarks ist kostenlos</b> online. Nur Go-to-Market und Risk Assessment kosten etwas, wenn du zu den Investorenunterlagen kommst.", b_intro: "Verstanden — bei einem Unternehmen geht es darum, der Finanzabteilung zu zeigen, dass Marketing wirkt. Frag mich — oder mach gleich den nächsten Schritt:", b_q1: "Wie beweise ich dem CFO, dass sich Werbung lohnt?", b_a1: "Du brauchst <b>AI-based ROI analytics</b> — es zeigt den Marketing-Return in präzisen Zahlen, denen die Finanzabteilung vertraut. Starten kannst du mit dem kostenlosen CAC Benchmarks.", b_q2: "Wir haben mehrere Marken und ein großes Team", b_a2: "Dann schau dir <b>FP&A tool for brand portfolio</b> an — für große Teams und komplexe Projekte, macht Ausgaben transparent.", b_q3: "Was kostet das?", b_a3: "<b>CAC Benchmarks ist kostenlos</b> online für einen risikofreien Start. ROI analytics und FP&A sind kostenpflichtige Tools für die laufende Arbeit.", cta_try: "Kostenlos testen", cta_call: "Anruf buchen", generic: "Verstanden. Damit ich genau helfen kann — wähle oben, ob du ein Startup oder ein Unternehmen bist, dann nenne ich dir das Tool.", footer_note: "Demo-Assistent · Antworten als Beispiel", search_ph: "Sprache suchen…", not_available: "Nicht verfügbar" },
+    fr: { hero_h1: "Quel outil CheckMedia vous <span>convient</span> ?", hero_p: "Décrivez votre startup — l'assistant choisit un outil, l'explique et indique le prix. Sans deviner.", hero_cta: "Demander à l'assistant", sec_h2: "Outils pour startups", sec_lead: "Touchez une carte pour en savoir plus — ou demandez au chat ci-dessous.", badge_free: "Gratuit", c1_d: "Combien coûte l'acquisition d'un client dans votre niche — un chiffre pour votre pitch.", c1_m: "Une estimation en ligne gratuite. Montre le coût moyen d'acquisition d'un client dans votre niche — le chiffre que les investisseurs demandent en premier. Un premier pas sans risque : rien à payer.", c2_d: "Montrez les risques commerciaux avant qu'un investisseur ne les trouve.", c2_m: "Vous aide à repérer à l'avance les points faibles du modèle et à préparer vos réponses avant la réunion avec l'investisseur.", c3_d: "Combien investir en marketing et combien de clients vous obtiendrez — pour les investisseurs.", c3_m: "Calcule combien investir en marketing et combien de clients cela rapporte à votre stade. Les chiffres s'intègrent directement au modèle financier — le projet devient finançable.", learn_more: "En savoir plus", who_label: "Je suis :", who_startup: "Une startup / en levée de fonds", who_business: "Une entreprise / marketing", chat_name: "Assistant CheckMedia", chat_status: "en ligne • répond en quelques secondes", input_ph: "Décrivez votre situation…", send: "Envoyer", greeting: "Bonjour ! Je vous aide à choisir le bon outil CheckMedia. Choisissez ci-dessus qui vous êtes pour commencer.", s_intro: "Parfait — pour les startups, l'essentiel est de montrer aux investisseurs des chiffres solides. Posez-moi une question — ou passez directement à l'étape suivante :", s_q1: "J'ai un SaaS, réunion investisseurs dans 2 mois", s_a1: "Commencez par <b>CAC Benchmarks</b> — c'est gratuit. Il montre combien coûte l'acquisition d'un client dans votre niche. C'est le chiffre que les investisseurs demandent en premier. Ensuite, on ajoute Go-to-Market pour le pitch.", s_q2: "Qu'est-ce que le CAC et pourquoi en ai-je besoin ?", s_a2: "Le CAC, c'est combien vous dépensez par client. Les investisseurs s'en servent pour voir si la croissance est rentable.", s_q3: "Combien ça coûte ?", s_a3: "<b>CAC Benchmarks est gratuit</b> en ligne. Seuls Go-to-Market et Risk Assessment sont payants, quand vous arrivez aux documents pour investisseurs.", b_intro: "Compris — pour une entreprise, il s'agit de prouver à la finance que le marketing fonctionne. Posez-moi une question — ou passez directement à l'étape suivante :", b_q1: "Comment prouver au CFO que la pub est rentable ?", b_a1: "Il vous faut <b>AI-based ROI analytics</b> — il montre le retour marketing avec des chiffres précis auxquels la finance fait confiance. Vous pouvez commencer par le CAC Benchmarks gratuit.", b_q2: "Nous avons plusieurs marques et une grande équipe", b_a2: "Alors regardez <b>FP&A tool for brand portfolio</b> — conçu pour les grandes équipes et les projets complexes, il rend les dépenses transparentes.", b_q3: "Combien ça coûte ?", b_a3: "<b>CAC Benchmarks est gratuit</b> en ligne pour démarrer sans risque. ROI analytics et FP&A sont des outils payants pour un travail continu.", cta_try: "Essayer gratuitement", cta_call: "Réserver un appel", generic: "Compris. Pour vous aider précisément — choisissez ci-dessus si vous êtes une startup ou une entreprise, et je vous indique l'outil.", footer_note: "Assistant démo · réponses montrées à titre d'exemple", search_ph: "Rechercher une langue…", not_available: "Non disponible" },
+    fi: { hero_h1: "Mikä CheckMedia-työkalu <span>sopii sinulle</span>?", hero_p: "Kuvaile startup-yritystäsi — avustaja valitsee työkalun, selittää sen ja kertoo hinnan. Ei arvailua.", hero_cta: "Kysy avustajalta", sec_h2: "Työkalut startupeille", sec_lead: "Napauta korttia lukeaksesi lisää — tai kysy chatista alla.", badge_free: "Ilmainen", c1_d: "Paljonko asiakkaan hankkiminen maksaa omalla alallasi — luku pitchiä varten.", c1_m: "Ilmainen verkkoarvio. Näyttää keskimääräisen asiakashankinnan kustannuksen alallasi — luvun, jota sijoittajat kysyvät ensimmäisenä. Riskitön ensiaskel: ei maksa mitään.", c2_d: "Näytä kaupalliset riskit ennen kuin sijoittaja löytää ne.", c2_m: "Auttaa havaitsemaan liiketoimintamallin heikot kohdat etukäteen ja valmistelemaan vastaukset ennen sijoittajatapaamista.", c3_d: "Paljonko markkinointiin kannattaa panostaa ja montako asiakasta saat — sijoittajille.", c3_m: "Laskee, paljonko markkinointiin kannattaa panostaa ja montako asiakasta se tuo vaiheessasi. Luvut siirtyvät suoraan rahoitusmalliin — projektista tulee rahoituskelpoinen.", learn_more: "Lue lisää", who_label: "Olen:", who_startup: "Startup / hankin rahoitusta", who_business: "Yritys / markkinointi", chat_name: "CheckMedia-avustaja", chat_status: "verkossa • vastaa sekunneissa", input_ph: "Kuvaile tilanteesi…", send: "Lähetä", greeting: "Hei! Autan valitsemaan oikean CheckMedia-työkalun. Valitse yltä, kuka olet, niin aloitetaan.", s_intro: "Hienoa — startupeille tärkeintä on näyttää sijoittajille vahvat luvut. Kysy minulta — tai ota heti seuraava askel:", s_q1: "Minulla on SaaS, sijoittajatapaaminen 2 kuukauden päästä", s_a1: "Aloita <b>CAC Benchmarks</b> -työkalusta — se on ilmainen. Se näyttää, paljonko asiakkaan hankkiminen maksaa alallasi. Tätä lukua sijoittajat kysyvät ensimmäisenä. Sitten lisätään Go-to-Market pitchiä varten.", s_q2: "Mikä CAC on ja miksi tarvitsen sitä?", s_a2: "CAC on se, paljonko käytät rahaa per asiakas. Sijoittajat katsovat sitä nähdäkseen, onko kasvu kannattavaa.", s_q3: "Paljonko se maksaa?", s_a3: "<b>CAC Benchmarks on ilmainen</b> verkossa. Vain Go-to-Market ja Risk Assessment ovat maksullisia, kun pääset sijoittaja-dokumentteihin.", b_intro: "Selvä — yritykselle tärkeää on todistaa taloushallinnolle, että markkinointi toimii. Kysy minulta — tai ota heti seuraava askel:", b_q1: "Miten todistan talousjohtajalle, että mainonta kannattaa?", b_a1: "Tarvitset <b>AI-based ROI analytics</b> -työkalun — se näyttää markkinoinnin tuoton tarkkoina lukuina, joihin talous luottaa. Voit aloittaa ilmaisesta CAC Benchmarksista.", b_q2: "Meillä on useita brändejä ja iso tiimi", b_a2: "Katso silloin <b>FP&A tool for brand portfolio</b> — suunniteltu isoille tiimeille ja monimutkaisiin projekteihin, tekee kuluista läpinäkyviä.", b_q3: "Paljonko se maksaa?", b_a3: "<b>CAC Benchmarks on ilmainen</b> verkossa riskittömään aloitukseen. ROI analytics ja FP&A ovat maksullisia työkaluja jatkuvaan työhön.", cta_try: "Kokeile ilmaiseksi", cta_call: "Varaa puhelu", generic: "Selvä. Jotta voin auttaa tarkasti — valitse yltä, oletko startup vai yritys, niin valitsen työkalun.", footer_note: "Demo-avustaja · vastaukset esimerkkinä", search_ph: "Hae kieltä…", not_available: "Ei saatavilla" },
+    zh: { hero_h1: "哪款 CheckMedia 工具<span>最适合你</span>？", hero_p: "描述你的初创公司 — 助手会推荐工具、进行说明并告知价格。无需猜测。", hero_cta: "询问助手", sec_h2: "面向初创公司的工具", sec_lead: "点击卡片了解更多 — 或在下方向聊天助手提问。", badge_free: "免费", c1_d: "在你的细分市场获取一个客户的成本 — 一个用于路演的数字。", c1_m: "免费的在线估算。显示在你的细分市场获取客户的平均成本 — 投资人最先询问的数字。零风险的第一步：无需付费。", c2_d: "在投资人发现之前，先展示商业风险。", c2_m: "帮助你提前发现商业模式的薄弱环节，并在与投资人见面前准备好答案。", c3_d: "在营销上投入多少、能获得多少客户 — 给投资人看。", c3_m: "计算在你的阶段应在营销上投入多少、能带来多少客户。数字可直接填入财务模型 — 让项目更易获得融资。", learn_more: "了解更多", who_label: "我是：", who_startup: "初创公司 / 正在融资", who_business: "公司 / 市场团队", chat_name: "CheckMedia 助手", chat_status: "在线 • 数秒内回复", input_ph: "描述你的情况…", send: "发送", greeting: "你好！我来帮你选择合适的 CheckMedia 工具。请先在上方选择你的身份。", s_intro: "很好 — 对初创公司来说，关键是向投资人展示有力的数据。问我吧 — 或直接进入下一步：", s_q1: "我做的是 SaaS，2 个月后要见投资人", s_a1: "先用 <b>CAC Benchmarks</b> — 它是免费的。它会显示在你的细分市场获取一个客户的成本。这是投资人最先询问的数字。之后我们再加上 Go-to-Market 用于路演。", s_q2: "什么是 CAC？我为什么需要它？", s_a2: "CAC 就是你为每个客户花费的金额。投资人用它来判断增长是否盈利。", s_q3: "这要多少钱？", s_a3: "<b>CAC Benchmarks 在线免费</b>。只有 Go-to-Market 和 Risk Assessment 是收费的，当你需要准备投资人材料时。", b_intro: "明白 — 对公司来说，关键是向财务证明营销是有效的。问我吧 — 或直接进入下一步：", b_q1: "我如何向 CFO 证明广告是值得的？", b_a1: "你需要 <b>AI-based ROI analytics</b> — 它用财务信赖的精确数字展示营销回报。你可以先从免费的 CAC Benchmarks 开始。", b_q2: "我们有多个品牌和一个大团队", b_a2: "那就看看 <b>FP&A tool for brand portfolio</b> — 专为大团队和复杂项目打造，让支出透明化。", b_q3: "这要多少钱？", b_a3: "<b>CAC Benchmarks 在线免费</b>，可零风险开始。ROI analytics 和 FP&A 是用于持续工作的收费工具。", cta_try: "免费试用", cta_call: "预约通话", generic: "明白。为了给你精准建议 — 请在上方选择你是初创公司还是公司，我来为你推荐工具。", footer_note: "演示助手 · 回复仅为示例", search_ph: "搜索语言…", not_available: "暂不支持" },
+    ja: { hero_h1: "あなたに<span>最適な</span> CheckMedia ツールは？", hero_p: "スタートアップについて教えてください — アシスタントがツールを選び、説明し、価格をお伝えします。推測は不要です。", hero_cta: "アシスタントに聞く", sec_h2: "スタートアップ向けツール", sec_lead: "カードをタップで詳細 — または下のチャットで質問してください。", badge_free: "無料", c1_d: "あなたのニッチで顧客を獲得するコスト — ピッチ用の数字です。", c1_m: "無料のオンライン試算。あなたのニッチで顧客を獲得する平均コストを表示します — 投資家が最初に尋ねる数字です。リスクのない第一歩：費用はかかりません。", c2_d: "投資家が見つける前に、事業リスクを示しましょう。", c2_m: "ビジネスモデルの弱点を事前に見つけ、投資家との面談前に答えを準備するのに役立ちます。", c3_d: "マーケティングへの投資額と獲得できる顧客数 — 投資家向け。", c3_m: "あなたの段階でマーケティングにいくら投資し、何人の顧客が得られるかを計算します。数字はそのまま財務モデルに反映され、プロジェクトは資金調達しやすくなります。", learn_more: "詳しく見る", who_label: "私は：", who_startup: "スタートアップ / 資金調達中", who_business: "企業 / マーケティング", chat_name: "CheckMedia アシスタント", chat_status: "オンライン • 数秒で返信", input_ph: "状況を教えてください…", send: "送信", greeting: "こんにちは！最適な CheckMedia ツール選びをお手伝いします。まず上であなたの立場を選んでください。", s_intro: "いいですね — スタートアップでは投資家に強い数字を示すことが重要です。質問してください — またはすぐに次のステップへ：", s_q1: "SaaS を運営していて、2か月後に投資家と面談します", s_a1: "まずは <b>CAC Benchmarks</b> から — 無料です。あなたのニッチで顧客を獲得するコストを示します。投資家が最初に尋ねる数字です。その後、ピッチ用に Go-to-Market を追加します。", s_q2: "CAC とは何で、なぜ必要ですか？", s_a2: "CAC は顧客1人あたりにかける費用のことです。投資家は成長が利益につながるか判断するために使います。", s_q3: "費用はいくらですか？", s_a3: "<b>CAC Benchmarks はオンラインで無料</b>です。有料なのは Go-to-Market と Risk Assessment だけで、投資家向け資料の段階になったときです。", b_intro: "了解です — 企業では、マーケティングが機能していることを財務に示すことが重要です。質問してください — またはすぐに次のステップへ：", b_q1: "広告が割に合うと CFO にどう証明すればいい？", b_a1: "<b>AI-based ROI analytics</b> が必要です — 財務が信頼する正確な数字でマーケティングの効果を示します。無料の CAC Benchmarks から始められます。", b_q2: "複数のブランドと大きなチームがあります", b_a2: "それなら <b>FP&A tool for brand portfolio</b> をご覧ください — 大規模チームと複雑なプロジェクト向けで、支出を可視化します。", b_q3: "費用はいくらですか？", b_a3: "<b>CAC Benchmarks はオンラインで無料</b>、リスクなく始められます。ROI analytics と FP&A は継続的な業務向けの有料ツールです。", cta_try: "無料で試す", cta_call: "通話を予約", generic: "了解です。正確にご案内するため — 上でスタートアップか企業かを選んでください。ツールをご提案します。", footer_note: "デモアシスタント · 回答は例として表示", search_ph: "言語を検索…", not_available: "利用できません" },
+    ko: { hero_h1: "당신에게 <span>맞는</span> CheckMedia 도구는?", hero_p: "스타트업을 설명해 주세요 — 어시스턴트가 도구를 선택하고 설명하며 가격을 알려드립니다. 추측은 필요 없습니다.", hero_cta: "어시스턴트에게 묻기", sec_h2: "스타트업을 위한 도구", sec_lead: "카드를 눌러 자세히 보기 — 또는 아래 채팅에 물어보세요.", badge_free: "무료", c1_d: "당신의 분야에서 고객 한 명을 확보하는 비용 — 피칭용 수치.", c1_m: "무료 온라인 추정. 당신의 분야에서 고객을 확보하는 평균 비용을 보여줍니다 — 투자자가 가장 먼저 묻는 수치입니다. 위험 없는 첫걸음: 비용이 들지 않습니다.", c2_d: "투자자가 찾기 전에 사업 리스크를 보여주세요.", c2_m: "비즈니스 모델의 약점을 미리 발견하고 투자자 미팅 전에 답변을 준비하도록 돕습니다.", c3_d: "마케팅에 얼마를 투자하고 고객을 몇 명 얻을지 — 투자자용.", c3_m: "당신의 단계에서 마케팅에 얼마를 투자하고 고객이 몇 명 생기는지 계산합니다. 수치는 곧바로 재무 모델에 반영되어 투자 유치가 쉬워집니다.", learn_more: "자세히 보기", who_label: "저는:", who_startup: "스타트업 / 투자 유치 중", who_business: "회사 / 마케팅", chat_name: "CheckMedia 어시스턴트", chat_status: "온라인 • 몇 초 내 응답", input_ph: "상황을 알려주세요…", send: "보내기", greeting: "안녕하세요! 알맞은 CheckMedia 도구 선택을 도와드릴게요. 먼저 위에서 본인이 누구인지 선택해 주세요.", s_intro: "좋아요 — 스타트업은 투자자에게 강력한 수치를 보여주는 것이 핵심입니다. 무엇이든 물어보세요 — 아니면 바로 다음 단계로:", s_q1: "SaaS를 운영 중이고, 2개월 후 투자자 미팅이 있어요", s_a1: "먼저 <b>CAC Benchmarks</b>로 시작하세요 — 무료입니다. 당신의 분야에서 고객 확보 비용을 보여줍니다. 투자자가 가장 먼저 묻는 수치예요. 그다음 피칭용으로 Go-to-Market을 추가합니다.", s_q2: "CAC가 무엇이고 왜 필요한가요?", s_a2: "CAC는 고객 한 명당 지출하는 비용입니다. 투자자는 이를 통해 성장이 수익성 있는지 봅니다.", s_q3: "비용이 얼마인가요?", s_a3: "<b>CAC Benchmarks는 온라인 무료</b>입니다. Go-to-Market과 Risk Assessment만 유료이며, 투자자 자료 단계에서 필요합니다.", b_intro: "알겠습니다 — 회사는 마케팅이 효과 있다는 걸 재무팀에 증명하는 것이 핵심입니다. 무엇이든 물어보세요 — 아니면 바로 다음 단계로:", b_q1: "광고가 수익이 된다는 걸 CFO에게 어떻게 증명하죠?", b_a1: "<b>AI-based ROI analytics</b>가 필요합니다 — 재무팀이 신뢰하는 정확한 수치로 마케팅 성과를 보여줍니다. 무료 CAC Benchmarks부터 시작할 수 있어요.", b_q2: "여러 브랜드와 큰 팀이 있어요", b_a2: "그렇다면 <b>FP&A tool for brand portfolio</b>를 보세요 — 큰 팀과 복잡한 프로젝트를 위해 만들어져 지출을 투명하게 합니다.", b_q3: "비용이 얼마인가요?", b_a3: "<b>CAC Benchmarks는 온라인 무료</b>로 위험 없이 시작할 수 있습니다. ROI analytics와 FP&A는 지속적인 업무를 위한 유료 도구입니다.", cta_try: "무료로 시작", cta_call: "통화 예약", generic: "알겠습니다. 정확히 도와드리려면 — 위에서 스타트업인지 회사인지 선택해 주세요. 도구를 추천해 드릴게요.", footer_note: "데모 어시스턴트 · 답변은 예시입니다", search_ph: "언어 검색…", not_available: "지원되지 않음" },
+    af: { hero_h1: "Watter CheckMedia-hulpmiddel pas <span>by jou</span>?", hero_p: "Beskryf jou onderneming — die assistent kies 'n hulpmiddel, verduidelik dit en wys die prys. Geen raaiwerk nie.", hero_cta: "Vra die assistent", sec_h2: "Hulpmiddels vir beginners", sec_lead: "Tik op 'n kaart vir meer — of vra die klets hieronder.", badge_free: "Gratis", c1_d: "Hoeveel dit kos om 'n kliënt in jou nis te kry — 'n syfer vir jou voorlegging.", c1_m: "'n Gratis aanlyn skatting. Wys die gemiddelde koste om 'n kliënt in jou nis te kry — die syfer wat beleggers eerste vra. 'n Veilige eerste stap: niks om te betaal nie.", c2_d: "Wys kommersiële risiko's voordat 'n belegger hulle vind.", c2_m: "Help jou om swak punte in die besigheidsmodel vroegtydig te sien en antwoorde voor te berei voor die beleggersvergadering.", c3_d: "Hoeveel om in bemarking te belê en hoeveel kliënte jy sal kry — vir beleggers.", c3_m: "Bereken hoeveel om in bemarking te belê en hoeveel kliënte dit op jou stadium bring. Die syfers gaan reguit in die finansiële model — die projek word befondsbaar.", learn_more: "Meer inligting", who_label: "Ek is:", who_startup: "'n Onderneming / soek befondsing", who_business: "'n Maatskappy / bemarking", chat_name: "CheckMedia-assistent", chat_status: "aanlyn • antwoord binne sekondes", input_ph: "Beskryf jou situasie…", send: "Stuur", greeting: "Hallo! Ek help jou die regte CheckMedia-hulpmiddel kies. Kies hierbo wie jy is om te begin.", s_intro: "Wonderlik — vir ondernemings gaan dit oor sterk syfers aan beleggers wys. Vra my — of neem dadelik die volgende stap:", s_q1: "Ek het 'n SaaS, beleggersvergadering oor 2 maande", s_a1: "Begin met <b>CAC Benchmarks</b> — dis gratis. Dit wys hoeveel dit kos om 'n kliënt in jou nis te kry. Beleggers vra hierdie syfer eerste. Daarna voeg ons Go-to-Market by vir die voorlegging.", s_q2: "Wat is CAC en hoekom het ek dit nodig?", s_a2: "CAC is hoeveel jy per kliënt spandeer. Beleggers gebruik dit om te sien of groei winsgewend is.", s_q3: "Hoeveel kos dit?", s_a3: "<b>CAC Benchmarks is gratis</b> aanlyn. Net Go-to-Market en Risk Assessment kos geld, wanneer jy by beleggersdokumente kom.", b_intro: "Reg so — vir 'n maatskappy gaan dit daaroor om finansies te wys dat bemarking werk. Vra my — of neem dadelik die volgende stap:", b_q1: "Hoe bewys ek vir die CFO dat advertensies betaal?", b_a1: "Jy benodig <b>AI-based ROI analytics</b> — dit wys bemarkingsopbrengs in presiese syfers wat finansies vertrou. Jy kan met die gratis CAC Benchmarks begin.", b_q2: "Ons het verskeie handelsmerke en 'n groot span", b_a2: "Kyk dan na <b>FP&A tool for brand portfolio</b> — gebou vir groot spanne en komplekse projekte, dit maak besteding deursigtig.", b_q3: "Hoeveel kos dit?", b_a3: "<b>CAC Benchmarks is gratis</b> aanlyn om sonder risiko te begin. ROI analytics en FP&A is betaalde hulpmiddels vir deurlopende werk.", cta_try: "Probeer gratis", cta_call: "Bespreek 'n oproep", generic: "Reg so. Om presies te help — kies hierbo of jy 'n onderneming of 'n maatskappy is, dan kies ek die hulpmiddel.", footer_note: "Demo-assistent · antwoorde as voorbeeld gewys", search_ph: "Soek taal…", not_available: "Nie beskikbaar nie" }
+};
+var lang = "en";
+function t(k) { return (I18N[lang] && I18N[lang][k]) || I18N.en[k]; }
+function toggleCard(el) { el.classList.toggle('open'); }
+var paths = {
+    startup: { pick: "who_startup", intro: "s_intro", qs: [{ q: "s_q1", a: "s_a1" }, { q: "s_q2", a: "s_a2" }, { q: "s_q3", a: "s_a3" }] },
+    business: { pick: "who_business", intro: "b_intro", qs: [{ q: "b_q1", a: "b_a1" }, { q: "b_q2", a: "b_a2" }, { q: "b_q3", a: "b_a3" }] }
+};
+var msgs = document.getElementById('msgs'), chips = document.getElementById('chips');
+function addBubble(c, h) { var d = document.createElement('div'); d.className = 'bubble ' + c; d.innerHTML = h; msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight; return d; }
+function botReply(h, then) { var x = document.createElement('div'); x.className = 'bubble bot'; x.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>'; msgs.appendChild(x); msgs.scrollTop = msgs.scrollHeight; setTimeout(function () { x.remove(); addBubble('bot', h); if (then)
+    then(); }, 900); }
+function addCTA() {
+    var row = document.createElement('div');
+    row.className = 'cta-row';
+    var a = document.createElement('a');
+    a.className = 'cta-btn primary';
+    a.href = "https://checkmedia.com";
+    a.target = "_blank";
+    a.textContent = t('cta_try');
+    var b = document.createElement('a');
+    b.className = 'cta-btn secondary';
+    b.href = "https://checkmedia.com";
+    b.target = "_blank";
+    b.textContent = t('cta_call');
+    row.appendChild(a);
+    row.appendChild(b);
+    msgs.appendChild(row);
+    msgs.scrollTop = msgs.scrollHeight;
+}
+function chartHTML(title, sub, rows) {
+    var max = 0;
+    rows.forEach(function (r) { if (r.value > max)
+        max = r.value; });
+    var bars = rows.map(function (r) {
+        var w = Math.max(10, Math.round(r.value / max * 100));
+        return '<div class="r-bar"><span class="r-label">' + r.label + '</span><div class="r-track"><div class="r-fill" style="width:' + w + '%">' + r.display + '</div></div></div>';
+    }).join('');
+    return '<div class="r-chart"><div class="r-title">' + title + '</div><div class="r-sub">' + sub + '</div>' + bars + '</div>';
+}
+function cardHTML(badge, title, text) {
+    return '<div class="r-card">' + (badge ? '<span class="r-badge">' + badge + '</span>' : '') + '<h4>' + title + '</h4><p>' + text + '</p></div>';
+}
+function botRich(html, then) {
+    var x = document.createElement('div');
+    x.className = 'bubble bot';
+    x.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
+    msgs.appendChild(x);
+    msgs.scrollTop = msgs.scrollHeight;
+    setTimeout(function () {
+        x.remove();
+        var d = document.createElement('div');
+        d.className = 'rich';
+        d.innerHTML = html;
+        msgs.appendChild(d);
+        msgs.scrollTop = msgs.scrollHeight;
+        if (then)
+            then();
+    }, 900);
+}
+function cacRichAnswer() {
+    var rows = [
+        { label: 'E-commerce', value: 87, display: '$87' },
+        { label: 'SaaS', value: 395, display: '$395' },
+        { label: 'Fintech', value: 1450, display: '$1,450' }
+    ];
+    var html = '<div class="r-text">' + t('s_a1') + '</div>' +
+        chartHTML(t('rc_chart_t'), t('rc_chart_s'), rows) +
+        cardHTML(t('badge_free'), 'CAC Benchmarks', t('rc_card_p'));
+    botRich(html);
+}
+function gtmRichAnswer() {
+    var rows = [
+        { label: '$2k / mo', value: 40, display: '~40' },
+        { label: '$5k / mo', value: 110, display: '~110' },
+        { label: '$10k / mo', value: 240, display: '~240' }
+    ];
+    var html = '<div class="r-text">For that, the tool you want is <b>Go-to-Market</b>. It works out how much to put into marketing and how many customers that brings at your stage — numbers that drop straight into your pitch. Here\'s a rough example:</div>' +
+        chartHTML('Marketing spend &rarr; new customers', 'Example numbers — your real ones come from the tool', rows) +
+        cardHTML('', 'Go-to-Market', t('c3_m'));
+    botRich(html);
+}
+function ask(it) { addBubble('user', t(it.q)); if (it.a === 's_a1') {
+    cacRichAnswer();
+}
+else {
+    botReply(t(it.a));
+} }
+function renderQuestionChips(key) {
+    chips.innerHTML = '';
+    paths[key].qs.forEach(function (it) { var b = document.createElement('button'); b.className = 'chip'; b.textContent = t(it.q); b.onclick = function () { ask(it); }; chips.appendChild(b); });
+}
+function setActiveWho(key) { document.querySelectorAll('.who-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.path === key); }); }
+function choosePath(key) {
+    setActiveWho(key);
+    msgs.innerHTML = '';
+    botReply(t(paths[key].intro), function () { renderQuestionChips(key); });
+}
+function resetChat() {
+    document.querySelectorAll('.who-btn').forEach(function (b) { b.classList.remove('active'); });
+    chips.innerHTML = '';
+    msgs.innerHTML = '';
+    addBubble('bot', t('greeting'));
+}
+document.querySelectorAll('.who-btn').forEach(function (b) { b.onclick = function () { choosePath(b.dataset.path); }; });
+function understand(text) {
+    var s = (' ' + text.toLowerCase() + ' ').replace(/[^a-z0-9' ]/g, ' ').replace(/\s+/g, ' ');
+    var g2m = /\bgo[ -]?to[ -]?market\b/.test(s) ||
+        (/\b(marketing|advertising|advertise|ad|ads|campaign|campaigns)\b/.test(s) &&
+            /\b(spend|spending|budget|invest|investment|how much|cost|costs|put)\b/.test(s));
+    if (g2m) {
+        return 'gtm';
+    }
+    var strong = /\b(cac|investor|investors|pitch|fundraise|fundraising)\b/.test(s);
+    var raising = /\brais(e|ing)\b/.test(s) && /\b(money|funding|round|capital|investment)\b/.test(s);
+    var which = /\b(which|what)\b/.test(s) && /\btools?\b/.test(s);
+    var costCust = /\b(cost|costs|expensive|price|how much)\b/.test(s) && /\b(customer|customers|client|clients|acquire|acquisition|lead|leads)\b/.test(s);
+    var confusedWords = /(confused|not sure|don'?t know|no idea|where (do|to) start|help me (choose|pick|decide)|what do i need|which one)/.test(s);
+    var domainHint = /\b(tool|tools|need|buy|use|using|start|checkmedia|recommend|marketing|startup|company|product|service|cac|investor|pitch)\b/.test(s);
+    var confused = confusedWords && domainHint;
+    if (strong || raising || which || costCust || confused) {
+        return 'cac';
+    }
+    return null;
+}
+document.getElementById('send').onclick = function () { var i = document.getElementById('inp'), v = i.value.trim(); if (!v)
+    return; addBubble('user', v); i.value = ''; var hit = understand(v); if (hit === 'gtm') {
+    gtmRichAnswer();
+}
+else if (hit === 'cac') {
+    cacRichAnswer();
+}
+else {
+    botReply(t('generic'));
+} };
+document.getElementById('inp').addEventListener('keydown', function (e) { if (e.key === 'Enter')
+    document.getElementById('send').click(); });
+var panel = document.getElementById('langPanel');
+var search = document.getElementById('langSearch');
+var list = document.getElementById('langList');
+var none = document.getElementById('langNone');
+function renderLangList(filter) {
+    filter = (filter || '').trim().toLowerCase();
+    list.innerHTML = '';
+    var matches = LANGS.filter(function (l) {
+        return l.name.toLowerCase().indexOf(filter) > -1 || l.en.toLowerCase().indexOf(filter) > -1 || l.code.indexOf(filter) > -1;
+    });
+    if (matches.length === 0) {
+        none.style.display = 'block';
+        return;
+    }
+    none.style.display = 'none';
+    matches.forEach(function (l) {
+        var b = document.createElement('button');
+        b.className = 'lang-item' + (l.code === lang ? ' active' : '');
+        b.innerHTML = '<span>' + l.name + '</span><small>' + l.en + '</small>';
+        b.onclick = function () { setLang(l.code); closePanel(); };
+        list.appendChild(b);
+    });
+}
+function openPanel() { panel.style.display = 'block'; search.value = ''; renderLangList(''); search.focus(); }
+function closePanel() { panel.style.display = 'none'; }
+document.getElementById('langToggle').onclick = function (e) { e.stopPropagation(); (panel.style.display === 'block') ? closePanel() : openPanel(); };
+search.addEventListener('input', function () { renderLangList(search.value); });
+panel.addEventListener('click', function (e) { e.stopPropagation(); });
+document.addEventListener('click', function () { closePanel(); });
+function currentName() { for (var i = 0; i < LANGS.length; i++) {
+    if (LANGS[i].code === lang)
+        return LANGS[i].name;
+} return "English"; }
+function isKnown(code) { for (var i = 0; i < LANGS.length; i++) {
+    if (LANGS[i].code === code)
+        return true;
+} return false; }
+function saveLang(code) { try {
+    localStorage.setItem('cm_lang', code);
+}
+catch (e) { } }
+function setLang(code) {
+    lang = code;
+    document.documentElement.lang = code;
+    document.querySelectorAll('[data-i18n]').forEach(function (el) { var k = el.getAttribute('data-i18n'); if (I18N[lang][k] !== undefined || I18N.en[k] !== undefined)
+        el.innerHTML = t(k); });
+    document.querySelectorAll('[data-i18n-ph]').forEach(function (el) { el.placeholder = t(el.getAttribute('data-i18n-ph')); });
+    document.getElementById('langCurrent').textContent = currentName();
+    saveLang(code);
+    resetChat();
+}
+function pickInitialLang() {
+    try {
+        var saved = localStorage.getItem('cm_lang');
+        if (saved && isKnown(saved))
+            return saved;
+    }
+    catch (e) { }
+    var prefs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || navigator.userLanguage || 'en'];
+    for (var i = 0; i < prefs.length; i++) {
+        if (!prefs[i])
+            continue;
+        var base = prefs[i].toLowerCase().split('-')[0];
+        if (isKnown(base))
+            return base;
+    }
+    return 'en';
+}
+var EXTRA = {
+    en: { pain_h: "Confused by CAC, ROI, FP&A?", pain_p: "You don't have to figure it out alone. Tell the assistant your situation in plain words — it reads CheckMedia and points you to the one tool you actually need.", how_h: "How it works", step1_t: "Tell it who you are", step1_d: "A startup raising money, or a company watching its marketing budget.", step2_t: "Describe your situation", step2_d: "In your own words — no jargon needed. The assistant understands.", step3_t: "Get your next step", step3_d: "The right tool, what it does, the price, and a button to start.", trust_h: "Why people trust it", trust1: "Demonstrates CheckMedia tool selection", trust2: "Free to start — no risk", trust3: "Answers in English", final_h: "Stop guessing. Start asking.", final_p: "Describe your situation and get the right CheckMedia tool in seconds.", rc_chart_t: "Example: cost to get one customer (CAC)", rc_chart_s: "Rough averages by industry — your real number comes from the free tool.", rc_card_p: "Your free first step. Get your real CAC number — the figure investors ask for first." },
+    ru: { pain_h: "Confused by CAC, ROI, FP&A?", pain_p: "You don't have to figure it out alone. Tell the assistant your situation in plain words — it reads CheckMedia and points you to the one tool you actually need.", how_h: "How it works", step1_t: "Tell it who you are", step1_d: "A startup raising money, or a company watching its marketing budget.", step2_t: "Describe your situation", step2_d: "In your own words — no jargon needed. The assistant understands.", step3_t: "Get your next step", step3_d: "The right tool, what it does, the price, and a button to start.", trust_h: "Why people trust it", trust1: "Demonstrates CheckMedia tool selection", trust2: "Free to start — no risk", trust3: "Answers in English", final_h: "Stop guessing. Start asking.", final_p: "Describe your situation and get the right CheckMedia tool in seconds." },
+    it: { pain_h: "Confuso da CAC, ROI, FP&A?", pain_p: "Non devi capirci tutto da solo. Racconta la tua situazione con parole semplici — l'assistente legge CheckMedia e ti indica l'unico strumento che ti serve davvero.", how_h: "Come funziona", step1_t: "Dicci chi sei", step1_d: "Una startup in raccolta fondi o un'azienda che controlla il budget di marketing.", step2_t: "Descrivi la tua situazione", step2_d: "Con parole tue — senza gergo. L'assistente capisce.", step3_t: "Ottieni il prossimo passo", step3_d: "Lo strumento giusto, cosa fa, il prezzo e un pulsante per iniziare.", trust_h: "Perché le persone si fidano", trust1: "Legge il sito CheckMedia in tempo reale", trust2: "Inizi gratis — senza rischi", trust3: "Risponde in 10 lingue", final_h: "Basta indovinare. Inizia a chiedere.", final_p: "Descrivi la tua situazione e ottieni lo strumento CheckMedia giusto in pochi secondi." },
+    de: { pain_h: "Verwirrt von CAC, ROI, FP&A?", pain_p: "Du musst das nicht allein herausfinden. Beschreibe deine Situation in einfachen Worten — der Assistent liest CheckMedia und zeigt dir das eine Tool, das du wirklich brauchst.", how_h: "So funktioniert es", step1_t: "Sag, wer du bist", step1_d: "Ein Startup beim Fundraising oder ein Unternehmen, das sein Marketingbudget im Blick hat.", step2_t: "Beschreibe deine Situation", step2_d: "In deinen eigenen Worten — kein Fachjargon nötig. Der Assistent versteht.", step3_t: "Erhalte deinen nächsten Schritt", step3_d: "Das richtige Tool, was es macht, der Preis und ein Button zum Starten.", trust_h: "Warum man ihm vertraut", trust1: "Liest die Live-CheckMedia-Seite", trust2: "Kostenlos starten — ohne Risiko", trust3: "Antwortet in 10 Sprachen", final_h: "Schluss mit Raten. Frag einfach.", final_p: "Beschreibe deine Situation und erhalte in Sekunden das richtige CheckMedia-Tool." },
+    fr: { pain_h: "Perdu avec le CAC, le ROI, le FP&A ?", pain_p: "Pas besoin de tout comprendre seul. Décrivez votre situation avec des mots simples — l'assistant lit CheckMedia et vous indique le seul outil dont vous avez vraiment besoin.", how_h: "Comment ça marche", step1_t: "Dites qui vous êtes", step1_d: "Une startup en levée de fonds ou une entreprise qui surveille son budget marketing.", step2_t: "Décrivez votre situation", step2_d: "Avec vos propres mots — sans jargon. L'assistant comprend.", step3_t: "Obtenez votre prochaine étape", step3_d: "Le bon outil, ce qu'il fait, le prix et un bouton pour commencer.", trust_h: "Pourquoi on lui fait confiance", trust1: "Lit le site CheckMedia en direct", trust2: "Démarrage gratuit — sans risque", trust3: "Répond en 10 langues", final_h: "Arrêtez de deviner. Demandez.", final_p: "Décrivez votre situation et obtenez le bon outil CheckMedia en quelques secondes." },
+    fi: { pain_h: "Hämmentävätkö CAC, ROI, FP&A?", pain_p: "Sinun ei tarvitse selvittää sitä yksin. Kerro tilanteesi tavallisin sanoin — avustaja lukee CheckMedian ja näyttää sen yhden työkalun, jota oikeasti tarvitset.", how_h: "Näin se toimii", step1_t: "Kerro kuka olet", step1_d: "Rahoitusta hakeva startup tai yritys, joka seuraa markkinointibudjettiaan.", step2_t: "Kuvaile tilanteesi", step2_d: "Omin sanoin — ei ammattisanastoa. Avustaja ymmärtää.", step3_t: "Saat seuraavan askeleen", step3_d: "Oikea työkalu, mitä se tekee, hinta ja painike aloittamiseen.", trust_h: "Miksi siihen luotetaan", trust1: "Lukee CheckMedia-sivuston reaaliajassa", trust2: "Aloitus ilmaiseksi — ei riskiä", trust3: "Vastaa 10 kielellä", final_h: "Lopeta arvailu. Kysy.", final_p: "Kuvaile tilanteesi ja saat oikean CheckMedia-työkalun sekunneissa." },
+    zh: { pain_h: "被 CAC、ROI、FP&A 弄糊涂了？", pain_p: "你不必独自弄明白。用简单的话描述你的情况 — 助手会阅读 CheckMedia，并为你指出你真正需要的那一个工具。", how_h: "如何运作", step1_t: "告诉它你是谁", step1_d: "正在融资的初创公司，或关注营销预算的公司。", step2_t: "描述你的情况", step2_d: "用你自己的话 — 无需术语。助手能听懂。", step3_t: "获得你的下一步", step3_d: "合适的工具、它的作用、价格，以及一个开始的按钮。", trust_h: "为什么人们信任它", trust1: "实时阅读 CheckMedia 网站", trust2: "免费开始 — 零风险", trust3: "支持 10 种语言回复", final_h: "别再猜了，开始提问吧。", final_p: "描述你的情况，几秒内获得合适的 CheckMedia 工具。" },
+    ja: { pain_h: "CAC・ROI・FP&A で迷っていませんか？", pain_p: "ひとりで理解する必要はありません。状況を普通の言葉で教えてください — アシスタントが CheckMedia を読み、あなたに本当に必要な一つのツールを示します。", how_h: "使い方", step1_t: "あなたの立場を教えて", step1_d: "資金調達中のスタートアップ、またはマーケティング予算を見ている企業。", step2_t: "状況を説明", step2_d: "自分の言葉で — 専門用語は不要。アシスタントが理解します。", step3_t: "次のステップを受け取る", step3_d: "最適なツール、その機能、価格、そして始めるためのボタン。", trust_h: "信頼される理由", trust1: "CheckMedia サイトをリアルタイムで読む", trust2: "無料で開始 — リスクなし", trust3: "10言語で回答", final_h: "推測はやめて、質問を。", final_p: "状況を説明すれば、数秒で最適な CheckMedia ツールが見つかります。" },
+    ko: { pain_h: "CAC, ROI, FP&A 때문에 헷갈리나요?", pain_p: "혼자 알아낼 필요 없습니다. 상황을 쉬운 말로 알려주세요 — 어시스턴트가 CheckMedia를 읽고 당신에게 정말 필요한 하나의 도구를 알려줍니다.", how_h: "이렇게 작동해요", step1_t: "당신이 누구인지 알려주세요", step1_d: "투자를 유치 중인 스타트업, 또는 마케팅 예산을 관리하는 회사.", step2_t: "상황을 설명하세요", step2_d: "당신의 말로 — 전문 용어 불필요. 어시스턴트가 이해합니다.", step3_t: "다음 단계를 받으세요", step3_d: "알맞은 도구, 기능, 가격, 그리고 시작 버튼.", trust_h: "신뢰받는 이유", trust1: "실시간으로 CheckMedia 사이트를 읽음", trust2: "무료로 시작 — 위험 없음", trust3: "10개 언어로 답변", final_h: "추측은 그만, 질문을 시작하세요.", final_p: "상황을 설명하면 몇 초 만에 알맞은 CheckMedia 도구를 받습니다." },
+    af: { pain_h: "Verward deur CAC, ROI, FP&A?", pain_p: "Jy hoef dit nie alleen uit te pluis nie. Vertel die assistent jou situasie in eenvoudige woorde — dit lees CheckMedia en wys jou die een hulpmiddel wat jy regtig nodig het.", how_h: "Hoe dit werk", step1_t: "Sê vir ons wie jy is", step1_d: "'n Onderneming wat befondsing soek, of 'n maatskappy wat sy bemarkingsbegroting dophou.", step2_t: "Beskryf jou situasie", step2_d: "In jou eie woorde — geen jargon nodig nie. Die assistent verstaan.", step3_t: "Kry jou volgende stap", step3_d: "Die regte hulpmiddel, wat dit doen, die prys, en 'n knoppie om te begin.", trust_h: "Hoekom mense dit vertrou", trust1: "Lees die CheckMedia-webwerf regstreeks", trust2: "Begin gratis — geen risiko nie", trust3: "Antwoord in 10 tale", final_h: "Hou op raai. Begin vra.", final_p: "Beskryf jou situasie en kry die regte CheckMedia-hulpmiddel binne sekondes." }
+};
+for (var c in EXTRA) {
+    if (I18N[c]) {
+        for (var k in EXTRA[c])
+            I18N[c][k] = EXTRA[c][k];
+    }
+}
+setLang("en");
+</script>
+</body>
+</html>

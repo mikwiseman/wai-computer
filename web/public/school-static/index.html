@@ -36,7 +36,9 @@
       "name": "WAI School",
       "url": "https://wai.computer/",
       "logo": "https://wai.computer/school-static/current/favicon.svg",
-      "email": "hello@mail.waiwai.is"
+      "email": "hello@mail.waiwai.is",
+      "legalName": "WaiWai, LLC",
+      "address": {"@type":"PostalAddress","streetAddress":"1111B S Governors Ave, STE 28908","addressLocality":"Dover","addressRegion":"DE","postalCode":"19904","addressCountry":"US"}
     },
     {
       "@type": "WebSite",
@@ -54,12 +56,10 @@
       "provider": { "@id": "https://wai.computer/#organization" },
       "educationalLevel": "For ages 8–15",
       "typicalAgeRange": "8-15",
-      "inLanguage": "ru",
       "hasCourseInstance": {
         "@type": "CourseInstance",
         "courseMode": "Online",
-        "courseWorkload": "8 individual lessons this month",
-        "inLanguage": "ru"
+        "courseWorkload": "Live online lessons over four weeks"
       }
     },
     {
@@ -127,6 +127,7 @@
   src: url('/school-static/current/fonts/unbounded-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+.school-company{box-sizing:border-box;padding:32px 24px 40px;margin:0 auto;max-width:1120px;font:14px/1.6 system-ui,sans-serif;color:#514a40}.school-company p{margin:4px 0}.school-company nav{display:flex;flex-wrap:wrap;gap:10px 24px;margin-top:16px}.school-company a{color:inherit;text-underline-offset:4px}
 </style>
 <style>
 body { margin: 0; background: linear-gradient(180deg, #F4EEE1 0%, #EFEAE0 100%) fixed; font-family: 'Golos Text', sans-serif; }
@@ -611,7 +612,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
       <div data-wai-ref="heroCard" aria-hidden="true" inert style="position: absolute; left: 50%; top: 566px; transform: translate(-50%, 36px); opacity: 0; visibility: hidden; width: min(1240px, calc(100vw - 48px)); box-sizing: border-box; background: rgba(251,248,241,0.92); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: 1px solid rgba(37,33,25,0.08); border-radius: 32px; box-shadow: 0 24px 60px rgba(37,33,25,0.18); display: flex; align-items: center; gap: 40px; padding: 36px 44px; pointer-events: none; will-change: opacity, transform;">
         <div style="position: relative; flex: none;"><div style="width: 140px; height: 140px; border-radius: 50%; overflow: hidden; border: 4px solid #FFFFFF; box-shadow: 0 6px 16px rgba(37,33,25,0.14);"><img src="/school-static/current/uploads/kid-320.webp" width="320" height="320" decoding="async" alt="Child with a laptop" style="width: 100%; height: 100%; object-fit: cover; display: block;"></div><div style="position: absolute; left: 50%; transform: translateX(-50%); bottom: -12px; white-space: nowrap; padding: 7px 16px; border-radius: 999px; background: #F6DFCF; color: #9A3A14; font-weight: 600; font-size: 15px; border: 3px solid #FBF8F1; box-shadow: 0 4px 10px rgba(37,33,25,0.10); z-index: 2;">Ages 8–15</div></div>
         <div style="flex: 1; display: flex; flex-direction: column; gap: 9px;"><div style="font-weight: 700; font-size: 38px; letter-spacing: -0.01em; color: #252119; white-space: nowrap;">A boutique school for AI projects</div><div style="font-size: 23px; color: rgba(37,33,25,0.72);">A real app or game inspired by your child&#x27;s interests</div></div>
-        <a href="https://cal.com/grigoriy-ottens/30min" target="_blank" rel="noopener" data-analytics-id="hero_intro_call" data-analytics-component="hero" style="display: flex; align-items: center; gap: 12px; background: #BC4517; color: #FFFFFF; font-weight: 600; font-size: 19px; padding: 19px 34px; border-radius: 999px; cursor: pointer; flex: none; text-decoration: none;" data-wai-style-hover="background: #9A3A14;">Introductory lesson<span style="font-weight: 400;">→</span></a>
+        <a href="/school/contact" target="_blank" rel="noopener" data-analytics-id="hero_intro_call" data-analytics-component="hero" style="display: flex; align-items: center; gap: 12px; background: #BC4517; color: #FFFFFF; font-weight: 600; font-size: 19px; padding: 19px 34px; border-radius: 999px; cursor: pointer; flex: none; text-decoration: none;" data-wai-style-hover="background: #9A3A14;">Introductory lesson<span style="font-weight: 400;">→</span></a>
       </div>
       <div data-wai-ref="heroHint" style="position: absolute; left: 50%; transform: translateX(-50%); bottom: 24px; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; color: rgba(37,33,25,0.62); will-change: opacity;">scroll ↓</div>
     </div>
@@ -666,7 +667,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
     <div data-wai-ref="jTitle" style="position: absolute; left: max(40px, calc((100vw - 1240px) / 2)); top: clamp(76px, 13vh, 110px); width: min(520px, 42vw); z-index: 5; opacity: 0; will-change: opacity, transform;">
       <div style="font-weight: 800; font-size: clamp(20px, 1.9vw, 28px); letter-spacing: 0.12em; color: #D4521E;">1 MONTH</div>
       <h2 style="margin: 14px 0 0; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 44px; line-height: 1.18; letter-spacing: -0.01em; color: #252119; text-wrap: balance;">Learning programme</h2>
-      <p style="margin: 24px 0 0; max-width: min(470px, 42vw); font-weight: 700; font-size: clamp(19px, 1.8vw, 26px); line-height: 1.45; color: rgba(37,33,25,0.72); text-wrap: pretty;">8 individual lessons</p>
+      <p style="margin: 24px 0 0; max-width: min(470px, 42vw); font-weight: 700; font-size: clamp(19px, 1.8vw, 26px); line-height: 1.45; color: rgba(37,33,25,0.72); text-wrap: pretty;">Live online lessons</p>
     </div>
     <div data-wai-ref="jShade" style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(242,236,223,0) 82%, rgba(240,233,219,0.5) 100%); z-index: 2; opacity: 0; pointer-events: none; will-change: opacity;"></div>
     <div data-wai-ref="jHint" style="position: absolute; right: 84px; bottom: 34px; z-index: 5; opacity: 0; padding: 9px 18px; border-radius: 999px; background: rgba(37,33,25,0.82); color: #F2ECDF; font-weight: 600; font-size: 13.5px; backdrop-filter: blur(6px); pointer-events: none; will-change: opacity;">scroll towards the castle ↓</div>
@@ -678,16 +679,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
         <div style="font-weight: 800; font-size: 58px; letter-spacing: -0.02em; color: #D4521E; white-space: nowrap;">2&nbsp;700+</div>
         <div style="font-size: 15px; line-height: 1.35; color: rgba(37,33,25,0.66); max-width: 170px;">adults have taken our AI programmes</div>
       </div>
-      <div style="margin-top: 48px;">
-        <div style="font-weight: 700; font-size: 11px; letter-spacing: 0.12em; color: rgba(37,33,25,0.62);">AS FEATURED IN</div>
-        <div style="margin-top: 14px; display: flex; align-items: center; gap: 22px; filter: grayscale(1); opacity: 0.55;">
-          <img src="/school-static/current/uploads/rbc.svg" alt="RBC" style="height: 17px; width: auto;">
-          <img src="/school-static/current/uploads/vc-ru-color.svg" alt="vc.ru" style="height: 16px; width: auto;">
-          <img src="/school-static/current/uploads/hitech.svg" alt="Hightech" style="height: 14px; width: auto;">
-          <img src="/school-static/current/uploads/rb.svg" alt="RB.RU" style="height: 15px; width: auto;">
-          <img src="/school-static/current/uploads/frii-color.svg" alt="IIDF" style="height: 20px; width: auto;">
-        </div>
-      </div>
+
     </div>
     <div data-wai-ref="adStage" style="position: absolute; left: 50%; top: 50%; width: 1440px; height: 920px; transform: translate(-50%, -50%); will-change: transform; z-index: 1;">
       <div data-wai-ref="adWc" style="position: absolute; left: 570px; top: 140px; width: 380px; opacity: 0; will-change: opacity, transform;">
@@ -702,7 +694,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
       <div data-wai-ref="adC1" style="position: absolute; left: 1040px; top: 170px; opacity: 0; will-change: opacity, transform;">
         <div style="animation: waiFloat2 8s ease-in-out 0.6s infinite alternate;">
           <div style="width: 250px; height: 250px; border-radius: 50%; background: #FFFFFF; border: 1px solid rgba(37,33,25,0.08); box-shadow: 0 16px 40px rgba(37,33,25,0.12); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 26px; box-sizing: border-box;">
-            <img src="/school-static/current/uploads/alfabank.svg" alt="Alfa-Bank" style="height: 26px; width: auto; max-width: 72%;">
+            <span style="font-size:15px;font-weight:600">Team workshops</span>
             <div style="margin-top: 12px; font-weight: 700; font-size: 19px; color: #252119;">128 participants</div>
             <div style="font-size: 13px; color: rgba(37,33,25,0.66);">4 workshops</div>
           </div>
@@ -711,7 +703,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
       <div data-wai-ref="adC2" style="position: absolute; left: 1090px; top: 480px; opacity: 0; will-change: opacity, transform;">
         <div style="animation: waiFloat3 9.5s ease-in-out 1.2s infinite alternate;">
           <div style="width: 270px; height: 270px; border-radius: 50%; background: #FFFFFF; border: 1px solid rgba(37,33,25,0.08); box-shadow: 0 16px 40px rgba(37,33,25,0.12); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 28px; box-sizing: border-box;">
-            <img src="/school-static/current/uploads/samolot.svg" alt="Samolet Group" style="height: 28px; width: auto; max-width: 72%;">
+            <span style="font-size:15px;font-weight:600">Professional learning</span>
             <div style="margin-top: 12px; font-weight: 700; font-size: 19px; color: #252119;">1&nbsp;040 professionals</div>
             <div style="font-size: 13px; color: rgba(37,33,25,0.66);">6-week course</div>
           </div>
@@ -720,7 +712,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
       <div data-wai-ref="adC3" style="position: absolute; left: 690px; top: 500px; opacity: 0; will-change: opacity, transform;">
         <div style="animation: waiFloat1 7.5s ease-in-out 1.8s infinite alternate;">
           <div style="width: 240px; height: 240px; border-radius: 50%; background: #FFFFFF; border: 1px solid rgba(37,33,25,0.08); box-shadow: 0 16px 40px rgba(37,33,25,0.12); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 26px; box-sizing: border-box;">
-            <img src="/school-static/current/uploads/pikemedialab.svg" alt="Pike Media Lab" style="height: 24px; width: auto; max-width: 70%;">
+            <span style="font-size:15px;font-weight:600">Student programmes</span>
             <div style="margin-top: 12px; font-weight: 700; font-size: 19px; color: #252119;">97 students</div>
             <div style="font-size: 13px; color: rgba(37,33,25,0.66);">6-week course</div>
           </div>
@@ -735,7 +727,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
               <div style="margin-top: 16px; font-weight: 700; font-size: 20px; color: #252119;">Mik Wiseman</div>
               <div style="margin-top: 3px; font-size: 12.5px; color: rgba(37,33,25,0.66);">Technology entrepreneur and developer</div>
               <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 7px;">
-                <div style="font-size: 13px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="font-weight: 700; color: #252119;">Trinity Monsters</span> — Digital Agency of the Year 2023</div>
+                <div style="font-size: 13px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="font-weight: 700; color: #252119;">Trinity Monsters</span> — digital product engineering</div>
                 <div style="font-size: 13px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="font-weight: 700; color: #252119;">WaiWai</span> — an AI agent marketplace</div>
               </div>
             </div>
@@ -744,8 +736,8 @@ body { overflow-x: clip; color: var(--wai-ink); }
               <div style="margin-top: 16px; font-weight: 700; font-size: 20px; color: #252119;">Grigory Ottens</div>
               <div style="margin-top: 3px; font-size: 12.5px; color: rgba(37,33,25,0.66);">EdTech entrepreneur</div>
               <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 7px;">
-                <div style="font-size: 13px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="font-weight: 700; color: #252119;">Yoga Academy</span> — a leading Russian-language yoga school</div>
-                <div style="font-size: 13px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="font-weight: 700; color: #252119;">Netology · Coursiv</span> <span style="font-style: italic;">(USA)</span> — former senior executive</div>
+                <div style="font-size: 13px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="font-weight: 700; color: #252119;">Yoga Academy</span> — an online yoga school</div>
+                <div style="font-size: 13px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="font-weight: 700; color: #252119;">Coursiv</span> <span style="font-style: italic;">(USA)</span> — former senior executive</div>
               </div>
             </div>
           </div>
@@ -778,11 +770,11 @@ body { overflow-x: clip; color: var(--wai-ink); }
   </div>
   <div style="position: relative; width: 1240px; max-width: 100%; margin-top: 64px; display: flex; gap: 32px;">
     <div style="width: 600px; display: flex; flex-direction: column; gap: 52px;">
-      <a data-wai-ref="pT1" data-wai-on-mouseenter="e1" data-wai-on-mouseleave="l1" href="https://wai.school/g2/project/hallownest/app/" target="_blank" rel="noopener" aria-label="Open the Flying Castle game" style="display: block; color: inherit; text-decoration: none; opacity: 0; transform: translateY(46px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1), transform 0.8s cubic-bezier(0.22,1,0.36,1); will-change: transform, opacity;">
+      <a data-wai-ref="pT1" data-wai-on-mouseenter="e1" data-wai-on-mouseleave="l1" href="/school/projects/hallownest/app/" target="_blank" rel="noopener" aria-label="Open the Flying Castle game" style="display: block; color: inherit; text-decoration: none; opacity: 0; transform: translateY(46px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1), transform 0.8s cubic-bezier(0.22,1,0.36,1); will-change: transform, opacity;">
         <div style="position: relative; width: 100%; height: 380px; border-radius: 24px; background: #10192C; overflow: hidden; outline: 1px solid rgba(37,33,25,0.08);">
           <div data-wai-ref="pPar1" style="position: absolute; left: 0; right: 0; top: -34px; bottom: -34px; will-change: transform;">
             <div data-wai-ref="pSc1" style="width: 100%; height: 100%; transition: transform 0.35s cubic-bezier(0.22,1,0.36,1); will-change: transform;">
-              <img src="/school-static/current/uploads/hallownest-cover.webp" alt="Game scene: a traveller with a lantern in a ruined castle" draggable="false" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%;">
+              <img src="/school-static/project-previews/hallownest.png" alt="Game scene: a traveller with a lantern in a ruined castle" draggable="false" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%;">
             </div>
           </div>
           <div data-wai-ref="pP1" style="position: absolute; right: 20px; bottom: 20px; opacity: 0; transition: opacity 0.2s cubic-bezier(0.23,1,0.32,1); padding: 9px 18px; border-radius: 999px; background: rgba(251,248,241,0.92); color: #252119; font-weight: 600; font-size: 13.5px; backdrop-filter: blur(6px); pointer-events: none;">play →</div>
@@ -792,11 +784,11 @@ body { overflow-x: clip; color: var(--wai-ink); }
           <div style="font-weight: 700; font-size: 11.5px; letter-spacing: 0.1em; color: rgba(37,33,25,0.62); white-space: nowrap;">AGE 14 · WEEK 4</div>
         </div>
       </a>
-      <a data-wai-ref="pT2" data-wai-on-mouseenter="e2" data-wai-on-mouseleave="l2" href="https://wai.school/g3/project/block-modz/" target="_blank" rel="noopener" aria-label="Open the Block Modz project" style="display: block; color: inherit; text-decoration: none; opacity: 0; transform: translateY(46px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1), transform 0.8s cubic-bezier(0.22,1,0.36,1); will-change: transform, opacity;">
+      <a data-wai-ref="pT2" data-wai-on-mouseenter="e2" data-wai-on-mouseleave="l2" href="/school/projects/block-modz/" target="_blank" rel="noopener" aria-label="Open the Block Modz project" style="display: block; color: inherit; text-decoration: none; opacity: 0; transform: translateY(46px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1), transform 0.8s cubic-bezier(0.22,1,0.36,1); will-change: transform, opacity;">
         <div data-project-shot="block-modz" style="position: relative; width: 100%; height: 380px; border-radius: 24px; background: #26080A; overflow: hidden; outline: 1px solid rgba(37,33,25,0.08);">
           <div data-wai-ref="pPar2" style="position: absolute; left: 0; right: 0; top: -34px; bottom: -34px; will-change: transform;">
             <div data-wai-ref="pSc2" style="width: 100%; height: 100%; transition: transform 0.35s cubic-bezier(0.22,1,0.36,1); will-change: transform;">
-              <img src="/school-static/current/uploads/block-modz-cover.webp" alt="Minecraft mod gallery with realistic textures and a download button" draggable="false" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 100% 50%;">
+              <img src="/school-static/project-previews/block-modz.png" alt="Minecraft mod gallery with realistic textures and a download button" draggable="false" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 100% 50%;">
             </div>
           </div>
           <div data-wai-ref="pP2" style="position: absolute; right: 20px; bottom: 20px; opacity: 0; transition: opacity 0.2s cubic-bezier(0.23,1,0.32,1); padding: 9px 18px; border-radius: 999px; background: rgba(251,248,241,0.92); color: #252119; font-weight: 600; font-size: 13.5px; backdrop-filter: blur(6px); pointer-events: none;">explore mods →</div>
@@ -809,11 +801,11 @@ body { overflow-x: clip; color: var(--wai-ink); }
       <a href="/school/projects" target="_blank" rel="noopener" style="box-sizing: border-box; width: 100%; padding: 22px 34px; border-radius: 999px; background: #BC4517; color: #FFFFFF; font-weight: 600; font-size: 19px; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 12px; cursor: pointer; transition: background 0.2s cubic-bezier(0.23,1,0.32,1), transform 0.2s cubic-bezier(0.23,1,0.32,1);" data-wai-style-hover="background: #9A3A14; transform: translateY(-3px);">Explore all student projects<span style="font-weight: 400;">→</span></a>
     </div>
     <div style="width: 600px; display: flex; flex-direction: column; gap: 52px; margin-top: 110px;">
-      <a data-wai-ref="pT3" data-wai-on-mouseenter="e3" data-wai-on-mouseleave="l3" href="https://wai.school/g2/project/rifflegg/" target="_blank" rel="noopener" aria-label="Open the RIFFLEGG project" style="display: block; color: inherit; text-decoration: none; opacity: 0; transform: translateY(46px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1) 0.12s, transform 0.8s cubic-bezier(0.22,1,0.36,1) 0.12s; will-change: transform, opacity;">
+      <a data-wai-ref="pT3" data-wai-on-mouseenter="e3" data-wai-on-mouseleave="l3" href="/school/projects/rifflegg/" target="_blank" rel="noopener" aria-label="Open the RIFFLEGG project" style="display: block; color: inherit; text-decoration: none; opacity: 0; transform: translateY(46px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1) 0.12s, transform 0.8s cubic-bezier(0.22,1,0.36,1) 0.12s; will-change: transform, opacity;">
         <div data-project-shot="rifflegg" style="position: relative; width: 100%; height: 380px; border-radius: 24px; background: #0B0B13; overflow: hidden; outline: 1px solid rgba(37,33,25,0.08);">
           <div data-wai-ref="pPar3" style="position: absolute; left: 0; right: 0; top: -34px; bottom: -34px; will-change: transform;">
             <div data-wai-ref="pSc3" style="width: 100%; height: 100%; transition: transform 0.35s cubic-bezier(0.22,1,0.36,1); will-change: transform;">
-              <img src="/school-static/current/uploads/rifflegg-match.webp" alt="Gaming league interface with match creation, mode, stakes and duration" draggable="false" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 100% 50%;">
+              <img src="/school-static/project-previews/rifflegg.png" alt="Gaming league interface with match creation, mode, stakes and duration" draggable="false" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 100% 50%;">
             </div>
           </div>
           <div data-wai-ref="pP3" style="position: absolute; right: 20px; bottom: 20px; opacity: 0; transition: opacity 0.2s cubic-bezier(0.23,1,0.32,1); padding: 9px 18px; border-radius: 999px; background: rgba(251,248,241,0.92); color: #252119; font-weight: 600; font-size: 13.5px; backdrop-filter: blur(6px); pointer-events: none;">explore the league →</div>
@@ -823,11 +815,11 @@ body { overflow-x: clip; color: var(--wai-ink); }
           <div style="font-weight: 700; font-size: 11.5px; letter-spacing: 0.1em; color: rgba(37,33,25,0.62); white-space: nowrap;">AGE 13 · WEEK 4</div>
         </div>
       </a>
-      <a data-wai-ref="pT4" data-wai-on-mouseenter="e4" data-wai-on-mouseleave="l4" href="https://wai.school/g2/project/bouquet/" target="_blank" rel="noopener" aria-label="Open the FLEUR flower personality quiz" style="display: block; color: inherit; text-decoration: none; opacity: 0; transform: translateY(46px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1) 0.12s, transform 0.8s cubic-bezier(0.22,1,0.36,1) 0.12s; will-change: transform, opacity;">
+      <a data-wai-ref="pT4" data-wai-on-mouseenter="e4" data-wai-on-mouseleave="l4" href="/school/projects/bouquet/" target="_blank" rel="noopener" aria-label="Open the FLEUR flower personality quiz" style="display: block; color: inherit; text-decoration: none; opacity: 0; transform: translateY(46px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1) 0.12s, transform 0.8s cubic-bezier(0.22,1,0.36,1) 0.12s; will-change: transform, opacity;">
         <div data-project-shot="fleur" style="position: relative; width: 100%; height: 380px; border-radius: 24px; background: #15151D; overflow: hidden; outline: 1px solid rgba(37,33,25,0.08);">
           <div data-wai-ref="pPar4" style="position: absolute; left: 0; right: 0; top: -34px; bottom: -34px; will-change: transform;">
             <div data-wai-ref="pSc4" style="width: 100%; height: 100%; transition: transform 0.35s cubic-bezier(0.22,1,0.36,1); will-change: transform;">
-              <img src="/school-static/current/uploads/bouquet-v2.webp" alt="FLEUR flower quiz and a collage of bouquets" draggable="false" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 18% 50%; transform: translate3d(6px,-6px,0) scale(1.02); transform-origin: center;">
+              <img src="/school-static/project-previews/bouquet.png" alt="FLEUR flower quiz and a collage of bouquets" draggable="false" loading="lazy" decoding="async" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: 18% 50%; transform: translate3d(6px,-6px,0) scale(1.02); transform-origin: center;">
             </div>
           </div>
           <div data-wai-ref="pP4" style="position: absolute; right: 20px; bottom: 20px; opacity: 0; transition: opacity 0.2s cubic-bezier(0.23,1,0.32,1); padding: 9px 18px; border-radius: 999px; background: rgba(251,248,241,0.92); color: #252119; font-weight: 600; font-size: 13.5px; backdrop-filter: blur(6px); pointer-events: none;">take the quiz →</div>
@@ -859,17 +851,17 @@ body { overflow-x: clip; color: var(--wai-ink); }
     </div>
   </div>
   <div class="wai-mentor-card__promise wai-mentor-metrics" data-layout-check="mentor-metrics">
-    <div class="wai-mentor-metrics__schedule" aria-label="8 one-to-one or paired lessons per month" data-layout-check="mentor-metric">
-      <strong data-layout-role="value">8</strong>
-      <span data-layout-role="label">one-to-one or paired lessons per month</span>
+    <div class="wai-mentor-metrics__schedule" aria-label="Four weeks of guided learning" data-layout-check="mentor-metric">
+      <strong data-layout-role="value">4</strong>
+      <span data-layout-role="label">weeks of guided learning</span>
     </div>
-    <div class="wai-mentor-metrics__schedule wai-mentor-metrics__group" aria-label="2 group sessions per month: a demo day and a hackathon" data-layout-check="mentor-metric">
-      <strong data-layout-role="value">2</strong>
-      <span data-layout-role="label">group sessions per month: a demo day and a hackathon</span>
+    <div class="wai-mentor-metrics__schedule wai-mentor-metrics__group" aria-label="One project built around your child’s interests" data-layout-check="mentor-metric">
+      <strong data-layout-role="value">1</strong>
+      <span data-layout-role="label">project built around your child’s interests</span>
     </div>
   </div>
-  <div class="wai-mentor-card__price" aria-label="Price: from RUB 50,000 per month">
-    <span>from</span><strong>RUB 50,000</strong><span>per month</span>
+  <div class="wai-mentor-card__price" aria-label="Price: EUR 700 for a four-week course">
+    <strong>€700</strong><span>four-week course</span>
   </div>
 </article>
 
@@ -877,7 +869,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
                 <div style="font-weight: 700; font-size: 20px; color: #252119;">Tools, ready to use</div>
                 <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
                   <div style="display: flex; gap: 10px; font-size: 14.5px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="flex: none; width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: #D4521E;"></span><span>Claude and ChatGPT run on school accounts</span></div>
-                  <div style="display: flex; gap: 10px; font-size: 14.5px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="flex: none; width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: #D4521E;"></span><span>VPN and hosting are already set up</span></div>
+                  <div style="display: flex; gap: 10px; font-size: 14.5px; line-height: 1.45; color: rgba(37,33,25,0.72);"><span style="flex: none; width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: #D4521E;"></span><span>AI tools and hosting are ready to use</span></div>
                 </div>
                 <div style="margin-top: auto; padding-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;"><span style="padding: 6px 14px; border-radius: 999px; background: #F6DFCF; font-weight: 600; font-size: 12.5px; color: #9A3A14;">subscriptions included</span><span style="padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(37,33,25,0.18); font-weight: 600; font-size: 12.5px; color: rgba(37,33,25,0.66);">at no extra cost</span></div>
               </div>
@@ -953,12 +945,12 @@ body { overflow-x: clip; color: var(--wai-ink); }
           <div style="padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(37,33,25,0.18); font-weight: 600; font-size: 14px; color: rgba(37,33,25,0.66);">free</div>
         </div>
         <nav class="wai-legal-links" aria-label="Contact and documents">
-          <a href="https://t.me/gri_ot" target="_blank" rel="noopener" data-analytics-id="contact_telegram" data-analytics-component="final">Telegram: @gri_ot</a>
+          <a href="mailto:hello@mail.waiwai.is" target="_blank" rel="noopener" data-analytics-id="contact_telegram" data-analytics-component="final">Email the school</a>
           <a href="/legal/privacy" data-analytics-id="legal_privacy" data-analytics-component="final">Data privacy</a>
           <a href="/legal/offer" data-analytics-id="legal_offer" data-analytics-component="final">Terms and company details</a>
         </nav>
       </div>
-      <a href="https://cal.com/grigoriy-ottens/30min" target="_blank" rel="noopener" data-analytics-id="final_intro_call" data-analytics-component="final" style="display: flex; align-items: center; gap: 12px; background: #BC4517; color: #FFFFFF; font-weight: 600; font-size: 19px; padding: 19px 34px; border-radius: 999px; cursor: pointer; flex: none; text-decoration: none;" data-wai-style-hover="background: #9A3A14;">Book a lesson<span style="font-weight: 400;">→</span></a>
+      <a href="/school/contact" target="_blank" rel="noopener" data-analytics-id="final_intro_call" data-analytics-component="final" style="display: flex; align-items: center; gap: 12px; background: #BC4517; color: #FFFFFF; font-weight: 600; font-size: 19px; padding: 19px 34px; border-radius: 999px; cursor: pointer; flex: none; text-decoration: none;" data-wai-style-hover="background: #9A3A14;">Ask about lessons<span style="font-weight: 400;">→</span></a>
     </div>
   </div>
 </div>
@@ -967,7 +959,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
 <main data-wai-ref="compactRoot" class="compact-landing" aria-label="WAI School">
   <header class="m-site-header" data-m-site-header aria-label="Main navigation">
     <a class="m-site-header__brand" href="#m-hero-title" aria-label="WAI School, back to top">wai<span>.</span>school</a>
-    <a class="m-site-header__cta" href="https://cal.com/grigoriy-ottens/30min" target="_blank" rel="noopener" data-analytics-id="sticky_intro_call" data-analytics-component="header">Book a lesson</a>
+    <a class="m-site-header__cta" href="/school/contact" target="_blank" rel="noopener" data-analytics-id="sticky_intro_call" data-analytics-component="header">Ask about lessons</a>
   </header>
 
   <section class="f-section f-hero" data-m-flow="hero" aria-labelledby="m-hero-title">
@@ -985,7 +977,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
         <div class="m-hero-card__person"><div class="m-avatar"><img src="/school-static/current/uploads/kid-320.webp" width="320" height="320" decoding="async" alt="Child with a laptop"></div><span class="m-chip">Ages 8–15</span></div>
         <div class="m-hero-card__copy"><strong>A boutique school for AI projects</strong><span>A real app or game inspired by your child&#x27;s interests</span></div>
       </div>
-      <a class="wai-link-button" href="https://cal.com/grigoriy-ottens/30min" target="_blank" rel="noopener" data-analytics-id="hero_intro_call" data-analytics-component="hero">Introductory lesson <span aria-hidden="true">→</span></a>
+      <a class="wai-link-button" href="/school/contact" target="_blank" rel="noopener" data-analytics-id="hero_intro_call" data-analytics-component="hero">Introductory lesson <span aria-hidden="true">→</span></a>
     </div>
   </section>
 
@@ -1027,9 +1019,9 @@ body { overflow-x: clip; color: var(--wai-ink); }
     </header>
     <div class="m-evidence" data-m-evidence aria-label="Our adult school and corporate clients" data-reveal>
       <article class="m-proof m-proof--school" data-m-proof="0"><small>OUR SCHOOL FOR ADULTS</small><h3>Wai Combinator</h3><strong>1 500+</strong></article>
-      <article class="m-proof m-proof--circle m-proof--alfa" data-m-proof="1"><img src="/school-static/current/uploads/alfabank.svg" alt="Alfa-Bank"><strong>128 participants</strong></article>
-      <article class="m-proof m-proof--circle m-proof--samolot" data-m-proof="2"><img src="/school-static/current/uploads/samolot.svg" alt="Samolet Group"><strong>1,040 professionals</strong></article>
-      <article class="m-proof m-proof--circle m-proof--pike" data-m-proof="3"><img src="/school-static/current/uploads/pikemedialab.svg" alt="Pike Media Lab"><strong>97 students</strong></article>
+      <article class="m-proof m-proof--circle m-proof--workshops" data-m-proof="1"><span style="font-size:15px;font-weight:600">Team workshops</span><strong>128 participants</strong></article>
+      <article class="m-proof m-proof--circle m-proof--professionals" data-m-proof="2"><span style="font-size:15px;font-weight:600">Professional learning</span><strong>1,040 professionals</strong></article>
+      <article class="m-proof m-proof--circle m-proof--students" data-m-proof="3"><span style="font-size:15px;font-weight:600">Student programmes</span><strong>97 students</strong></article>
     </div>
   </section>
 
@@ -1039,26 +1031,26 @@ body { overflow-x: clip; color: var(--wai-ink); }
       <article class="m-founder-card" data-reveal>
         <div class="m-founder-photo"><img src="/school-static/current/uploads/founder-mik.jpg" alt="Mik Wiseman" loading="lazy"><span class="m-chip m-founder-role">co-founder</span></div>
         <h3>Mik Wiseman</h3><p>Technology entrepreneur and developer</p>
-        <div class="m-founder-facts"><div class="m-founder-fact"><strong>Trinity Monsters:</strong> Digital Agency of the Year 2023</div><div class="m-founder-fact"><strong>WaiWai:</strong> an AI agent marketplace</div></div>
+        <div class="m-founder-facts"><div class="m-founder-fact"><strong>Trinity Monsters:</strong> digital product engineering</div><div class="m-founder-fact"><strong>WaiWai:</strong> an AI agent marketplace</div></div>
         <div class="m-founder-award"><span class="m-award-badge">1st place</span><span>ETHGlobal New York — a competition with 600 engineers from around the world</span></div>
       </article>
       <article class="m-founder-card" data-reveal>
         <div class="m-founder-photo"><img src="/school-static/current/uploads/founder-grisha.jpg" alt="Grigory Ottens" loading="lazy"><span class="m-chip m-founder-role">co-founder</span></div>
         <h3>Grigory Ottens</h3><p>EdTech entrepreneur</p>
-        <div class="m-founder-facts"><div class="m-founder-fact"><strong>Yoga Academy:</strong> a leading Russian-language yoga school</div><div class="m-founder-fact"><strong>Netology · Coursiv:</strong> former senior executive</div></div>
+        <div class="m-founder-facts"><div class="m-founder-fact"><strong>Yoga Academy:</strong> an online yoga school</div><div class="m-founder-fact"><strong>Coursiv:</strong> former senior executive</div></div>
       </article>
     </div>
     <div class="f-people-grid">
       <article class="m-founder-card" data-reveal>
         <div class="m-founder-photo"><img src="/school-static/current/uploads/mentor-dima.jpg" alt="Dmitry Rubin" loading="lazy"></div>
         <h3>Dmitry Rubin</h3><p>Lead mentor · physicist and entrepreneur</p>
-        <div class="m-founder-facts"><div class="m-founder-fact"><strong>6 startups:</strong> 10+ years in venture capital, agricultural drones in Korea</div><div class="m-founder-fact"><strong>Research:</strong> 3 patents and 20+ papers</div><div class="m-founder-fact"><strong>Expert:</strong> IIDF, Rosatom, Forbes columnist</div></div>
+        <div class="m-founder-facts"><div class="m-founder-fact"><strong>6 startups:</strong> 10+ years in venture capital, agricultural drones in Korea</div><div class="m-founder-fact"><strong>Research:</strong> 3 patents and 20+ papers</div><div class="m-founder-fact"><strong>Expert:</strong> startup mentor and venture entrepreneur</div></div>
         <a class="m-founder-link" href="/mentors/dima" data-analytics-id="people_mentor_dima" data-analytics-component="people">Meet the mentor <span aria-hidden="true">→</span></a>
       </article>
       <article class="m-founder-card" data-reveal>
         <div class="m-founder-photo"><img src="/school-static/current/uploads/mentor-darya.jpg" alt="Darya Zhuykova" loading="lazy"></div>
         <h3>Darya Zhuykova</h3><p>Mentor · hands-on generative AI</p>
-        <div class="m-founder-facts"><div class="m-founder-fact"><strong>Severstal:</strong> implements generative AI</div><div class="m-founder-fact"><strong>MIPT:</strong> lecturer, 10 programmes</div><div class="m-founder-fact"><strong>25,000 employees:</strong> have taken her AI course</div></div>
+        <div class="m-founder-facts"><div class="m-founder-fact"><strong>Industry:</strong> implements generative AI</div><div class="m-founder-fact"><strong>Teaching:</strong> lecturer, 10 programmes</div><div class="m-founder-fact"><strong>25,000 employees:</strong> have taken her AI course</div></div>
         <a class="m-founder-link" href="/mentors/darya" data-analytics-id="people_mentor_darya" data-analytics-component="people">Meet the mentor <span aria-hidden="true">→</span></a>
       </article>
     </div>
@@ -1070,20 +1062,20 @@ body { overflow-x: clip; color: var(--wai-ink); }
       <p class="m-lead">Real products inspired by hobbies. Every project has a link.</p>
     </header>
     <div class="f-projects-scroller" data-reveal>
-      <a class="m-project-card" data-project-shot="hallownest" href="https://wai.school/g2/project/hallownest/app/" target="_blank" rel="noopener">
-        <div class="m-project-media"><picture><source media="(max-width: 767px)" srcset="/school-static/current/uploads/hallownest-mobile-cover.webp"><img src="/school-static/current/uploads/hallownest-cover.webp" alt="Flying Castle game" loading="lazy" decoding="async"></picture></div>
+      <a class="m-project-card" data-project-shot="hallownest" href="/school/projects/hallownest/app/" target="_blank" rel="noopener">
+        <div class="m-project-media"><picture><source media="(max-width: 767px)" srcset="/school-static/project-previews/hallownest.png"><img src="/school-static/project-previews/hallownest.png" style="object-position:left center" alt="Flying Castle game" loading="lazy" decoding="async"></picture></div>
         <div class="m-project-caption"><div><h3>Flying Castle</h3><p>An indie game about a traveller</p></div><div class="m-project-meta">AGE 14<br>WEEK 4</div></div>
       </a>
-      <a class="m-project-card" data-project-shot="block-modz" href="https://wai.school/g3/project/block-modz/" target="_blank" rel="noopener">
-        <div class="m-project-media"><picture><source media="(max-width: 767px)" srcset="/school-static/current/uploads/block-modz-mobile-cover.webp"><img src="/school-static/current/uploads/block-modz-cover.webp" alt="Block Modz project" loading="lazy" decoding="async"></picture></div>
+      <a class="m-project-card" data-project-shot="block-modz" href="/school/projects/block-modz/" target="_blank" rel="noopener">
+        <div class="m-project-media"><picture><source media="(max-width: 767px)" srcset="/school-static/project-previews/block-modz-mobile.png"><img src="/school-static/project-previews/block-modz.png" alt="Block Modz project" loading="lazy" decoding="async"></picture></div>
         <div class="m-project-caption"><div><h3>Block Modz</h3><p>Minecraft mods</p></div><div class="m-project-meta">AGE 11<br>WEEK 3</div></div>
       </a>
-      <a class="m-project-card" data-project-shot="rifflegg" href="https://wai.school/g2/project/rifflegg/" target="_blank" rel="noopener">
-        <div class="m-project-media"><picture><source media="(max-width: 767px)" srcset="/school-static/current/uploads/rifflegg-mobile-cover.webp"><img src="/school-static/current/uploads/rifflegg-match.webp" alt="RIFFLEGG project" loading="lazy" decoding="async"></picture></div>
+      <a class="m-project-card" data-project-shot="rifflegg" href="/school/projects/rifflegg/" target="_blank" rel="noopener">
+        <div class="m-project-media"><picture><source media="(max-width: 767px)" srcset="/school-static/project-previews/rifflegg-mobile.png"><img src="/school-static/project-previews/rifflegg.png" alt="RIFFLEGG project" loading="lazy" decoding="async"></picture></div>
         <div class="m-project-caption"><div><h3>RIFFLEGG</h3><p>A personal CS2 league</p></div><div class="m-project-meta">AGE 13<br>WEEK 4</div></div>
       </a>
-      <a class="m-project-card" data-project-shot="fleur" href="https://wai.school/g2/project/bouquet/" target="_blank" rel="noopener">
-        <div class="m-project-media"><picture><source media="(max-width: 767px)" srcset="/school-static/current/uploads/bouquet-mobile-cover.webp"><img src="/school-static/current/uploads/bouquet-v2.webp" alt="FLEUR project" loading="lazy" decoding="async"></picture></div>
+      <a class="m-project-card" data-project-shot="fleur" href="/school/projects/bouquet/" target="_blank" rel="noopener">
+        <div class="m-project-media"><picture><source media="(max-width: 767px)" srcset="/school-static/project-previews/bouquet-mobile.png"><img src="/school-static/project-previews/bouquet.png" alt="FLEUR project" loading="lazy" decoding="async"></picture></div>
         <div class="m-project-caption"><div><h3>FLEUR</h3><p>A flower personality quiz</p></div><div class="m-project-meta">AGE 14<br>WEEK 4</div></div>
       </a>
     </div>
@@ -1107,23 +1099,23 @@ body { overflow-x: clip; color: var(--wai-ink); }
     </div>
   </div>
   <div class="wai-mentor-card__promise wai-mentor-metrics" data-layout-check="mentor-metrics">
-    <div class="wai-mentor-metrics__schedule" aria-label="8 one-to-one or paired lessons per month" data-layout-check="mentor-metric">
-      <strong data-layout-role="value">8</strong>
-      <span data-layout-role="label">one-to-one or paired lessons per month</span>
+    <div class="wai-mentor-metrics__schedule" aria-label="Four weeks of guided learning" data-layout-check="mentor-metric">
+      <strong data-layout-role="value">4</strong>
+      <span data-layout-role="label">weeks of guided learning</span>
     </div>
-    <div class="wai-mentor-metrics__schedule wai-mentor-metrics__group" aria-label="2 group sessions per month: a demo day and a hackathon" data-layout-check="mentor-metric">
-      <strong data-layout-role="value">2</strong>
-      <span data-layout-role="label">group sessions per month: a demo day and a hackathon</span>
+    <div class="wai-mentor-metrics__schedule wai-mentor-metrics__group" aria-label="One project built around your child’s interests" data-layout-check="mentor-metric">
+      <strong data-layout-role="value">1</strong>
+      <span data-layout-role="label">project built around your child’s interests</span>
     </div>
   </div>
-  <div class="wai-mentor-card__price" aria-label="Price: from RUB 50,000 per month">
-    <span>from</span><strong>RUB 50,000</strong><span>per month</span>
+  <div class="wai-mentor-card__price" aria-label="Price: EUR 700 for a four-week course">
+    <strong>€700</strong><span>four-week course</span>
   </div>
 </article>
 
     </div>
     <article class="m-benefit-card m-benefit-card--tools f-benefit" data-reveal>
-      <h3>Tools, ready to use</h3><p class="m-benefit-description">Claude and ChatGPT on school accounts. VPN and hosting are already set up.</p>
+      <h3>Tools, ready to use</h3><p class="m-benefit-description">Claude and ChatGPT on school accounts. AI tools and hosting are ready to use.</p>
       <div class="m-hobby-tags"><span class="m-chip">subscriptions included</span><span class="m-chip m-chip--ghost">at no extra cost</span></div>
     </article>
     <article class="m-benefit-card m-benefit-card--hobby f-benefit" data-reveal>
@@ -1154,7 +1146,7 @@ body { overflow-x: clip; color: var(--wai-ink); }
     <header class="f-head" data-reveal>
       <div class="m-eyebrow">1 month</div>
       <h2 id="m-program-title" class="m-title f-h2">Learning programme</h2>
-      <p class="m-lead">8 individual lessons</p>
+      <p class="m-lead">Live online lessons</p>
     </header>
     <article class="m-week-card" data-m-week="0" data-reveal>
       <div class="m-week-number"><strong>WEEK 1</strong><span>01 / 04</span></div>
@@ -1181,8 +1173,8 @@ body { overflow-x: clip; color: var(--wai-ink); }
       <div class="m-week-result"><span class="m-chip">demo day</span><span class="m-chip m-chip--teal">public link</span></div>
     </article>
     <div class="f-program-final" data-reveal>
-      <div class="f-program-final__title">Full programme: 3 months</div>
-      <a class="wai-link-button" href="https://cal.com/grigoriy-ottens/30min" target="_blank" rel="noopener" data-analytics-id="program_intro_call" data-analytics-component="program">Find out at an introductory lesson <span aria-hidden="true">→</span></a>
+      <div class="f-program-final__title">Four-week course</div>
+      <a class="wai-link-button" href="/school/contact" target="_blank" rel="noopener" data-analytics-id="program_intro_call" data-analytics-component="program">Discuss your child&#x27;s idea <span aria-hidden="true">→</span></a>
     </div>
   </section>
 
@@ -1191,9 +1183,9 @@ body { overflow-x: clip; color: var(--wai-ink); }
       <div class="m-final-person"><div class="m-avatar"><img src="/school-static/current/uploads/kid-320.webp" width="320" height="320" decoding="async" alt="Child with a laptop"></div><span class="m-chip">Ages 8–15</span></div>
       <h2 id="m-final-title">Introductory lesson</h2><p>See how AI builds a project and find an idea your child will love.</p>
       <div class="m-final-facts"><span class="m-chip">30–45 minutes</span><span class="m-chip m-chip--teal">online</span><span class="m-chip">free</span></div>
-      <a class="wai-link-button" href="https://cal.com/grigoriy-ottens/30min" target="_blank" rel="noopener" data-analytics-id="final_intro_call" data-analytics-component="final">Book a lesson <span aria-hidden="true">→</span></a>
+      <a class="wai-link-button" href="/school/contact" target="_blank" rel="noopener" data-analytics-id="final_intro_call" data-analytics-component="final">Ask about lessons <span aria-hidden="true">→</span></a>
       <nav class="wai-legal-links wai-legal-links--compact" aria-label="Contact and documents">
-        <a href="https://t.me/gri_ot" target="_blank" rel="noopener" data-analytics-id="contact_telegram" data-analytics-component="final">Telegram: @gri_ot</a>
+        <a href="mailto:hello@mail.waiwai.is" target="_blank" rel="noopener" data-analytics-id="contact_telegram" data-analytics-component="final">Email the school</a>
         <a href="/legal/privacy" data-analytics-id="legal_privacy" data-analytics-component="final">Data privacy</a>
         <a href="/legal/offer" data-analytics-id="legal_offer" data-analytics-component="final">Terms</a>
       </nav>
@@ -1747,5 +1739,6 @@ class Component {
 
 
 
+<footer class="school-company"><p>Wai School is an educational programme of <strong>WaiWai, LLC</strong>, Delaware, United States.</p><p>1111B S Governors Ave, STE 28908, Dover, DE 19904, USA</p><nav aria-label="Company and contact"><a href="/school/contact">Contact</a><a href="/legal/offer">Courses &amp; terms</a><a href="/legal/privacy">Privacy</a></nav></footer>
 </body>
 </html>

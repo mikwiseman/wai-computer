@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/escape-room/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Naughty Kid — HARD mode</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&amp;family=Nunito:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --bg:#FFF7FB; --surface:#FFFFFF; --ink:#2B1A33;
+    --primary:#FF4D9D; --secondary:#5B8DEF; --accent:#FFD23F;
+    --radius:22px;
+    --shadow:0 12px 30px rgba(255,77,157,.16);
+    --soft:0 6px 18px rgba(91,141,239,.12);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:
+      radial-gradient(circle at 15% 10%, #FFE3F1 0%, transparent 40%),
+      radial-gradient(circle at 85% 8%, #E3ECFF 0%, transparent 40%),
+      var(--bg);
+    color:var(--ink);
+    font-family:"Nunito",system-ui,sans-serif;
+    line-height:1.5;min-height:100vh;overflow-x:hidden;padding:18px 0 50px;
+  }
+  h1,h2,h3{font-family:"Baloo 2","Trebuchet MS",Verdana,sans-serif;line-height:1.1}
+  .wrap{width:100%;max-width:680px;margin:0 auto;padding:0 16px}
+
+  .head{text-align:center;margin-bottom:14px}
+  .head h1{font-size:clamp(1.7rem,6.5vw,2.4rem);font-weight:800;
+    background:linear-gradient(90deg,var(--primary),var(--secondary));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .head .badge{display:inline-block;margin-top:6px;background:#2B1A33;color:#FFD23F;
+    font-family:"Baloo 2",sans-serif;font-weight:700;font-size:.85rem;padding:5px 14px;border-radius:999px}
+
+  .status{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;
+    background:var(--surface);border-radius:var(--radius);box-shadow:var(--soft);
+    padding:14px 18px;margin:14px 0 18px}
+  .hearts{font-size:1.4rem;letter-spacing:2px}
+  .timer{font-family:"Baloo 2",sans-serif;font-weight:800;font-size:1.2rem;color:var(--secondary)}
+  .attn{flex:1 1 100%;order:3}
+  .attn .lbl{font-weight:700;font-size:.9rem;color:#6a5a72;margin-bottom:5px}
+  .bar{height:14px;background:#F0E6EE;border-radius:999px;overflow:hidden}
+  .bar > i{display:block;height:100%;width:0;border-radius:999px;
+    background:linear-gradient(90deg,#FFD23F,#FF4D9D);transition:width .25s ease}
+
+  .panel-title{font-size:1.2rem;font-weight:800;margin:6px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .panel-title span{font-size:1rem;color:#6a5a72;font-weight:700}
+
+  .room{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px}
+  .spot{background:var(--surface);border:none;border-radius:16px;box-shadow:var(--soft);
+    padding:14px 6px;cursor:pointer;text-align:center;font-family:"Nunito",sans-serif;
+    transition:transform .15s ease;color:var(--ink)}
+  .spot:hover{transform:translateY(-4px)}
+  .spot:disabled{opacity:.4;cursor:default;transform:none}
+  .spot .e{font-size:1.7rem;display:block}
+  .spot .n{font-weight:700;font-size:.78rem;margin-top:3px}
+
+  .log{background:#FFF3F9;border-radius:18px;padding:14px 16px;margin-bottom:22px;
+    box-shadow:var(--soft);min-height:54px}
+  .log .empty{color:#9a8aa3;font-weight:600}
+  .log ul{list-style:none}
+  .log li{padding:6px 0;font-weight:600;border-bottom:1px dashed #F0D9E7;font-size:.95rem}
+  .log li:last-child{border-bottom:none}
+  .log li b{color:var(--primary)}
+
+  .locks{display:flex;flex-direction:column;gap:12px}
+  .lock{background:var(--surface);border-radius:18px;box-shadow:var(--soft);
+    padding:14px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .lock .ic{font-size:1.5rem}
+  .lock .q{flex:1 1 150px;font-weight:700;font-size:.95rem}
+  .lock.combo .q{color:#b8429e}
+  .lock input{flex:1 1 80px;min-width:70px;padding:10px 12px;border:2px solid #F0D9E7;border-radius:12px;
+    font-family:"Nunito",sans-serif;font-size:1rem;font-weight:700;color:var(--ink)}
+  .lock input:focus{outline:none;border-color:var(--secondary)}
+  .lock .go{background:var(--secondary);color:#fff;border:none;border-radius:12px;
+    padding:10px 16px;font-family:"Baloo 2",sans-serif;font-weight:700;font-size:1rem;cursor:pointer}
+  .lock.open{background:linear-gradient(135deg,#FFE3F1,#E3ECFF)}
+  .lock.open .q{color:#2BB673}
+  .lock.open input,.lock.open .go{display:none}
+
+  .overlay{position:fixed;inset:0;background:rgba(43,26,51,.6);
+    display:none;align-items:center;justify-content:center;padding:22px;z-index:50}
+  .overlay.show{display:flex}
+  .card-pop{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);
+    padding:30px 26px;text-align:center;max-width:380px;width:100%}
+  .card-pop .big{font-size:3.4rem;display:block;margin-bottom:10px}
+  .card-pop h2{font-size:1.7rem;font-weight:800;margin-bottom:8px}
+  .card-pop p{color:#6a5a72;font-weight:600;margin-bottom:18px}
+  .card-pop .count{font-family:"Baloo 2",sans-serif;font-weight:800;font-size:2.4rem;color:var(--primary);margin-bottom:14px}
+  .btn{background:var(--primary);color:#fff;border:none;border-radius:999px;
+    font-family:"Baloo 2",sans-serif;font-weight:700;font-size:1.15rem;
+    padding:14px 30px;cursor:pointer;box-shadow:0 10px 22px rgba(255,77,157,.35);transition:transform .15s ease}
+  .btn:hover{transform:translateY(-3px)}
+
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  @media (max-width:380px){.room{grid-template-columns:repeat(3,1fr);gap:8px}.spot .n{font-size:.72rem}}
+</style>
+
+<link href="https://wai.computer/school/projects/escape-room" rel="canonical"/></head>
+<body>
+<div class="wrap">
+<div class="head">
+<h1>Naughty Kid</h1>
+<div class="badge">🔥 VERY HARD MODE</div>
+</div>
+<div class="status">
+<div class="hearts" id="hearts">❤️❤️❤️</div>
+<div class="timer" id="timer">⏱️ 120</div>
+<div class="attn">
+<div class="lbl">👀 Parents' attention</div>
+<div class="bar"><i id="attnBar"></i></div>
+</div>
+</div>
+<div class="panel-title">🔎 Search the room <span>(careful — noise!)</span></div>
+<div class="room" id="room"></div>
+<div class="panel-title">📒 Clues found</div>
+<div class="log" id="log"><span class="empty">Nothing found yet. Search the room!</span></div>
+<div class="panel-title">🔐 Locks <span id="lockCount">(0 of 7)</span></div>
+<div class="locks" id="locks"></div>
+</div>
+<div class="overlay" id="parentOverlay">
+<div class="card-pop">
+<span class="big">🚪👩</span>
+<h2>Mom is coming!</h2>
+<p>Quick, pretend you are studying! There is little time!</p>
+<div class="count" id="parentCount">3</div>
+<button class="btn" id="pretendBtn">📖 Open a textbook</button>
+</div>
+</div>
+<div class="overlay" id="endOverlay">
+<div class="card-pop">
+<span class="big" id="endEmoji">🎉</span>
+<h2 id="endTitle">Freedom!</h2>
+<p id="endText"></p>
+<button class="btn" id="restartBtn">Play again</button>
+</div>
+</div>
+<script>(function () {
+    function rnd(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+    function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+    var stars = rnd(3, 6);
+    var words = ["cat", "dog", "hedgehog", "fox", "ball", "juice", "whale"];
+    var word = pick(words);
+    var addA = rnd(2, 6), addB = rnd(2, 6);
+    var addSum = addA + addB;
+    var code = "" + rnd(1, 9) + rnd(1, 9) + rnd(1, 9);
+    var days = rnd(1, 5);
+    var friends = rnd(2, 5);
+    var combo = stars + friends;
+    var spots = [
+        { e: "🛏️", n: "Bed", clue: "Lock 1: there are " + stars + " stars on the ceiling ⭐" },
+        { e: "📚", n: "Shelf", clue: "Lock 2: the code word is " + word.toUpperCase() + " 🐱" },
+        { e: "🕰️", n: "Clock", clue: "Lock 3: Dad asked for " + addA + " + " + addB },
+        { e: "🗄️", n: "Drawer", clue: "Lock 4: the note says " + code.split("").join("-") },
+        { e: "🎒", n: "Backpack", clue: "Lock 5: days until the weekend: " + days + " days" },
+        { e: "🪟", n: "Window", clue: "Lock 6: waiting outside are " + friends + " friends 🧑‍🤝‍🧑" },
+        { e: "💡", n: "Lamp", clue: null, trap: true },
+        { e: "🪴", n: "Flower", clue: null }
+    ];
+    var locks = [
+        { ic: "🔐", q: "How many stars on the ceiling?", ans: ["" + stars] },
+        { ic: "🔐", q: "Code word?", ans: [word] },
+        { ic: "🔐", q: "How many " + addA + " + " + addB + "?", ans: ["" + addSum] },
+        { ic: "🔐", q: "Code on the note?", ans: [code] },
+        { ic: "🔐", q: "Days until the weekend?", ans: ["" + days] },
+        { ic: "🔐", q: "How many friends outside?", ans: ["" + friends] },
+        { ic: "🔐", q: "COMBO: stars + friends = ?", ans: ["" + combo], combo: true }
+    ];
+    var hearts = 3, attention = 0, opened = 0, clues = [], busy = false, gameover = false;
+    var parentTimer = null, countdown = 3, ambientTimer = null, gameTimer = null, timeLeft = 120;
+    var roomEl = document.getElementById("room"), logEl = document.getElementById("log"), locksEl = document.getElementById("locks"), heartsEl = document.getElementById("hearts"), attnBar = document.getElementById("attnBar"), lockCount = document.getElementById("lockCount"), timerEl = document.getElementById("timer"), parentOverlay = document.getElementById("parentOverlay"), parentCount = document.getElementById("parentCount"), pretendBtn = document.getElementById("pretendBtn"), endOverlay = document.getElementById("endOverlay");
+    spots.forEach(function (s, i) {
+        var b = document.createElement("button");
+        b.className = "spot";
+        b.innerHTML = '<span class="e">' + s.e + '</span><span class="n">' + s.n + '</span>';
+        b.addEventListener("click", function () { search(i, b); });
+        roomEl.appendChild(b);
+    });
+    locks.forEach(function (l, i) {
+        var row = document.createElement("div");
+        row.className = "lock" + (l.combo ? " combo" : "");
+        row.id = "lock" + i;
+        var numeric = /^[0-9]+$/.test(l.ans[0]);
+        row.innerHTML = '<span class="ic">' + l.ic + '</span><span class="q">' + l.q + '</span>' +
+            '<input type="text" inputmode="' + (numeric ? "numeric" : "text") + '" id="inp' + i + "\" placeholder=\"answer\" autocomplete=\"off\">" +
+            '<button class="go" id="go' + i + "\">Unlock</button>";
+        locksEl.appendChild(row);
+        document.getElementById("go" + i).addEventListener("click", function () { tryLock(i); });
+        document.getElementById("inp" + i).addEventListener("keydown", function (e) { if (e.key === "Enter")
+            tryLock(i); });
+    });
+    function search(i, btn) {
+        if (busy || gameover)
+            return;
+        btn.disabled = true;
+        var s = spots[i];
+        if (s.trap) {
+            flashLog("💥 The lamp fell! What a crash!");
+            raiseAttention(35);
+            return;
+        }
+        if (s.clue) {
+            clues.push(s.clue);
+            renderLog();
+        }
+        else {
+            flashLog("🍪 A cookie! Tasty, but no help.");
+        }
+        raiseAttention(18);
+    }
+    function renderLog() {
+        if (clues.length === 0) {
+            logEl.innerHTML = "<span class=\"empty\">Nothing found yet. Search the room!</span>";
+            return;
+        }
+        var html = "<ul>";
+        clues.forEach(function (c) { var p = c.split(":"); html += "<li><b>" + p[0] + ":</b>" + p.slice(1).join(":") + "</li>"; });
+        logEl.innerHTML = html + "</ul>";
+    }
+    function flashLog(msg) {
+        logEl.innerHTML = '<span class="empty" style="color:var(--primary)">' + msg + '</span>';
+        setTimeout(renderLog, 1600);
+    }
+    function normAnswer(s) { return s.toLowerCase().replace(/[\s\-]/g, ""); }
+    function tryLock(i) {
+        if (busy || gameover)
+            return;
+        var inp = document.getElementById("inp" + i);
+        if (inp.value.trim() === "")
+            return;
+        var val = normAnswer(inp.value.trim());
+        var ok = locks[i].ans.some(function (a) { return normAnswer(a) === val; });
+        var row = document.getElementById("lock" + i);
+        if (ok) {
+            row.classList.add("open");
+            row.querySelector(".ic").textContent = "🔓";
+            row.querySelector(".q").textContent = "Lock opened!";
+            opened++;
+            lockCount.textContent = "(" + opened + " of 7)";
+            if (opened === 7)
+                endGame(true);
+        }
+        else {
+            inp.value = "";
+            inp.placeholder = "not quite 🤔";
+            raiseAttention(7);
+        }
+    }
+    function raiseAttention(a) {
+        if (gameover)
+            return;
+        attention = Math.min(100, attention + a);
+        updateAttn();
+        if (attention >= 100)
+            parentsCome();
+    }
+    function updateAttn() { attnBar.style.width = attention + "%"; }
+    function parentsCome() {
+        if (busy || gameover)
+            return;
+        busy = true;
+        countdown = 3;
+        parentCount.textContent = countdown;
+        parentOverlay.classList.add("show");
+        parentTimer = setInterval(function () {
+            countdown--;
+            parentCount.textContent = countdown;
+            if (countdown <= 0) {
+                clearInterval(parentTimer);
+                caught();
+            }
+        }, 1000);
+    }
+    pretendBtn.addEventListener("click", function () {
+        if (!busy)
+            return;
+        clearInterval(parentTimer);
+        parentOverlay.classList.remove("show");
+        busy = false;
+        attention = 0;
+        updateAttn();
+    });
+    function caught() {
+        parentOverlay.classList.remove("show");
+        busy = false;
+        hearts--;
+        renderHearts();
+        attention = 0;
+        updateAttn();
+        if (hearts <= 0)
+            endGame(false, "caught");
+    }
+    function renderHearts() {
+        var s = "";
+        for (var k = 0; k < 3; k++)
+            s += k < hearts ? "❤️" : "🖤";
+        heartsEl.textContent = s;
+    }
+    function endGame(win, reason) {
+        if (gameover)
+            return;
+        gameover = true;
+        clearInterval(ambientTimer);
+        clearInterval(gameTimer);
+        clearInterval(parentTimer);
+        parentOverlay.classList.remove("show");
+        if (win)
+            setEnd("🏃‍♂️🌳", "Freedom!", "Amazing! You opened all 7 locks and escaped to play with your friends!");
+        else if (reason === "time")
+            setEnd("⏰", "Time is up!", "You ran out of time. Try to be faster!");
+        else
+            setEnd("😅", "Caught!", "Your parents noticed everything. Be quieter and more precise!");
+    }
+    function setEnd(emoji, title, text) {
+        document.getElementById("endEmoji").textContent = emoji;
+        document.getElementById("endTitle").textContent = title;
+        document.getElementById("endText").textContent = text;
+        endOverlay.classList.add("show");
+    }
+    document.getElementById("restartBtn").addEventListener("click", function () { location.reload(); });
+    ambientTimer = setInterval(function () { if (!busy && !gameover)
+        raiseAttention(3); }, 3000);
+    gameTimer = setInterval(function () {
+        if (gameover)
+            return;
+        if (busy)
+            return;
+        timeLeft--;
+        timerEl.textContent = "⏱️ " + timeLeft;
+        if (timeLeft <= 0)
+            endGame(false, "time");
+    }, 1000);
+    renderHearts();
+    updateAttn();
+})();
+</script>
+</body>
+</html>

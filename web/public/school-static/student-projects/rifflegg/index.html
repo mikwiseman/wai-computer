@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/rifflegg/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>RIFFLEGG — a CS2 league with play coins</title>
+<meta content="A CS2 league for friends: 1×1, 2×2 and 3×3 matches with play coins, a season table and meme awards. No real money involved." name="description"/>
+<meta content="#0b0b14" name="theme-color"/>
+<meta content="RIFFLEGG — a CS2 league with play coins" property="og:title"/>
+<meta content="1×1 / 2×2 / 3×3 matches with play coins. A season table and meme awards. No real money." property="og:description"/>
+<meta content="website" property="og:type"/>
+<link href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0b14'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%2319e17e' font-family='monospace' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" rel="icon"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&amp;family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<style>
+
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+
+  --paper:        #0b0b14;
+  --paper-2:      #10101d;
+  --surface:      #16162a;
+  --surface-2:    #1d1d34;
+  --line:         rgba(255,255,255,0.08);
+  --line-strong:  rgba(255,255,255,0.14);
+
+
+  --ink:          #edeef7;
+  --ink-2:        #b6b8ce;
+  --muted:        #7d7f9a;
+
+
+  --green:        #19e17e;
+  --green-soft:   rgba(25,225,126,0.12);
+  --green-line:   rgba(25,225,126,0.34);
+  --gold:         #ffc53d;
+  --violet:       #8b7bff;
+
+
+  --display: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif;
+  --body:    'Inter', 'Segoe UI', system-ui, sans-serif;
+
+
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px;
+  --s-6: 32px; --s-7: 48px; --s-8: 64px; --s-9: 96px;
+
+  --radius: 14px;
+  --radius-lg: 20px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur: 0.5s;
+}
+
+html { background: var(--paper); }
+html, body { overflow-x: clip; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(900px 500px at 82% -6%, rgba(25,225,126,0.10), transparent 60%),
+    radial-gradient(700px 480px at -8% 8%, rgba(139,123,255,0.10), transparent 55%);
+}
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+
+
+.nav-outer { position: sticky; top: 14px; z-index: 100; padding: 0 16px; }
+.nav {
+  max-width: 1180px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px 12px 22px;
+  background: rgba(16,16,29,0.72);
+  border: 1px solid var(--line-strong);
+  border-radius: 100px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.logo { font-family: var(--display); font-weight: 700; font-size: 19px; letter-spacing: 1px; color: var(--ink); }
+.logo b { color: var(--green); font-weight: 700; }
+.nav-links { display: flex; align-items: center; gap: 26px; }
+.nav-links a { color: var(--ink-2); text-decoration: none; font-size: 14px; font-weight: 500; transition: color 0.15s; }
+.nav-links a:hover { color: var(--ink); }
+
+.nav-links a.nav-cta {
+  font-family: var(--display); font-weight: 600; letter-spacing: 0.3px;
+  background: var(--green); color: #05130b; text-decoration: none;
+  padding: 10px 22px; border-radius: 100px; font-size: 14px;
+  transition: transform 0.14s var(--ease-out), box-shadow 0.14s var(--ease-out);
+  box-shadow: 0 0 0 rgba(25,225,126,0);
+}
+
+.nav-links a.nav-cta:hover { color: #05130b; transform: translateY(-1px); box-shadow: 0 8px 26px rgba(25,225,126,0.34); }
+.nav-links a.nav-cta:active { transform: translateY(0); }
+@media (max-width: 640px) { .nav-links a:not(.nav-cta) { display: none; } }
+
+
+.hero { padding: 72px 0 40px; }
+.hero-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
+.badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--display); font-size: 12px; font-weight: 600; letter-spacing: 1.5px;
+  color: var(--green); background: var(--green-soft); border: 1px solid var(--green-line);
+  padding: 7px 14px; border-radius: 100px; margin-bottom: 26px;
+}
+.badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse 1.6s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.7); } }
+
+.hero h1 {
+  font-family: var(--display); font-weight: 700;
+  font-size: clamp(40px, 6.4vw, 74px); line-height: 1.02; letter-spacing: -0.5px;
+  overflow-wrap: anywhere; min-width: 0; margin-bottom: 22px;
+}
+.hero h1 .hl { color: var(--green); }
+.hero h1 .coin { color: var(--gold); white-space: nowrap; }
+.hero-sub { font-size: 17px; color: var(--ink-2); max-width: 460px; margin-bottom: 34px; }
+.hero-btns { display: flex; gap: 12px; flex-wrap: wrap; }
+.btn {
+  font-family: var(--display); font-weight: 600; letter-spacing: 0.3px; font-size: 15px;
+  text-decoration: none; padding: 15px 30px; border-radius: 12px; cursor: pointer;
+  transition: transform 0.14s var(--ease-out), box-shadow 0.14s var(--ease-out), border-color 0.14s;
+  display: inline-flex; align-items: center; gap: 9px;
+}
+.btn-primary { background: var(--green); color: #05130b; border: 1px solid var(--green); box-shadow: 0 10px 30px rgba(25,225,126,0.22); }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 16px 40px rgba(25,225,126,0.34); }
+.btn-primary:active { transform: translateY(0); }
+.btn-ghost { background: rgba(255,255,255,0.03); color: var(--ink); border: 1px solid var(--line-strong); }
+.btn-ghost:hover { border-color: var(--green-line); color: var(--green); transform: translateY(-2px); }
+.btn-ghost:active { transform: translateY(0); }
+
+
+.live-panel {
+  background: linear-gradient(180deg, var(--surface), var(--paper-2));
+  border: 1px solid var(--line-strong); border-radius: var(--radius-lg);
+  padding: 20px; box-shadow: 0 30px 80px -30px rgba(0,0,0,0.8);
+}
+.live-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding: 0 4px; }
+.live-title { font-family: var(--display); font-size: 12px; letter-spacing: 2px; color: var(--muted); font-weight: 600; }
+.live-flag { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; color: var(--green); }
+.live-flag .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 1.6s infinite; }
+.mcard {
+  background: rgba(255,255,255,0.02); border: 1px solid var(--line);
+  border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  transition: transform 0.18s var(--ease-out), border-color 0.18s;
+}
+.mcard:last-child { margin-bottom: 0; }
+.mcard:hover { transform: translateX(3px); border-color: var(--green-line); }
+.mc-side { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mc-av { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-family: var(--display); font-weight: 700; font-size: 13px; flex-shrink: 0; background: var(--surface-2); color: var(--ink); }
+.mc-name { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc-mode { font-family: var(--display); font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 1px; }
+.mc-bank { text-align: right; flex-shrink: 0; }
+.mc-bank .amt { font-family: var(--display); font-weight: 700; font-size: 16px; color: var(--gold); }
+.mc-bank .lbl { font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+
+
+.stats { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-top: 48px; background: var(--paper-2); }
+.stats-inner { display: grid; grid-template-columns: repeat(3, 1fr); }
+.stat { text-align: center; padding: 34px 16px; border-right: 1px solid var(--line); }
+.stat:last-child { border-right: none; }
+.stat .num { font-family: var(--display); font-weight: 700; font-size: 34px; color: var(--green); line-height: 1; }
+.stat .num.gold { color: var(--gold); }
+.stat .cap { font-size: 11px; letter-spacing: 1.5px; color: var(--muted); margin-top: 8px; text-transform: uppercase; }
+
+
+
+section.block { padding: 72px 0; }
+.eyebrow { font-family: var(--display); font-size: 12px; letter-spacing: 2.5px; color: var(--green); font-weight: 600; margin-bottom: 14px; text-transform: uppercase; }
+.h2 { font-family: var(--display); font-weight: 700; font-size: clamp(28px, 4.4vw, 46px); line-height: 1.08; letter-spacing: -0.4px; overflow-wrap: anywhere; min-width: 0; margin-bottom: 12px; }
+.lead { color: var(--ink-2); font-size: 16px; max-width: 520px; margin-bottom: 48px; }
+
+
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 20px; counter-reset: step; }
+.step {
+  position: relative; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 30px 26px; overflow: hidden;
+  transition: transform 0.2s var(--ease-out), border-color 0.2s;
+}
+.step:hover { transform: translateY(-3px); border-color: var(--green-line); }
+.step .n { font-family: var(--display); font-weight: 700; font-size: 15px; width: 40px; height: 40px; border-radius: 11px; background: var(--green-soft); color: var(--green); border: 1px solid var(--green-line); display: flex; align-items: center; justify-content: center; margin-bottom: 18px; }
+.step h3 { font-family: var(--display); font-size: 18px; font-weight: 600; margin-bottom: 9px; }
+.step p { font-size: 14px; color: var(--ink-2); line-height: 1.7; }
+.step .ghost { position: absolute; right: -10px; top: -18px; font-family: var(--display); font-weight: 700; font-size: 96px; color: rgba(255,255,255,0.03); pointer-events: none; }
+
+
+.feat-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
+.feat {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 24px; transition: transform 0.2s var(--ease-out), border-color 0.2s;
+}
+.feat:hover { transform: translateY(-3px); border-color: var(--line-strong); }
+.feat .ic { font-size: 24px; margin-bottom: 12px; }
+.feat h3 { font-family: var(--display); font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.feat p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+
+.cta { text-align: center; padding: var(--s-9) 24px; position: relative; overflow: hidden; }
+.cta::before { content: ''; position: absolute; inset: 0; background: radial-gradient(600px 300px at 50% 0%, rgba(25,225,126,0.12), transparent 65%); pointer-events: none; }
+.cta h2 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 5vw, 54px); line-height: 1.05; letter-spacing: -0.5px; margin-bottom: 16px; position: relative; }
+.cta p { color: var(--ink-2); font-size: 17px; max-width: 480px; margin: 0 auto 34px; position: relative; }
+.cta .btn { position: relative; }
+
+
+footer { border-top: 1px solid var(--line); padding: 30px 0; }
+.foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.foot .logo { font-size: 17px; }
+.foot p { font-size: 12px; color: var(--muted); }
+
+
+.reveal { opacity: 0; transform: translateY(22px); transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-out); }
+.reveal.in { opacity: 1; transform: none; }
+
+
+@media (max-width: 900px) {
+  .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+  .hero { padding: 48px 0 24px; }
+  .steps, .feat-grid { grid-template-columns: 1fr; }
+  section.block { padding: 64px 0; }
+}
+
+@media (max-width: 660px) {
+  .stats-inner { grid-template-columns: 1fr; }
+  .stat { border-right: none; border-bottom: 1px solid var(--line); }
+  .stat:last-child { border-bottom: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1; transform: none; }
+}
+</style>
+
+<link href="https://wai.computer/school/projects/rifflegg" rel="canonical"/></head>
+<body>
+<div class="nav-outer">
+<nav class="nav">
+<div class="logo">RIFFLEGG<b>.</b></div>
+<div class="nav-links">
+<a href="/school/projects/rifflegg#how">How it works</a>
+<a href="/school/projects/rifflegg#league">Inside the league</a>
+<a class="nav-cta" href="app/">Sign in →</a>
+</div>
+</nav>
+</div>
+
+<header class="hero">
+<div class="wrap hero-grid">
+<div class="reveal">
+<div class="badge"><span class="dot"></span>SEASON 1 · JOIN NOW</div>
+<h1>A CS2 league with <span class="coin">play coins</span> <span class="hl">for your crew</span></h1>
+<p class="hero-sub">Stake play coins, invite your friends and play. The winner takes 90% of the pot. The league keeps score.</p>
+<div class="hero-btns">
+<a class="btn btn-primary" href="app/">⚔️ Join the league</a>
+<a class="btn btn-ghost" href="/school/projects/rifflegg#how">How it works</a>
+</div>
+</div>
+<div class="live-panel reveal">
+<div class="live-head">
+<span class="live-title">ACTIVE MATCHES</span>
+<span class="live-flag"><span class="dot"></span>LIVE</span>
+</div>
+<div class="mcard">
+<div class="mc-side"><div class="mc-av" style="color:var(--green)">AK</div><div><div class="mc-name">AK_BEAST</div><div class="mc-mode">1×1 · waiting for an opponent</div></div></div>
+<div class="mc-bank"><div class="amt">1 000 🪙</div><div class="lbl">IN THE POT</div></div>
+</div>
+<div class="mcard">
+<div class="mc-side"><div class="mc-av" style="color:var(--gold)">FL</div><div><div class="mc-name">Flash_lol +1</div><div class="mc-mode">2×2 · match in progress</div></div></div>
+<div class="mc-bank"><div class="amt">1 200 🪙</div><div class="lbl">IN THE POT</div></div>
+</div>
+<div class="mcard">
+<div class="mc-side"><div class="mc-av" style="color:var(--violet)">GT</div><div><div class="mc-name">g0atmaster +2</div><div class="mc-mode">3×3 · forming a team</div></div></div>
+<div class="mc-bank"><div class="amt">3 000 🪙</div><div class="lbl">IN THE POT</div></div>
+</div>
+</div>
+</div>
+</header>
+
+<div class="stats reveal">
+<div class="wrap"><div class="stats-inner">
+<div class="stat"><div class="num">90%</div><div class="cap">of the pot to the winner</div></div>
+<div class="stat"><div class="num gold">150 🪙</div><div class="cap">minimum stake</div></div>
+<div class="stat"><div class="num">3</div><div class="cap">modes: 1×1 · 2×2 · 3×3</div></div>
+</div></div>
+</div>
+
+<section class="block wrap" id="how">
+<div class="reveal">
+<div class="eyebrow">How it works</div>
+<h2 class="h2">Three steps to victory</h2>
+<p class="lead">Play coins only. All the excitement, with no money at risk.</p>
+</div>
+<div class="steps">
+<div class="step reveal"><span class="ghost">1</span><div class="n">1</div><h3>Create a match</h3><p>Choose 1×1, 2×2 or 3×3, with a stake of at least 150 🪙. Everyone in the league can see your challenge.</p></div>
+<div class="step reveal"><span class="ghost">2</span><div class="n">2</div><h3>Stakes go into the pot</h3><p>Both sides contribute coins. Play anywhere: FACEIT, matchmaking or your own server.</p></div>
+<div class="step reveal"><span class="ghost">3</span><div class="n">3</div><h3>The winner takes 90%</h3><p>Both sides select the winner. When they agree, the pot is paid and the table updates.</p></div>
+</div>
+</section>
+
+<section class="block wrap" id="league">
+<div class="reveal">
+<div class="eyebrow">Inside the league</div>
+<h2 class="h2">More than a match: a whole season</h2>
+</div>
+<div class="feat-grid">
+<div class="feat reveal"><div class="ic">📊</div><h3>League table</h3><p>Who leads, who lost, and who beat whom.</p></div>
+<div class="feat reveal"><div class="ic">🎖️</div><h3>Meme awards</h3><p>League MVP and the week's biggest loser, calculated automatically.</p></div>
+<div class="feat reveal"><div class="ic">👤</div><h3>Player profile</h3><p>Nickname, avatar and coin balance.</p></div>
+</div>
+</section>
+
+<section class="cta">
+<div class="reveal">
+<h2>Join season 1</h2>
+<p>Choose a nickname, give yourself some coins and issue your first challenge.</p>
+<a class="btn btn-primary" href="app/">⚔️ Enter the league</a>
+</div>
+</section>
+<footer>
+<div class="wrap foot">
+<div class="logo">RIFFLEGG<b>.</b></div>
+<p>© 2026 RIFFLEGG · Play coins, no real money · Made at WAI School</p>
+</div>
+</footer>
+<script>(function () {
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window) || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        els.forEach(function (e) { e.classList.add('in'); });
+        return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+            if (en.isIntersecting) {
+                en.target.classList.add('in');
+                io.unobserve(en.target);
+            }
+        });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+    els.forEach(function (e) { io.observe(e); });
+})();
+</script>
+</body>
+</html>

@@ -9,7 +9,6 @@ export const metadata: Metadata = {
     canonical: "https://wai.computer/terms",
     languages: {
       en: "https://wai.computer/terms",
-      ru: "https://wai.computer/ru/terms",
     },
   },
 };
@@ -24,12 +23,17 @@ export default function TermsPage() {
 
         <header className={styles.legalHeader}>
           <h1>Terms of Service</h1>
-          <p className={styles.updated}>Last updated: May 22, 2026</p>
+          <p className={styles.updated}>Last updated: September 9, 2026</p>
         </header>
 
         <div className={styles.legalContent}>
           <section>
             <h2>Agreement</h2>
+            <p>
+              WaiComputer is operated by WaiWai, LLC, a Delaware limited liability
+              company, United States, at 1111B S Governors Ave, STE 28908,
+              Dover, DE 19904, USA.
+            </p>
             <p>
               By creating an account, signing in, or using WaiComputer, you agree
               to these Terms and to the Privacy Policy. If you do not agree, do
@@ -100,7 +104,7 @@ export default function TermsPage() {
             <h2>Disclaimers and liability</h2>
             <p>
               WaiComputer is provided as-is and as available. To the maximum
-              extent allowed by law, WaiWai is not liable for indirect,
+              extent allowed by law, WaiWai, LLC is not liable for indirect,
               incidental, special, consequential, or punitive damages, or for
               lost profits, lost data, or service interruption.
             </p>

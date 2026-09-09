@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/escape/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Escape the Game — arcade machine</title>
+<script>(function () {
+    try {
+        if (localStorage.getItem("escape_theme") === "terminal") {
+            document.documentElement.setAttribute("data-theme", "terminal");
+        }
+    }
+    catch (e) { }
+    window.__escapeSyncTitle = function () {
+        document.title = document.documentElement.getAttribute("data-theme") === "terminal"
+            ? "Escape the Game — Dark Terminal"
+            : "Escape the Game — arcade machine";
+    };
+    window.__escapeSyncTitle();
+})();
+</script>
+<style>
+
+  :root{
+    --cab:#E8DCC0;
+    --wood:#8B5A2B;
+    --marquee:#E2571E;
+    --stencil:#2B2118;
+    --on-marquee:#1A0A02;
+    --screen:#0A0A0A;
+    --pong:#F2F2F2;
+
+    --bg:var(--cab);
+    --surface:var(--cab);
+    --text:var(--stencil);
+    --dim:#9E3009;
+    --accent:#9E3009;
+    --line:var(--wood);
+    --field:var(--screen);
+    --paddle:var(--pong);
+    --midline:#6E6E6E;
+    --score:var(--pong);
+  }
+
+  [data-theme="terminal"]{
+    --bg:#000000;
+    --surface:#040804;
+    --text:#3fae5a;
+    --dim:#1f6b32;
+    --accent:#888888;
+    --line:#143b1d;
+    --field:#040804;
+    --paddle:#3fae5a;
+    --midline:#1f6b32;
+    --score:#888888;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+
+  html{
+    background:var(--wood);
+    padding:28px 0;
+  }
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Courier New",monospace;
+    line-height:1.6;
+    padding:34px 30px;
+    max-width:720px;
+    margin:0 auto;
+    position:relative;
+  }
+
+
+
+  html[data-theme="terminal"]{background:#000;padding:0;}
+  html[data-theme="terminal"] body{padding:24px;}
+  html[data-theme="terminal"] header,
+  html[data-theme="terminal"] .card{background:transparent;}
+
+
+  html:not([data-theme="terminal"]) body{
+    padding:22px 30px 36px;
+    box-shadow:
+      inset 0 2px 0 rgba(255,255,255,.55),
+      0 0 0 1px rgba(43,33,24,.35),
+      0 22px 60px -18px rgba(26,10,2,.65);
+  }
+
+  html:not([data-theme="terminal"]) body::before,
+  html:not([data-theme="terminal"]) body::after{
+    content:"";position:absolute;top:0;bottom:0;width:18px;left:0;
+    background-color:var(--wood);
+    background-image:linear-gradient(to right,
+      rgba(0,0,0,.45), rgba(255,255,255,.14) 45%, rgba(0,0,0,.35));
+  }
+  html:not([data-theme="terminal"]) body::after{
+    left:auto;right:0;
+    background-image:linear-gradient(to left,
+      rgba(0,0,0,.45), rgba(255,255,255,.14) 45%, rgba(0,0,0,.35));
+  }
+
+  .cursor{display:inline-block;width:10px;background:var(--text);animation:blink 1.1s steps(2) infinite;}
+  @keyframes blink{50%{opacity:0;}}
+
+  html:not([data-theme="terminal"]) .cursor{display:none;}
+
+  header, .card, .screen{background:var(--surface);position:relative;}
+  header{border:1px solid var(--line);padding:28px 22px;margin-bottom:28px;}
+  .tag{color:var(--accent);font-size:13px;letter-spacing:2px;text-transform:uppercase;}
+  h1{font-size:30px;margin:14px 0 10px;letter-spacing:1px;}
+  .hook{color:var(--dim);font-size:15px;}
+
+
+  html:not([data-theme="terminal"]) header{
+    background:var(--marquee);
+    color:var(--on-marquee);
+    border:0;
+    border-bottom:3px solid var(--stencil);
+    border-radius:4px 4px 0 0;
+    padding:24px 22px 22px;
+    margin-bottom:0;
+    text-align:center;
+    box-shadow:inset 0 2px 0 rgba(255,255,255,.28), 0 3px 8px -2px rgba(26,10,2,.5);
+  }
+  html:not([data-theme="terminal"]) header .tag,
+  html:not([data-theme="terminal"]) header .hook{color:var(--on-marquee);}
+  html:not([data-theme="terminal"]) header h1{
+    font-size:34px;letter-spacing:3px;margin:10px 0 8px;
+  }
+  html:not([data-theme="terminal"]) header .btn{
+    border:2px solid var(--on-marquee);color:var(--on-marquee);
+  }
+  html:not([data-theme="terminal"]) header .btn:hover{
+    background:var(--on-marquee);color:var(--marquee);
+  }
+
+  .stencil-line{display:none;}
+  html:not([data-theme="terminal"]) .stencil-line{
+    display:block;
+    color:var(--accent);
+    font-size:12px;letter-spacing:3px;text-transform:uppercase;
+    text-align:center;
+    padding:12px 4px 0;
+  }
+
+  html:not([data-theme="terminal"]) .stencil-line.under-marquee{
+    padding:14px 4px 16px;
+  }
+
+  html:not([data-theme="terminal"]) h2::before{content:"■ ";}
+  .term-only{display:none;}
+  html[data-theme="terminal"] .term-only{display:inline;}
+  html[data-theme="terminal"] .arc-only{display:none;}
+  .btn{
+    display:inline-block;margin-top:20px;padding:12px 22px;
+    background:transparent;border:1px solid var(--text);color:var(--text);
+    font-family:inherit;font-size:15px;cursor:pointer;text-decoration:none;
+  }
+  .btn:hover{background:var(--text);color:var(--bg);}
+  .btn.locked{border-color:var(--line);color:var(--dim);cursor:not-allowed;}
+  .btn.locked:hover{background:transparent;color:var(--dim);}
+  section{border-top:1px solid var(--line);padding:24px 0;}
+  h2{font-size:15px;color:var(--accent);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;}
+  h2::before{content:"> ";color:var(--dim);}
+  .steps{list-style:none;}
+  .steps li{padding:8px 0;border-bottom:1px dashed var(--line);}
+  .steps li::before{content:"[ ] ";color:var(--dim);}
+  .grid{display:grid;gap:10px;}
+  .card{border:1px solid var(--line);padding:14px;}
+  footer{border-top:1px solid var(--line);padding-top:20px;color:var(--accent);font-size:13px;}
+
+
+  .topbar{display:flex;justify-content:flex-end;margin-bottom:12px;}
+  .toggle{
+    display:inline-flex;align-items:center;min-height:44px;
+    padding:10px 14px;background:transparent;
+    border:1px solid var(--line);color:var(--accent);
+    font-family:inherit;font-size:13px;letter-spacing:1px;cursor:pointer;
+  }
+  .toggle:hover{border-color:var(--text);color:var(--text);}
+
+
+  .screen{border:1px solid var(--line);background:var(--surface);}
+  .screen .bar{
+    border-bottom:1px solid var(--line);padding:7px 12px;
+    color:var(--accent);font-size:12px;letter-spacing:1px;
+  }
+  .screen .body{padding:12px;}
+
+  #pong-info{color:var(--accent);font-size:12px;margin-top:8px;}
+  #pong{display:block;width:100%;height:auto;background:var(--field);border:1px solid var(--line);touch-action:none;}
+
+
+  .bezel{position:relative;}
+
+
+  html:not([data-theme="terminal"]) .screen{
+    border:2px solid var(--wood);
+    border-radius:6px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.5), 0 2px 0 rgba(43,33,24,.2);
+  }
+  html:not([data-theme="terminal"]) .screen .bar{
+    border-bottom:2px solid var(--wood);
+    text-transform:uppercase;
+  }
+  html:not([data-theme="terminal"]) .bezel{
+    background:var(--stencil);
+    border-radius:18px;
+    padding:14px;
+    box-shadow:inset 0 3px 12px rgba(0,0,0,.75), 0 1px 0 rgba(255,255,255,.3);
+  }
+  html:not([data-theme="terminal"]) #pong{
+    border:0;
+    border-radius:10px;
+  }
+
+  @media (orientation:landscape) and (pointer:coarse){
+    .bezel{max-width:calc((100dvh - 84px) * 1.571 + 28px);margin:0 auto;}
+    html:not([data-theme="terminal"]) .bezel{padding-top:40px;}
+  }
+
+
+  html.playing, html body.playing{overflow:hidden;}
+
+  html body.playing{
+
+    --play-cw: min(
+      calc(100vw - 20px - env(safe-area-inset-left) - env(safe-area-inset-right)),
+      calc((100dvh - 90px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * 1.571));
+    --play-bar: calc((100vw - var(--play-cw)) / 2);
+  }
+
+  html body.playing .bezel{
+    position:fixed;inset:0;z-index:70;
+    max-width:none;margin:0;border-radius:0;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--bg);
+    touch-action:none;overscroll-behavior:contain;
+
+    padding:
+      calc(58px + env(safe-area-inset-top))
+      calc(10px + env(safe-area-inset-right))
+      calc(32px + env(safe-area-inset-bottom))
+      calc(10px + env(safe-area-inset-left));
+  }
+
+  html:not([data-theme="terminal"]) body.playing .bezel{
+    background:var(--stencil);
+  }
+  html body.playing #pong{width:var(--play-cw);height:auto;}
+
+
+  @media (min-aspect-ratio: 165/100){
+    html body.playing .hint{max-width:calc(var(--play-bar) - 12px);text-align:center;}
+    html body.playing .hint-l{left:calc(var(--play-bar) / 2);transform:translate(-50%,-50%);}
+    html body.playing .hint-r{right:calc(var(--play-bar) / 2);transform:translate(50%,-50%);}
+  }
+
+
+
+  #play-exit{display:none;}
+  body.playing #play-exit,
+  body.playing #pong-restart{
+    position:fixed;z-index:76;
+    top:calc(7px + env(safe-area-inset-top));
+    display:inline-flex;align-items:center;justify-content:center;
+    margin:0;min-height:44px;padding:5px 16px;
+    background:rgba(0,0,0,.55);border:1px solid var(--paddle);color:var(--paddle);
+    font-family:inherit;font-size:13px;letter-spacing:1px;cursor:pointer;
+  }
+
+  body.playing #pong-restart{left:calc(10px + env(safe-area-inset-left));}
+  body.playing #play-exit{right:calc(10px + env(safe-area-inset-right));}
+  body.playing #play-exit:hover,
+  body.playing #pong-restart:hover{background:var(--paddle);color:var(--field);}
+
+
+  body.playing #pong-info{display:none;}
+  body.playing.over #pong-info{
+    display:block;
+    position:fixed;z-index:76;margin:0;
+    left:0;right:0;transform:none;
+    bottom:calc(9px + env(safe-area-inset-bottom));
+    padding:0 12px;text-align:center;
+    color:var(--paddle);
+  }
+
+
+  .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px;}
+  .controls .modes{margin-bottom:0;}
+  .controls .opt{margin:0;}
+
+
+  .hint{
+    position:absolute;top:50%;transform:translateY(-50%);
+    display:none;flex-direction:column;align-items:center;gap:2px;
+    color:var(--paddle);font-size:11px;letter-spacing:1px;
+    pointer-events:none;opacity:0;transition:opacity .45s ease;
+    text-shadow:0 0 8px rgba(0,0,0,.9);
+  }
+  .hint svg{display:block;width:22px;height:auto;}
+  .hint-l{left:11%;}
+  .hint-r{right:11%;}
+  @media (pointer:coarse){
+    body.duo .hint{display:flex;}
+    body.duo .hint.on{opacity:1;animation:hintPulse 2.6s ease-in-out infinite;}
+  }
+  @keyframes hintPulse{0%,100%{opacity:.45;}50%{opacity:1;}}
+  @media (prefers-reduced-motion:reduce){
+    body.duo .hint.on{animation:none;opacity:.9;}
+  }
+
+
+  #rotate-pop{
+
+    position:fixed;inset:0;z-index:80;
+    display:none;align-items:center;justify-content:center;padding:24px;
+    background:rgba(26,10,2,.72);
+  }
+  #rotate-pop.on{display:flex;}
+  #rotate-pop .rp-card{
+    background:var(--surface);border:2px solid var(--line);
+    color:var(--text);text-align:center;
+    padding:26px 22px;max-width:320px;border-radius:8px;
+    box-shadow:0 18px 50px -12px rgba(0,0,0,.7);
+  }
+  #rotate-pop .rp-phone{
+    width:54px;height:auto;margin:0 auto 14px;display:block;
+    animation:rpTurn 2.4s ease-in-out infinite;
+  }
+  @keyframes rpTurn{
+    0%,25%{transform:rotate(0deg);}
+    55%,80%{transform:rotate(90deg);}
+    100%{transform:rotate(0deg);}
+  }
+  #rotate-pop .rp-title{font-size:19px;letter-spacing:1px;margin-bottom:8px;text-transform:uppercase;}
+  #rotate-pop .rp-text{color:var(--accent);font-size:13px;line-height:1.5;}
+  #rotate-pop .rp-close{
+    margin-top:18px;min-height:44px;padding:11px 20px;
+    background:transparent;border:1px solid var(--text);color:var(--text);
+    font-family:inherit;font-size:14px;cursor:pointer;
+  }
+  @media (prefers-reduced-motion:reduce){
+    #rotate-pop .rp-phone{animation:none;}
+  }
+  .opt{
+    display:inline-flex;align-items:center;min-height:44px;margin:8px 0 0;padding:9px 14px;
+    background:transparent;border:1px solid var(--line);color:var(--text);
+    font-family:inherit;font-size:14px;cursor:pointer;
+  }
+  .opt:hover{background:var(--text);color:var(--bg);}
+
+
+  .modes{display:flex;flex-wrap:wrap;border:1px solid var(--line);width:fit-content;margin-bottom:10px;}
+  .seg{
+    min-height:44px;padding:10px 14px;
+    background:transparent;border:0;border-right:1px solid var(--line);
+    color:var(--accent);font-family:inherit;font-size:13px;cursor:pointer;
+  }
+  .seg:last-child{border-right:0;}
+  .seg.is-on{background:var(--text);color:var(--bg);}
+
+
+  #boot{
+    position:fixed;inset:0;background:var(--bg);
+    display:none;flex-direction:column;justify-content:center;
+    padding:40px;font-size:16px;z-index:10;
+  }
+  #boot.on{display:flex;}
+  #boot .line{margin:4px 0;white-space:pre;}
+  #boot .ok{color:var(--text);}
+
+  @media (max-width:480px){
+    body{padding:16px;}
+    header{padding:20px 16px;}
+    h1{font-size:24px;}
+    #boot{padding:24px;font-size:14px;}
+  }
+</style>
+
+<link href="https://wai.computer/school/projects/escape" rel="canonical"/></head>
+<body>
+
+<div id="page">
+<div class="topbar">
+<button aria-pressed="false" class="toggle" id="theme-toggle" type="button">◑ dark terminal</button>
+</div>
+<header>
+<div class="tag">// system: quest</div>
+<h1>ESCAPE THE GAME<span class="cursor"> </span></h1>
+<p class="hook">You are inside. Beat the system at ping-pong to escape.</p>
+<a class="btn" href="/school/projects/escape#">▶ Start the quest</a>
+</header>
+<p class="stencil-line under-marquee">1972 · two players at one machine · one screen</p>
+<section>
+<h2>About the game</h2>
+<p>A small browser game. A strange world, a paddle and a ball. Beat the system and escape. Perfect for a quiet break.</p>
+</section>
+<section>
+<h2>Who it is for</h2>
+<p>Anyone who wants a quiet ten-minute game on a break or while traveling.</p>
+</section>
+<section>
+<h2>How to play</h2>
+<ul class="steps">
+<li>Slide your finger up and down to move the paddle</li>
+<li>Return the ball to the system</li>
+<li>Score 5 points to get out</li>
+</ul>
+</section>
+<section>
+<h2>Play right here</h2>
+<div class="screen">
+<div class="bar">// ping-pong against the system — first to 5</div>
+<div class="body">
+<div class="controls">
+<div aria-label="Game mode" class="modes" role="group">
+<button aria-pressed="true" class="seg is-on" data-mode="ai" type="button">against the system</button>
+<button aria-pressed="false" class="seg" data-mode="duo" type="button">two players</button>
+</div>
+<button aria-pressed="false" class="opt" id="play-full" type="button">⛶ full screen</button>
+</div>
+<div class="bezel">
+<canvas height="280" id="pong" width="440"></canvas>
+<div aria-hidden="true" class="hint hint-l">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 34">
+<path d="M12 3v28M12 3 6 9M12 3l6 6M12 31l-6-6M12 31l6-6"></path>
+</svg>
+<span>slide your finger</span>
+</div>
+<div aria-hidden="true" class="hint hint-r">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 34">
+<path d="M12 3v28M12 3 6 9M12 3l6 6M12 31l-6-6M12 31l6-6"></path>
+</svg>
+<span>slide your finger</span>
+</div>
+</div>
+<p id="pong-info">You are on the left. Move with your finger, mouse or ↑ ↓ keys.</p>
+<button class="opt" id="pong-restart">↻ restart</button>
+</div>
+</div>
+<p class="stencil-line">Concede fewer points to climb the leaderboard</p>
+</section>
+<section>
+
+<h2><span class="arc-only">High Scores</span><span class="term-only">Leaderboard</span></h2>
+<p style="color:var(--accent);font-size:13px;margin-bottom:12px;">Beat the system to join the board. Fewer points conceded means a higher rank. Use an in-game nickname, not your real name.</p>
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
+<input id="nick" maxlength="24" placeholder="your nickname" style="background:var(--surface);border:1px solid var(--line);color:var(--text);font-family:inherit;font-size:14px;padding:9px 12px;min-height:44px;outline:none;max-width:100%;"/>
+<span id="save-note" style="color:var(--accent);font-size:12px;"></span>
+</div>
+<ol id="board" style="list-style:none;padding-left:0;"></ol>
+</section>
+<section>
+<h2>Why it is convenient</h2>
+<div class="grid">
+
+<div class="card">Dark theme for a softer screen</div>
+<div class="card">No sound for quiet play</div>
+<div class="card">A quick game in ten minutes</div>
+</div>
+</section>
+<footer>
+<a class="btn locked" href="/school/projects/escape#" id="enter-btn">🔒 Enter the system</a>
+<p id="lock-note" style="display:none;color:var(--accent);font-size:13px;margin-top:10px;">🔒 Beat the system at ping-pong first.</p>
+<p style="margin-top:14px;">// made for friends — a WAI School student project</p>
+</footer>
+</div>
+<button aria-label="Exit full-screen game" id="play-exit" type="button">✕ exit</button>
+<div id="boot"></div>
+<div aria-labelledby="rp-title" aria-modal="true" id="rotate-pop" role="dialog">
+<div class="rp-card">
+<svg aria-hidden="true" class="rp-phone" fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 34 54">
+<rect height="50" rx="5" width="30" x="2" y="2"></rect>
+<line stroke-linecap="round" x1="13" x2="21" y1="46" y2="46"></line>
+</svg>
+<p class="rp-title" id="rp-title">Rotate your screen</p>
+<p class="rp-text">Two-player mode uses landscape, giving each player one half.</p>
+<button class="rp-close" id="rp-close" type="button">got it</button>
+</div>
+</div>
+
+<div aria-hidden="true" id="crt"><div class="crt-roll"></div></div>
+<style>
+
+    #crt{display:none;position:fixed;inset:0;z-index:75;pointer-events:none;overflow:hidden;}
+    [data-theme="terminal"] #crt{display:block;}
+
+    #crt::before{
+      content:"";position:absolute;inset:0;
+      background:repeating-linear-gradient(to bottom,
+        rgba(0,0,0,0) 0, rgba(0,0,0,0) 1px, rgba(0,0,0,.45) 2px, rgba(0,0,0,.45) 3px);
+      animation:crtFlicker 90ms steps(2) infinite;
+    }
+
+    #crt::after{
+      content:"";position:absolute;inset:0;
+      background:radial-gradient(ellipse at 50% 50%, rgba(63,174,90,.12), rgba(0,0,0,0) 45%, rgba(0,0,0,.75) 100%);
+    }
+
+    .crt-roll{
+      position:absolute;left:0;right:0;height:28%;
+      background:linear-gradient(to bottom, rgba(63,174,90,0), rgba(63,174,90,.10) 50%, rgba(63,174,90,0));
+      animation:crtRoll 5s linear infinite;
+    }
+    @keyframes crtFlicker{0%{opacity:.85;}100%{opacity:1;}}
+    @keyframes crtRoll{0%{top:-30%;}100%{top:100%;}}
+
+    [data-theme="terminal"] #page,
+    [data-theme="terminal"] #boot{animation:crtGlow 4s ease-in-out infinite;}
+
+    [data-theme="terminal"] body.playing #page{animation:none;}
+    [data-theme="terminal"] body.playing .bezel{animation:crtGlow 4s ease-in-out infinite;}
+    @keyframes crtGlow{0%,100%{filter:brightness(1);}48%{filter:brightness(1.12);}52%{filter:brightness(.94);}}
+  </style>
+<div aria-hidden="true" id="buddy"></div>
+<style>
+    #buddy{
+      position:fixed;left:16px;bottom:16px;
+      z-index:9;pointer-events:none;
+      width:58px;height:auto;
+    }
+    #buddy svg{
+      display:block;image-rendering:pixelated;width:100%;height:auto;
+      animation:bob 2.4s ease-in-out infinite;
+    }
+    @keyframes bob{0%,100%{transform:translateY(0);}50%{transform:translateY(-2px);}}
+    @media (max-width:480px){
+      #buddy{width:44px;left:10px;bottom:10px;}
+    }
+
+
+    html:not([data-theme="terminal"]){--buddy-ink:var(--stencil);}
+    html:not([data-theme="terminal"]) #buddy{left:max(26px, calc(50% - 334px));}
+    @media (min-width:868px){
+      html:not([data-theme="terminal"]){--buddy-ink:var(--cab);}
+      html:not([data-theme="terminal"]) #buddy{left:16px;}
+    }
+  </style>
+<script>(function () {
+    var root = document.documentElement;
+    var btn = document.getElementById("theme-toggle");
+    if (!btn)
+        return;
+    function label() {
+        var dark = root.getAttribute("data-theme") === "terminal";
+        btn.textContent = dark ? "◐ arcade machine" : "◑ dark terminal";
+        btn.setAttribute("aria-pressed", dark ? "true" : "false");
+    }
+    label();
+    btn.addEventListener("click", function () {
+        var dark = root.getAttribute("data-theme") === "terminal";
+        if (dark)
+            root.removeAttribute("data-theme");
+        else
+            root.setAttribute("data-theme", "terminal");
+        try {
+            localStorage.setItem("escape_theme", dark ? "arcade" : "terminal");
+        }
+        catch (e) { }
+        label();
+        if (window.__escapeSyncTitle)
+            window.__escapeSyncTitle();
+        document.dispatchEvent(new CustomEvent("escapetheme"));
+    });
+})();
+</script>
+<script>var steps = [
+    "> connecting to the system…",
+    "> loading the world…",
+    "> looking for an exit…",
+    "> access granted.",
+    "",
+    "Welcome. You are inside.",
+    "",
+    "a WAI School student project",
+    "created with Claude Code (AI)"
+];
+function runBoot() {
+    var boot = document.getElementById("boot");
+    boot.innerHTML = "";
+    boot.classList.add("on");
+    var i = 0;
+    var timer = setInterval(function () {
+        if (i >= steps.length) {
+            clearInterval(timer);
+            return;
+        }
+        var div = document.createElement("div");
+        div.className = "line ok";
+        div.textContent = steps[i];
+        boot.appendChild(div);
+        i++;
+    }, 700);
+}
+var buttons = document.querySelectorAll(".btn");
+for (var b = 0; b < buttons.length; b++) {
+    buttons[b].addEventListener("click", function (e) {
+        e.preventDefault();
+        if (this.classList.contains("locked")) {
+            var note = document.getElementById("lock-note");
+            if (note)
+                note.style.display = "block";
+            return;
+        }
+        runBoot();
+    });
+}
+</script>
+<script>(function () {
+    var c = document.getElementById("pong");
+    if (!c)
+        return;
+    var ctx = c.getContext("2d");
+    var W = c.width, H = c.height;
+    var GREEN = "#3fae5a", DIM = "#1f6b32", GREY = "#888888";
+    function readTheme() {
+        var cs = getComputedStyle(document.documentElement);
+        GREEN = (cs.getPropertyValue("--paddle") || "").trim() || GREEN;
+        DIM = (cs.getPropertyValue("--midline") || "").trim() || DIM;
+        GREY = (cs.getPropertyValue("--score") || "").trim() || GREY;
+    }
+    readTheme();
+    document.addEventListener("escapetheme", readTheme);
+    var INFO_AI = "You are on the left. Move with your finger, mouse or ↑ ↓ keys.";
+    var INFO_DUO = "Two players on one screen: left player uses the left half or W / S; right player uses the right half or ↑ ↓.";
+    var mode = "ai";
+    var pw = 8, ph = 56;
+    var playerY = H / 2 - ph / 2;
+    var aiY = H / 2 - ph / 2;
+    var ps = 0, as = 0;
+    var WIN = 5;
+    var over = false;
+    var ball = {};
+    function resetBall(dir) {
+        ball.x = W / 2;
+        ball.y = H / 2;
+        ball.r = 6;
+        ball.vx = 4 * dir;
+        ball.vy = (Math.random() * 4) - 2;
+    }
+    resetBall(Math.random() < 0.5 ? -1 : 1);
+    function info(text) { document.getElementById("pong-info").textContent = text; }
+    function clampY(y) {
+        y = y - ph / 2;
+        if (y < 0)
+            y = 0;
+        if (y > H - ph)
+            y = H - ph;
+        return y;
+    }
+    function toFieldY(clientY, rect) { return (clientY - rect.top) * (H / rect.height); }
+    var hintL = document.querySelector(".hint-l");
+    var hintR = document.querySelector(".hint-r");
+    function showHints(on) {
+        if (hintL)
+            hintL.classList.toggle("on", on);
+        if (hintR)
+            hintR.classList.toggle("on", on);
+    }
+    function hintDone(side) {
+        var el = side === "l" ? hintL : hintR;
+        if (el)
+            el.classList.remove("on");
+    }
+    function movePointers(points) {
+        var rect = c.getBoundingClientRect();
+        for (var i = 0; i < points.length; i++) {
+            var p = points[i];
+            if (playing && p.clientY < rect.top)
+                continue;
+            var y = clampY(toFieldY(p.clientY, rect));
+            if (mode === "duo") {
+                if ((p.clientX - rect.left) < rect.width / 2) {
+                    playerY = y;
+                    hintDone("l");
+                }
+                else {
+                    aiY = y;
+                    hintDone("r");
+                }
+            }
+            else {
+                playerY = y;
+                return;
+            }
+        }
+    }
+    var pad = (c.closest && c.closest(".bezel")) || c;
+    pad.addEventListener("mousemove", function (e) { movePointers([e]); });
+    function onTouch(e) {
+        e.preventDefault();
+        movePointers(e.touches);
+    }
+    pad.addEventListener("touchstart", onTouch, { passive: false });
+    pad.addEventListener("touchmove", onTouch, { passive: false });
+    var keyUp = false, keyDown = false, keyW = false, keyS = false;
+    var SPEED = 6;
+    function isTyping(e) {
+        var t = e.target;
+        return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+    }
+    function which(e) {
+        var k = (e.key || "").toLowerCase();
+        if (e.code === "ArrowUp" || k === "arrowup")
+            return "up";
+        if (e.code === "ArrowDown" || k === "arrowdown")
+            return "down";
+        if (e.code === "KeyW" || k === "w" || k === "w")
+            return "w";
+        if (e.code === "KeyS" || k === "s" || k === "s")
+            return "s";
+        return "";
+    }
+    function gameOnScreen() {
+        if (playing)
+            return true;
+        var r = c.getBoundingClientRect();
+        return r.bottom > 0 && r.top < (window.innerHeight || document.documentElement.clientHeight);
+    }
+    document.addEventListener("keydown", function (e) {
+        if (isTyping(e))
+            return;
+        var k = which(e);
+        if (k === "up") {
+            keyUp = true;
+            if (gameOnScreen())
+                e.preventDefault();
+        }
+        if (k === "down") {
+            keyDown = true;
+            if (gameOnScreen())
+                e.preventDefault();
+        }
+        if (k === "w")
+            keyW = true;
+        if (k === "s")
+            keyS = true;
+    });
+    document.addEventListener("keyup", function (e) {
+        var k = which(e);
+        if (k === "up")
+            keyUp = false;
+        if (k === "down")
+            keyDown = false;
+        if (k === "w")
+            keyW = false;
+        if (k === "s")
+            keyS = false;
+    });
+    window.addEventListener("blur", function () {
+        keyUp = keyDown = keyW = keyS = false;
+    });
+    function reset() {
+        ps = 0;
+        as = 0;
+        over = false;
+        document.body.classList.remove("over");
+        playerY = H / 2 - ph / 2;
+        aiY = H / 2 - ph / 2;
+        info(mode === "duo" ? INFO_DUO : INFO_AI);
+        resetBall(Math.random() < 0.5 ? -1 : 1);
+    }
+    document.getElementById("pong-restart").addEventListener("click", reset);
+    var pop = document.getElementById("rotate-pop");
+    var mqPortrait = window.matchMedia("(orientation:portrait)");
+    var mqCoarse = window.matchMedia("(pointer:coarse)");
+    var popDismissed = false;
+    function syncPop() {
+        if (!pop)
+            return;
+        var wants = (mode === "duo" || playing);
+        var need = wants && mqPortrait.matches && mqCoarse.matches && !popDismissed;
+        pop.classList.toggle("on", need);
+    }
+    function onMQ(mq, fn) {
+        if (mq.addEventListener)
+            mq.addEventListener("change", fn);
+        else if (mq.addListener)
+            mq.addListener(fn);
+    }
+    onMQ(mqPortrait, syncPop);
+    onMQ(mqCoarse, syncPop);
+    window.addEventListener("resize", syncPop);
+    window.addEventListener("orientationchange", syncPop);
+    var rpClose = document.getElementById("rp-close");
+    if (rpClose)
+        rpClose.addEventListener("click", function () { popDismissed = true; syncPop(); });
+    var playing = false;
+    var btnFull = document.getElementById("play-full");
+    var btnExit = document.getElementById("play-exit");
+    function setPlaying(on) {
+        playing = on;
+        document.body.classList.toggle("playing", on);
+        document.documentElement.classList.toggle("playing", on);
+        if (btnFull) {
+            btnFull.setAttribute("aria-pressed", on ? "true" : "false");
+            btnFull.textContent = on ? "⛶ exit full screen" : "⛶ full screen";
+        }
+        syncPop();
+    }
+    function lockLandscape() {
+        try {
+            if (screen.orientation && screen.orientation.lock) {
+                var q = screen.orientation.lock("landscape");
+                if (q && q.catch)
+                    q.catch(function () { });
+            }
+        }
+        catch (e) { }
+    }
+    function enterPlay() {
+        setPlaying(true);
+        var el = document.documentElement;
+        var req = el.requestFullscreen || el.webkitRequestFullscreen;
+        if (!req)
+            return;
+        try {
+            var p = req.call(el);
+            if (p && p.then)
+                p.then(lockLandscape, function () { });
+            else
+                lockLandscape();
+        }
+        catch (e) { }
+    }
+    function exitPlay() {
+        setPlaying(false);
+        try {
+            if (screen.orientation && screen.orientation.unlock)
+                screen.orientation.unlock();
+        }
+        catch (e) { }
+        var ex = document.exitFullscreen || document.webkitExitFullscreen;
+        var fs = document.fullscreenElement || document.webkitFullscreenElement;
+        if (ex && fs) {
+            try {
+                var p = ex.call(document);
+                if (p && p.catch)
+                    p.catch(function () { });
+            }
+            catch (e) { }
+        }
+    }
+    if (btnFull)
+        btnFull.addEventListener("click", function () {
+            if (playing)
+                exitPlay();
+            else
+                enterPlay();
+        });
+    if (btnExit)
+        btnExit.addEventListener("click", exitPlay);
+    function onFsChange() {
+        var fs = document.fullscreenElement || document.webkitFullscreenElement;
+        if (!fs && playing)
+            setPlaying(false);
+    }
+    document.addEventListener("fullscreenchange", onFsChange);
+    document.addEventListener("webkitfullscreenchange", onFsChange);
+    document.addEventListener("keydown", function (e) {
+        if (playing && (e.key === "Escape" || e.code === "Escape"))
+            exitPlay();
+    });
+    var segs = document.querySelectorAll(".seg");
+    for (var s = 0; s < segs.length; s++) {
+        segs[s].addEventListener("click", function () {
+            mode = this.getAttribute("data-mode");
+            for (var k = 0; k < segs.length; k++) {
+                var on = segs[k] === this;
+                segs[k].classList.toggle("is-on", on);
+                segs[k].setAttribute("aria-pressed", on ? "true" : "false");
+            }
+            document.body.classList.toggle("duo", mode === "duo");
+            popDismissed = false;
+            syncPop();
+            showHints(mode === "duo");
+            reset();
+        });
+    }
+    function update() {
+        if (over)
+            return;
+        if (mode === "duo") {
+            if (keyW)
+                playerY -= SPEED;
+            if (keyS)
+                playerY += SPEED;
+            if (keyUp)
+                aiY -= SPEED;
+            if (keyDown)
+                aiY += SPEED;
+            if (aiY < 0)
+                aiY = 0;
+            if (aiY > H - ph)
+                aiY = H - ph;
+        }
+        else {
+            if (keyUp || keyW)
+                playerY -= SPEED;
+            if (keyDown || keyS)
+                playerY += SPEED;
+        }
+        if (playerY < 0)
+            playerY = 0;
+        if (playerY > H - ph)
+            playerY = H - ph;
+        if (mode === "ai") {
+            var aiCenter = aiY + ph / 2;
+            if (ball.vx > 0) {
+                if (aiCenter < ball.y - 6)
+                    aiY += 2.1;
+                else if (aiCenter > ball.y + 6)
+                    aiY -= 2.1;
+            }
+            if (aiY < 0)
+                aiY = 0;
+            if (aiY > H - ph)
+                aiY = H - ph;
+        }
+        ball.x += ball.vx;
+        ball.y += ball.vy;
+        function speedUp() {
+            var max = 11;
+            if (Math.abs(ball.vx) < max)
+                ball.vx *= 1.08;
+            if (Math.abs(ball.vy) < max)
+                ball.vy *= 1.08;
+        }
+        if (ball.y - ball.r < 0) {
+            ball.y = ball.r;
+            ball.vy = -ball.vy;
+            speedUp();
+        }
+        if (ball.y + ball.r > H) {
+            ball.y = H - ball.r;
+            ball.vy = -ball.vy;
+            speedUp();
+        }
+        if (ball.x - ball.r < pw && ball.y > playerY && ball.y < playerY + ph && ball.vx < 0) {
+            ball.vx = -ball.vx;
+            ball.vy += ((ball.y - (playerY + ph / 2)) / (ph / 2)) * 2;
+        }
+        if (ball.x + ball.r > W - pw && ball.y > aiY && ball.y < aiY + ph && ball.vx > 0) {
+            ball.vx = -ball.vx;
+            ball.vy += ((ball.y - (aiY + ph / 2)) / (ph / 2)) * 2;
+        }
+        if (ball.x < 0) {
+            as++;
+            resetBall(1);
+        }
+        if (ball.x > W) {
+            ps++;
+            resetBall(-1);
+        }
+        if (ps >= WIN) {
+            over = true;
+            if (mode === "duo") {
+                info("> left player wins. But the system is not beaten — the exit stays closed.");
+            }
+            else {
+                info("> access granted. You are free!");
+                var eb = document.getElementById("enter-btn");
+                if (eb) {
+                    eb.classList.remove("locked");
+                    eb.textContent = "▶ Enter the system";
+                }
+                var note = document.getElementById("lock-note");
+                if (note)
+                    note.style.display = "none";
+                if (window.__escapeSaveWin)
+                    window.__escapeSaveWin(as);
+            }
+        }
+        if (as >= WIN) {
+            over = true;
+            info(mode === "duo"
+                ? "> right player wins. But the system is not beaten — the exit stays closed."
+                : "> the system wins. Press Restart.");
+        }
+        if (over)
+            document.body.classList.add("over");
+    }
+    function draw() {
+        ctx.clearRect(0, 0, W, H);
+        ctx.strokeStyle = DIM;
+        ctx.setLineDash([6, 8]);
+        ctx.beginPath();
+        ctx.moveTo(W / 2, 0);
+        ctx.lineTo(W / 2, H);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        var scoreY = (document.documentElement.getAttribute("data-theme") === "terminal") ? 26 : 46;
+        ctx.fillStyle = GREY;
+        ctx.font = "20px Courier New, monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(ps, W / 2 - 30, scoreY);
+        ctx.fillText(as, W / 2 + 30, scoreY);
+        ctx.fillStyle = GREEN;
+        ctx.fillRect(0, playerY, pw, ph);
+        ctx.fillRect(W - pw, aiY, pw, ph);
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    function loop() { update(); draw(); requestAnimationFrame(loop); }
+    loop();
+})();
+</script>
+<script>(function () {
+    var map = [
+        "....G......G....",
+        ".....G....G.....",
+        "......GGGG......",
+        "......GGGG......",
+        "....GGGGGGGG....",
+        ".....GGGGGG.....",
+        "....GG.GG.GG....",
+        "..G.GGGGGGGG.G..",
+        "..G.GGGGGGGG.G..",
+        "...G.GGGGGG.G...",
+        "....G......G...."
+    ];
+    var u = 8, cols = 16, rows = map.length;
+    var el = document.getElementById("buddy");
+    if (!el)
+        return;
+    function paint() {
+        var cs = getComputedStyle(document.documentElement);
+        var ink = (cs.getPropertyValue("--buddy-ink") || "").trim()
+            || (cs.getPropertyValue("--text") || "").trim()
+            || "#3fae5a";
+        var svg = '<svg viewBox="0 0 ' + (cols * u) + ' ' + (rows * u) + '" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">';
+        for (var y = 0; y < rows; y++) {
+            for (var x = 0; x < cols; x++) {
+                if (map[y].charAt(x) === "G") {
+                    svg += '<rect x="' + (x * u) + '" y="' + (y * u) + '" width="' + u + '" height="' + u + '" fill="' + ink + '"/>';
+                }
+            }
+        }
+        svg += '</svg>';
+        el.innerHTML = svg;
+    }
+    paint();
+    document.addEventListener("escapetheme", paint);
+    var mqWide = window.matchMedia("(min-width:868px)");
+    if (mqWide.addEventListener)
+        mqWide.addEventListener("change", paint);
+    else if (mqWide.addListener)
+        mqWide.addListener(paint);
+})();
+</script>
+<script>(function () {
+    var KDB = "/school-data/escape/games";
+    var board = document.getElementById("board");
+    var note = document.getElementById("save-note");
+    if (!board)
+        return;
+    function render(items) {
+        var rows = items.slice().sort(function (a, b) {
+            return ((a.payload && a.payload.missed) | 0) - ((b.payload && b.payload.missed) | 0);
+        }).slice(0, 10);
+        board.textContent = "";
+        if (!rows.length) {
+            var empty = document.createElement("li");
+            empty.textContent = "empty for now — be the first";
+            board.appendChild(empty);
+            return;
+        }
+        rows.forEach(function (row, i) {
+            var li = document.createElement("li");
+            li.style.padding = "6px 0";
+            li.style.borderBottom = "1px dashed var(--line)";
+            var missed = row.payload ? (row.payload.missed | 0) : 0;
+            li.textContent = (i + 1) + ". " + (row.nick || "anonymous") + " — conceded " + missed;
+            board.appendChild(li);
+        });
+    }
+    function load() {
+        fetch(KDB + "?limit=100").then(function (r) { return r.json(); })
+            .then(function (d) { if (d && d.ok)
+            render(d.items); }).catch(function () { });
+    }
+    window.__escapeSaveWin = function (missed) {
+        var el = document.getElementById("nick");
+        var nick = (el && el.value || "").trim().slice(0, 24) || "anonymous";
+        if (note)
+            note.textContent = "saving…";
+        fetch(KDB, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nick: nick, payload: { missed: missed, win: true } })
+        }).then(function (r) { return r.json(); }).then(function (d) {
+            if (note)
+                note.textContent = (d && d.ok) ? "saved to the leaderboard ✓" : "could not save";
+            load();
+        }).catch(function () { if (note)
+            note.textContent = "offline"; });
+    };
+    load();
+})();
+</script>
+</body>
+</html>

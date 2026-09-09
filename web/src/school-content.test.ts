@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const read = (name: string) => readFileSync(join(process.cwd(), "public/school-static", name), "utf8");
 
 describe("public school content", () => {
-  it.each(["index.html", "projects.html", "mentors/dima.html", "mentors/darya.html"])("keeps %s English, public, and self-contained", (name) => {
+  it.each(["index.html", "projects.html", "mentors/dima.html", "mentors/darya.html", "offer.html", "privacy.html", "contact.html"])("keeps %s English, public, and self-contained", (name) => {
     const html = read(name);
     expect(html).toContain('<html lang="en">');
     expect(html).not.toMatch(/[\u0400-\u04ff]/);
@@ -13,15 +13,19 @@ describe("public school content", () => {
     expect(html).not.toMatch(/\/report\/|notion\.so|zoom\.us\/|\?s=/);
     expect(html).not.toMatch(/\b(?:Vanya|Platon|Semyon|Gleb|Vova|Miron|Kristofer)\b/i);
     expect(html).toContain('rel="canonical"');
+    expect(html).toContain("WaiWai, LLC");
+    expect(html).toContain("Delaware");
+    expect(html).not.toMatch(/Russia|Moscow|RUB\b|₽|Severstal|Severgroup|MIPT|Rosatom|IIDF|Netology|Alfa-Bank|Samolet|Pike Media|https?:\/\/[^\s"<>]*\.ru\b/i);
   });
-  it("translates the current programme and preserves its source pricing", () => {
+  it("uses the Delaware course offers and an English enquiry path", () => {
     const html = read("index.html");
-    expect(html).toContain("RUB 50,000");
-    expect(html).toContain("8 individual lessons");
-    expect(html).toContain("2 group sessions per month");
-    expect(html).toContain("Full programme: 3 months");
+    expect(html).toContain("€700");
+    expect(read("offer.html")).toContain("€2,500");
+    expect(read("offer.html")).toContain("ten individual lessons");
     expect(html).not.toMatch(/buy\.stripe\.com|<form|checkout|subscribe/i);
-    expect(html).toContain("https://cal.com/grigoriy-ottens/30min");
+    expect(html).not.toContain("cal.com");
+    expect(html).toContain('href="/school/contact"');
+    expect(read("contact.html")).toContain("mailto:hello@mail.waiwai.is");
   });
   it("supports reduced motion without hiding content", () => {
     expect(read("index.html")).toContain("prefers-reduced-motion: reduce");
@@ -35,6 +39,6 @@ describe("public school content", () => {
     }
     const gallery = read("projects.html");
     expect(gallery.match(/class="pcard reveal"/g)).toHaveLength(12);
-    expect(gallery).toContain("Original project interfaces may be in Russian");
+    expect(gallery).toContain("Student projects");
   });
 });

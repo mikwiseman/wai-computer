@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/bouquet/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
+<meta content="#f2f1f6" name="theme-color"/>
+<title>FLEUR | Find your flower vibe</title>
+<meta content="Seven beautiful choices, a personal character portrait and a bouquet that matches your vibe." name="description"/>
+<meta content="website" property="og:type"/>
+<meta content="FLEUR | Find your flower vibe" property="og:title"/>
+<meta content="Take the quiz, discover your flower archetype and save your result as a story." property="og:description"/>
+<meta content="https://wai.computer/school-static/project-previews/bouquet.png" property="og:image"/>
+<meta content="summary_large_image" name="twitter:card"/>
+<meta content="FLEUR | Flower vibe quiz" name="twitter:title"/>
+<meta content="Personality, flowers and a ready-to-share story card." name="twitter:description"/>
+<meta content="https://wai.computer/school-static/project-previews/bouquet.png" name="twitter:image"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;family=Unbounded:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.88em' font-size='82'%3E%F0%9F%8C%B8%3C/text%3E%3C/svg%3E" rel="icon"/>
+<link href="app.css" rel="stylesheet"/>
+<script defer="" src="app.js"></script>
+
+<link href="https://wai.computer/school/projects/bouquet" rel="canonical"/></head>
+<body>
+<a class="skip-link" href="/school/projects/bouquet#main">Skip to content</a>
+<div aria-hidden="true" class="page-grain"></div>
+<header class="site-header">
+<a aria-label="FLEUR home" class="brand" href="./">FLEUR</a>
+<p class="header-note">a bouquet without words</p>
+<button class="header-action" id="headerStart" type="button">Start the quiz</button>
+</header>
+<main id="main">
+<section aria-labelledby="heroTitle" class="view landing-view is-active" id="landingView">
+<div class="hero-shell">
+<div class="hero-copy">
+<p class="eyebrow">Flower vibe quiz</p>
+<h1 id="heroTitle">Your vibe.<br/><span>In the language of flowers.</span></h1>
+<p class="hero-lead">Seven beautiful choices. Discover your personal vibe, the flowers in your bouquet and a ready-to-share story image.</p>
+<button class="primary-button hero-button" id="heroStart" type="button">
+            Find your vibe
+            <span aria-hidden="true">↗</span>
+</button>
+<p class="hero-time">About two minutes. No zodiac signs.</p>
+</div>
+<div aria-label="A collage of original floral arrangements" class="hero-art">
+<figure class="hero-main-image">
+<img alt="An airy arrangement of cosmos, daisies and sweet peas" src="assets/wild-tenderness.webp"/>
+</figure>
+<figure aria-hidden="true" class="hero-card hero-card-one">
+<img alt="" src="assets/precise-elegance.webp"/>
+</figure>
+<figure aria-hidden="true" class="hero-card hero-card-two">
+<img alt="" src="assets/velvet-boldness.webp"/>
+</figure>
+<div aria-hidden="true" class="hero-stamp">
+<span>7 choices</span>
+<strong>1 bouquet for you</strong>
+</div>
+</div>
+</div>
+<div class="promise-shell">
+<div class="promise-heading">
+<p>More than the name of a flower.</p>
+<h2>A result you will want to keep.</h2>
+</div>
+<div class="promise-grid">
+<article class="promise-item promise-large">
+<span>Your portrait</span>
+<p>How you express yourself, what makes you memorable and how others feel around you.</p>
+</article>
+<article class="promise-item">
+<span>Your formula</span>
+<p>A leading flower, bouquet character, palette and a note for your florist.</p>
+</article>
+<article class="promise-item promise-accent">
+<span>Your story</span>
+<p>A vertical 1080×1920 card, ready for Instagram Stories.</p>
+</article>
+</div>
+</div>
+</section>
+<section aria-labelledby="questionTitle" class="view quiz-view" hidden="" id="quizView">
+<div class="quiz-shell">
+<div class="quiz-main">
+<div class="quiz-progress-row">
+<p id="progressText">01 / 07</p>
+<div aria-label="Quiz progress" class="petal-progress" id="petalProgress"></div>
+</div>
+<div class="question-frame" id="questionFrame">
+<p class="question-note" id="questionNote"></p>
+<h2 id="questionTitle"></h2>
+<div class="answer-grid" id="answerGrid"></div>
+</div>
+<div class="quiz-navigation">
+<button class="text-button" id="backButton" type="button">Back</button>
+<button class="primary-button" disabled="" id="nextButton" type="button">Next</button>
+</div>
+</div>
+<aside aria-live="polite" class="quiz-preview">
+<div class="preview-image-wrap">
+<img alt="The bouquet gradually adapts to your answers" id="quizPreviewImage" src="assets/wild-tenderness.webp"/>
+</div>
+<div class="preview-copy">
+<p>Your bouquet is taking shape</p>
+<strong id="quizPreviewTitle">Airy and open for now</strong>
+<span id="quizPreviewCount">Add your first answer</span>
+</div>
+</aside>
+</div>
+</section>
+<section aria-labelledby="resultTitle" class="view result-view" hidden="" id="resultView">
+<div class="result-shell">
+<div class="result-intro">
+<div class="result-copy-panel">
+<p class="result-label">Your flower vibe</p>
+<h2 id="resultTitle"></h2>
+<p class="result-portrait" id="resultPortrait"></p>
+<div class="result-signals" id="resultSignals"></div>
+</div>
+<div aria-label="The visual world of your result" class="result-moodboard">
+<figure class="result-art-panel result-art-main">
+<img alt="" id="resultImage" src="assets/wild-tenderness-field.webp"/>
+<figcaption id="resultKicker">Your bouquet</figcaption>
+</figure>
+<figure class="result-art-panel">
+<img alt="" id="resultImageDetail" src="assets/wild-tenderness-herbarium.webp"/>
+</figure>
+<figure class="result-art-panel">
+<img alt="" id="resultImageBouquet" src="assets/wild-tenderness.webp"/>
+</figure>
+</div>
+</div>
+<section aria-labelledby="formulaTitle" class="formula-section">
+<div class="formula-heading">
+<p class="section-label">Translated into flowers</p>
+<h3 id="formulaTitle">What to look for</h3>
+</div>
+<div class="formula-grid">
+<div class="formula-lead">
+<p class="formula-name" id="formulaName"></p>
+</div>
+<div class="formula-copy">
+<p class="formula-why" id="formulaWhy"></p>
+<div class="flower-list" id="flowerList"></div>
+<div aria-label="Bouquet palette" class="palette" id="palette"></div>
+<div class="florist-note">
+<span>What to tell your florist</span>
+<p id="floristNote"></p>
+</div>
+</div>
+</div>
+</section>
+<section aria-labelledby="shareTitle" class="share-section">
+<div class="story-preview-wrap">
+<canvas aria-label="Story card preview" height="1920" id="storyPreview" width="1080"></canvas>
+</div>
+<div class="share-copy">
+<p class="section-label">Your subtle hint is ready</p>
+<h3 id="shareTitle">Save it. Share it. They will get the hint.</h3>
+<div class="share-actions">
+<button class="primary-button" id="shareStory" type="button">Share to Stories</button>
+<button class="secondary-button" id="downloadStory" type="button">Download PNG</button>
+<button class="text-button copy-hint" id="copyHint" type="button">Copy the hint</button>
+</div>
+<p class="share-status" id="shareStatus" role="status"></p>
+</div>
+</section>
+<div class="restart-row">
+<button class="text-button" id="restartButton" type="button">Take the quiz again</button>
+</div>
+</div>
+</section>
+<section aria-labelledby="giftTitle" class="view gift-view" hidden="" id="giftView">
+<div class="gift-shell">
+<div class="gift-copy">
+<p class="eyebrow">Someone left you a hint</p>
+<h1 id="giftTitle">Looking for a bouquet idea? Here it is.</h1>
+<p id="giftHint"></p>
+<div class="gift-actions">
+<button class="primary-button" id="copyGift" type="button">Copy the flowers</button>
+<a class="secondary-button" href="./" id="giftOwnTest">Find your vibe</a>
+</div>
+</div>
+<article class="gift-card">
+<img alt="Recommended bouquet" id="giftImage" src="assets/wild-tenderness.webp"/>
+<div>
+<p>A match for this vibe</p>
+<h2 id="giftBouquet"></h2>
+<span id="giftDescription"></span>
+</div>
+</article>
+</div>
+</section>
+</main>
+<div aria-live="polite" class="toast" id="toast" role="status"></div>
+<noscript>JavaScript is required to take the quiz.</noscript>
+</body>
+</html>

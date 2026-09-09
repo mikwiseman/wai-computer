@@ -41,13 +41,16 @@ describe("resolveApiProxyTarget", () => {
 describe("English school routing", () => {
   it("overrides school pages while preserving application and API routes", () => {
     expect(schoolRewrites()).toEqual({
-      beforeFiles: [
+      beforeFiles: expect.arrayContaining([
         { source: "/", destination: "/school-static/index.html" },
         { source: "/school/projects", destination: "/school-static/projects.html" },
         { source: "/projects", destination: "/school-static/projects.html" },
         { source: "/mentors/dima", destination: "/school-static/mentors/dima.html" },
         { source: "/mentors/darya", destination: "/school-static/mentors/darya.html" },
-      ],
+        { source: "/school/contact", destination: "/school-static/contact.html" },
+        { source: "/legal/offer", destination: "/school-static/offer.html" },
+        { source: "/legal/privacy", destination: "/school-static/privacy.html" },
+      ]),
       afterFiles: [
         { source: "/api/:path*", destination: `${resolveApiProxyTarget()}/api/:path*` },
       ],

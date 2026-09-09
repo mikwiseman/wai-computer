@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/checkmedia/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
+<title>CheckMedia Assistant</title>
+<style>
+  :root{
+    --accent:#7C5CFC; --accent-d:#6a4ce0; --ink:#0A2540; --bg:#eef1f8;
+    --card:#fff; --line:#e3e9f2; --muted:#5b6b80;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; min-height:100vh; color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:linear-gradient(160deg,#10294a 0%,#0A2540 55%,#0a1f37 100%);
+    display:flex; align-items:center; justify-content:center;
+    padding:max(28px,env(safe-area-inset-top)) 18px 40px; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:560px; width:100%; text-align:center; color:#fff}
+
+  .brand{display:inline-flex; align-items:center; gap:11px; margin-bottom:30px}
+  .mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#9d86ff);
+        box-shadow:0 6px 18px rgba(124,92,252,.45)}
+  .brand b{font-size:18px;letter-spacing:.2px}
+
+  h1{font-size:30px; line-height:1.2; margin:0 0 12px}
+  h1 span{color:#b9a6ff}
+  .lead{color:#c5d2e6; font-size:16px; margin:0 auto 32px; max-width:430px}
+
+  .cards{display:grid; gap:14px}
+  .card{
+    display:flex; align-items:center; gap:16px; text-align:left; text-decoration:none;
+    background:var(--card); color:var(--ink); border-radius:18px; padding:20px 20px;
+    box-shadow:0 16px 36px -20px rgba(0,0,0,.6); transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .card:hover{transform:translateY(-3px); box-shadow:0 22px 44px -20px rgba(0,0,0,.65)}
+  .card:active{transform:translateY(-1px)}
+  .ic{flex:0 0 auto; width:48px;height:48px;border-radius:13px; display:flex;align-items:center;justify-content:center;
+      font-size:22px; background:rgba(124,92,252,.12)}
+  .card.alt .ic{background:rgba(10,37,64,.08)}
+  .card h2{margin:0 0 3px; font-size:17px}
+  .card p{margin:0; color:var(--muted); font-size:13.5px; line-height:1.45}
+  .card .arrow{margin-left:auto; color:var(--accent); font-size:22px; font-weight:700}
+
+  footer{margin-top:30px; color:#7e90ab; font-size:12.5px}
+
+  @media (max-width:560px){
+    h1{font-size:25px}
+    .card{padding:18px 16px}
+    .ic{width:44px;height:44px;font-size:20px}
+  }
+</style>
+
+<link href="https://wai.computer/school/projects/checkmedia" rel="canonical"/></head>
+<body>
+<div class="wrap">
+<div class="brand"><span class="mark"></span><b>CheckMedia</b></div>
+<h1>Meet the <span>CheckMedia Assistant</span></h1>
+<p class="lead">Tell it your situation in plain words — it points you to the one tool you
+      actually need. Choose where to go:</p>
+<div class="cards">
+<a class="card" href="variant-C-landing.html">
+<div class="ic">💬</div>
+<div>
+<h2>Open the Assistant</h2>
+<p>Try the live demo — describe your situation and get the right tool.</p>
+</div>
+<div class="arrow">→</div>
+</a>
+<a class="card alt" href="status.html">
+<div class="ic">📊</div>
+<div>
+<h2>Project status</h2>
+<p>Goals and progress for stakeholders — always up to date.</p>
+</div>
+<div class="arrow">→</div>
+</a>
+</div>
+<footer>A demo project · works best on a live link (https)</footer>
+</div>
+</body>
+</html>

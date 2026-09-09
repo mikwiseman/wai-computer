@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head><base href="/school/projects/bug-battle/"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Bug Battle — a student game</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(160deg, #1a2f1a 0%, #0d1f0d 60%, #10241a 100%);
+    color: #e8f0e0;
+    overflow-x: hidden;
+  }
+  section { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+
+
+  .bug {
+    position: fixed;
+    font-size: 28px;
+    opacity: .18;
+    pointer-events: none;
+    animation: fly linear infinite;
+    z-index: 0;
+  }
+  @keyframes fly {
+    from { transform: translateX(-60px) rotate(0deg); }
+    to   { transform: translateX(110vw) rotate(20deg); }
+  }
+
+
+  .hero {
+    text-align: center;
+    padding: 70px 20px 50px;
+    position: relative;
+    z-index: 1;
+  }
+  .hero .big-emoji {
+    font-size: 90px;
+    display: inline-block;
+    animation: bounce 2s ease-in-out infinite;
+  }
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0) rotate(-6deg); }
+    50%      { transform: translateY(-18px) rotate(6deg); }
+  }
+  h1 {
+    font-size: clamp(36px, 7vw, 64px);
+    margin: 10px 0;
+    background: linear-gradient(90deg, #ffd75e, #8fe86a, #6fd0ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: none;
+  }
+  .tagline { font-size: 20px; color: #b6ccab; margin-bottom: 30px; }
+
+  .play-btn {
+    display: inline-block;
+    background: linear-gradient(180deg, #ffb84a, #e8842a);
+    color: #fff;
+    text-decoration: none;
+    font-size: 28px;
+    font-weight: bold;
+    padding: 18px 60px;
+    border-radius: 18px;
+    box-shadow: 0 6px 0 #a85a10, 0 12px 30px rgba(0,0,0,.5);
+    transition: transform .1s;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .play-btn:hover { transform: scale(1.06); }
+  .play-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #a85a10; }
+  @keyframes pulse {
+    0%, 100% { filter: brightness(1); }
+    50%      { filter: brightness(1.15); }
+  }
+  .author-badge {
+    margin-top: 24px;
+    font-size: 15px;
+    color: #9db88a;
+  }
+  .author-badge b { color: #ffd75e; }
+
+
+  h2 {
+    text-align: center;
+    font-size: 34px;
+    margin-bottom: 26px;
+    color: #ffd75e;
+    text-shadow: 0 2px 8px rgba(0,0,0,.5);
+  }
+
+
+  .fighters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+  }
+  .fighter {
+    background: rgba(255,255,255,.06);
+    border: 2px solid #3a5a2a;
+    border-radius: 18px;
+    padding: 22px 16px;
+    text-align: center;
+    transition: transform .15s, border-color .15s, box-shadow .15s;
+  }
+  .fighter:hover {
+    transform: translateY(-6px) scale(1.02);
+    border-color: #7fc95a;
+    box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  }
+  .fighter .face { font-size: 60px; display: block; margin-bottom: 8px; }
+  .fighter:hover .face { animation: wiggle .5s ease-in-out; }
+  @keyframes wiggle {
+    0%, 100% { transform: rotate(0); }
+    25% { transform: rotate(-12deg); }
+    75% { transform: rotate(12deg); }
+  }
+  .fighter h3 { font-size: 20px; margin-bottom: 4px; }
+  .fighter .role { color: #6fd0ff; font-size: 13px; margin-bottom: 12px; }
+  .bar { margin: 6px 0; font-size: 12px; color: #b6ccab; text-align: left; }
+  .bar .track {
+    background: rgba(0,0,0,.4);
+    border-radius: 6px;
+    height: 10px;
+    margin-top: 3px;
+    overflow: hidden;
+  }
+  .bar .fill {
+    height: 100%;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #8fe86a, #4a8a2a);
+  }
+  .bar.dmg .fill { background: linear-gradient(90deg, #ff8a5e, #c9452a); }
+  .bar.spd .fill { background: linear-gradient(90deg, #6fd0ff, #2a6ac9); }
+
+
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .step {
+    background: rgba(0,0,0,.3);
+    border: 1px solid #3a5a2a;
+    border-radius: 18px;
+    padding: 24px;
+    text-align: center;
+  }
+  .step .num {
+    display: inline-block;
+    width: 44px; height: 44px;
+    line-height: 44px;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #6fae4a, #4a8a2a);
+    font-size: 22px;
+    font-weight: bold;
+    margin-bottom: 12px;
+  }
+  .step p { color: #cde0c0; font-size: 15px; line-height: 1.5; }
+  .step .icon { font-size: 36px; display: block; margin-bottom: 8px; }
+
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    justify-content: center;
+  }
+  .fact {
+    background: rgba(127,201,90,.12);
+    border: 1px solid #5a8a3a;
+    border-radius: 14px;
+    padding: 14px 20px;
+    font-size: 15px;
+    max-width: 300px;
+  }
+
+
+  .bottom-cta {
+    text-align: center;
+    padding: 50px 20px 80px;
+  }
+
+  footer {
+    text-align: center;
+    padding: 20px;
+    color: #6a8a5a;
+    font-size: 13px;
+  }
+</style>
+
+<link href="https://wai.computer/school/projects/bug-battle" rel="canonical"/></head>
+<body>
+
+<div class="bug" style="top: 12%; animation-duration: 22s; animation-delay: 0s;">🐝</div>
+<div class="bug" style="top: 30%; animation-duration: 35s; animation-delay: -8s;">🪲</div>
+<div class="bug" style="top: 55%; animation-duration: 28s; animation-delay: -15s;">🦗</div>
+<div class="bug" style="top: 75%; animation-duration: 40s; animation-delay: -22s;">🕷️</div>
+<div class="bug" style="top: 45%; animation-duration: 18s; animation-delay: -5s;">🐝</div>
+<div class="bug" style="top: 88%; animation-duration: 32s; animation-delay: -12s;">🍃</div>
+<div class="hero">
+<span class="big-emoji">🪲</span>
+<h1>BUG BATTLE</h1>
+<div class="tagline">100 fighters, 3 bosses, 4 arenas and a two-player mode. Build your team and let the strongest win! ⚔️</div>
+<a class="play-btn" href="app/">▶ PLAY</a>
+<div class="author-badge">Game created by <b>a WAI School student</b> 🎮</div>
+</div>
+<section>
+<h2>🐛 Choose your fighters</h2>
+<div class="fighters">
+<div class="fighter">
+<span class="face">🪲</span>
+<h3>Rhinoceros beetle</h3>
+<div class="role">🛡️ TANK — 4 gold</div>
+<div class="bar">❤️ Health<div class="track"><div class="fill" style="width: 100%"></div></div></div>
+<div class="bar dmg">⚔️ Damage<div class="track"><div class="fill" style="width: 80%"></div></div></div>
+<div class="bar spd">💨 Speed<div class="track"><div class="fill" style="width: 30%"></div></div></div>
+</div>
+<div class="fighter">
+<span class="face">🦗</span>
+<h3>Praying mantis</h3>
+<div class="role">🥋 FIGHTER — 3 gold</div>
+<div class="bar">❤️ Health<div class="track"><div class="fill" style="width: 55%"></div></div></div>
+<div class="bar dmg">⚔️ Damage<div class="track"><div class="fill" style="width: 60%"></div></div></div>
+<div class="bar spd">💨 Speed<div class="track"><div class="fill" style="width: 60%"></div></div></div>
+</div>
+<div class="fighter">
+<span class="face">🐝</span>
+<h3>Wasp</h3>
+<div class="role">⚡ SPEED — 2 gold</div>
+<div class="bar">❤️ Health<div class="track"><div class="fill" style="width: 25%"></div></div></div>
+<div class="bar dmg">⚔️ Damage<div class="track"><div class="fill" style="width: 80%"></div></div></div>
+<div class="bar spd">💨 Speed<div class="track"><div class="fill" style="width: 100%"></div></div></div>
+</div>
+<div class="fighter">
+<span class="face">🕷️</span>
+<h3>Spider</h3>
+<div class="role">🎯 SNIPER — 3 gold</div>
+<div class="bar">❤️ Health<div class="track"><div class="fill" style="width: 40%"></div></div></div>
+<div class="bar dmg">⚔️ Damage<div class="track"><div class="fill" style="width: 45%"></div></div></div>
+<div class="bar spd">💨 Speed<div class="track"><div class="fill" style="width: 50%"></div></div></div>
+</div>
+<div class="fighter">
+<span class="face">🐜</span>
+<h3>Ant</h3>
+<div class="role">👥 ARMY — 1 gold</div>
+<div class="bar">❤️ Health<div class="track"><div class="fill" style="width: 22%"></div></div></div>
+<div class="bar dmg">⚔️ Damage<div class="track"><div class="fill" style="width: 30%"></div></div></div>
+<div class="bar spd">💨 Speed<div class="track"><div class="fill" style="width: 70%"></div></div></div>
+</div>
+<div class="fighter">
+<span class="face">🦟</span>
+<h3>Mosquito</h3>
+<div class="role">🧛 VAMPIRE — 2 gold</div>
+<div class="bar">❤️ Health<div class="track"><div class="fill" style="width: 25%"></div></div></div>
+<div class="bar dmg">⚔️ Damage<div class="track"><div class="fill" style="width: 35%"></div></div></div>
+<div class="bar spd">💨 Speed<div class="track"><div class="fill" style="width: 92%"></div></div></div>
+</div>
+<div class="fighter">
+<span class="face">🦋</span>
+<h3>Butterfly</h3>
+<div class="role">💚 HEALER — 3 gold</div>
+<div class="bar">❤️ Health<div class="track"><div class="fill" style="width: 35%"></div></div></div>
+<div class="bar dmg">💚 Healing<div class="track"><div class="fill" style="width: 60%"></div></div></div>
+<div class="bar spd">💨 Speed<div class="track"><div class="fill" style="width: 58%"></div></div></div>
+</div>
+<div class="fighter">
+<span class="face">🦂</span>
+<h3>Scorpion</h3>
+<div class="role">☠️ POISON — 5 gold</div>
+<div class="bar">❤️ Health<div class="track"><div class="fill" style="width: 84%"></div></div></div>
+<div class="bar dmg">⚔️ Damage<div class="track"><div class="fill" style="width: 65%"></div></div></div>
+<div class="bar spd">💨 Speed<div class="track"><div class="fill" style="width: 40%"></div></div></div>
+</div>
+<div class="fighter">
+<span class="face">🪰</span>
+<h3>Fly</h3>
+<div class="role">💨 EVASIVE — 2 gold</div>
+<div class="bar">❤️ Health<div class="track"><div class="fill" style="width: 28%"></div></div></div>
+<div class="bar dmg">⚔️ Damage<div class="track"><div class="fill" style="width: 40%"></div></div></div>
+<div class="bar spd">💨 Speed<div class="track"><div class="fill" style="width: 88%"></div></div></div>
+</div>
+<div class="fighter">
+<span class="face">🐞</span>
+<h3>Ladybug</h3>
+<div class="role">🛡️ SHELL — 3 gold</div>
+<div class="bar">❤️ Health<div class="track"><div class="fill" style="width: 55%"></div></div></div>
+<div class="bar dmg">⚔️ Damage<div class="track"><div class="fill" style="width: 40%"></div></div></div>
+<div class="bar spd">💨 Speed<div class="track"><div class="fill" style="width: 55%"></div></div></div>
+</div>
+<div class="fighter">
+<span class="face">🪳</span>
+<h3>Cockroach</h3>
+<div class="role">💪 SURVIVOR — 2 gold</div>
+<div class="bar">❤️ Health<div class="track"><div class="fill" style="width: 38%"></div></div></div>
+<div class="bar dmg">⚔️ Damage<div class="track"><div class="fill" style="width: 32%"></div></div></div>
+<div class="bar spd">💨 Speed<div class="track"><div class="fill" style="width: 66%"></div></div></div>
+</div>
+<div class="fighter">
+<span class="face">🐌</span>
+<h3>Snail</h3>
+<div class="role">🧱 WALL — 2 gold</div>
+<div class="bar">❤️ Health<div class="track"><div class="fill" style="width: 100%"></div></div></div>
+<div class="bar dmg">⚔️ Damage<div class="track"><div class="fill" style="width: 25%"></div></div></div>
+<div class="bar spd">💨 Speed<div class="track"><div class="fill" style="width: 12%"></div></div></div>
+</div>
+</div>
+</section>
+<section>
+<h2>🎮 How to play</h2>
+<div class="steps">
+<div class="step">
+<span class="icon">💰</span>
+<span class="num">1</span>
+<p>Buy insects with gold. Each fighter has a different price. Choose carefully!</p>
+</div>
+<div class="step">
+<span class="icon">⚔️</span>
+<span class="num">2</span>
+<p>Press BATTLE! The computer builds its own army and the fight begins automatically!</p>
+</div>
+<div class="step">
+<span class="icon">🏆</span>
+<span class="num">3</span>
+<p>Win to earn more gold for an even bigger army in the next round!</p>
+</div>
+</div>
+</section>
+<section>
+<h2>✨ Game secrets</h2>
+<div class="facts">
+<div class="fact">🪲 The rhinoceros beetle's horn <b>knocks</b> enemies back!</div>
+<div class="fact">🕷️ A spider's web <b>slows</b> enemies to a crawl!</div>
+<div class="fact">🐝 A swarm of five wasps can sting even the biggest beetle into submission!</div>
+<div class="fact">🤖 The computer has different personalities. Sometimes it picks tanks, sometimes a wasp swarm!</div>
+<div class="fact">🦋 The butterfly does not fight. It <b>heals</b> your army with magical pollen!</div>
+<div class="fact">🦟 The mosquito is a vampire. Each bite <b>heals itself</b>!</div>
+<div class="fact">🦂 After a scorpion stings, its target <b>glows green</b> and loses health to poison!</div>
+<div class="fact">🐜 An ant costs just 1 gold. Ten coins can buy ten ants!</div>
+<div class="fact">🪰 Flies are hard to hit. A third of attacks <b>miss</b>!</div>
+<div class="fact">🪳 A cockroach is hard to kill. Once per battle, it <b>survives</b> a fatal blow!</div>
+<div class="fact">🐌 The snail has the most health in the game: <b>260</b>! A real living wall.</div>
+<div class="fact">🐞 The ladybug's shell reflects almost half the damage!</div>
+<div class="fact">🌿 The arena has <b>bushes</b> where insects hide, making them harder to hit!</div>
+<div class="fact">🕳️ Watch out for <b>pits</b>! Fall in and you cannot fight. Flying insects stay safe!</div>
+<div class="fact">⭐ <b>Level up</b>: each victory makes your fighters stronger, up to level 5!</div>
+<div class="fact">🪨 A large rock blocks the way. Hide behind it to avoid enemies.</div>
+<div class="fact">👑 THREE bosses: Giant Hornet 🐝, Spider Queen 🕷️ and Ant Queen 🐜! A new boss every fifth round, each with a special attack!</div>
+<div class="fact">🗺️ Four arenas: Meadow 🌿, Swamp 🐸 with sticky puddles, Desert 🌵 and Night 🌙, where hiding is easier.</div>
+<div class="fact">✨ A level 5 insect becomes <b>GOLDEN</b> — glowing gold and gaining a superpower!</div>
+<div class="fact">🎒 Items: Acorn Helmet 🌰, Leaf Shield 🍃 and Honey Drop 🍯. Buy them before battle!</div>
+<div class="fact">🧠 The AI levels up each round too. Victory will not be easy!</div>
+<div class="fact">💰 You have <b>1,000 coins for the whole game</b>! Spend wisely. Victory earns coins, while a defeated army returns home with your money.</div>
+<div class="fact">🎉 The game has <b>100 CHARACTERS</b>! Regular bugs, elite fighters like Ninja Fly 🥷 and Emperor Scorpion 👑, plus six elements: Forest 🌲, Steel 🛡️, Shadow 🌑, Electric ⚡, Lava 🌋 and Cosmic 🚀 versions of each insect!</div>
+<div class="fact">👬 <b>Two-player mode!</b> You and a friend secretly build teams in turn, then watch to see whose army is stronger!</div>
+<div class="fact">✨ Each element has a superpower. Forest 🌲 fighters heal themselves, Steel 🛡️ reflects damage, Shadow 🌑 teleports behind enemies and Electric ⚡ stuns!</div>
+<div class="fact">📖 <b>Bestiary</b> — collect them all: see which fighters you have tried and how often they have won. Unlock all 100!</div>
+<div class="fact">💀 <b>Hardcore mode</b> for the brave: lose and your coins are gone! Rewards are doubled.</div>
+</div>
+</section>
+<div class="bottom-cta">
+<h2>Ready for battle?</h2>
+<a class="play-btn" href="app/">▶ PLAY NOW</a>
+</div>
+<footer>Bug Battle © 2026 · A WAI School student project</footer>
+</body>
+</html>
