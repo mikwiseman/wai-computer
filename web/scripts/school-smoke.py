@@ -13,12 +13,12 @@ import urllib.request
 
 base = sys.argv[1].rstrip('/')
 pages = {
-    '/': ['We teach children', '€700'],
+    '/': ['We teach children', '€2,000'],
     '/school/projects': ['Student projects', 'pcard'],
     '/mentors/dima': ['Dmitry Rubin'],
     '/mentors/darya': ['Darya Zhuykova'],
-    '/school/contact': ['mailto:hi@wai.computer', '€2,500'],
-    '/legal/offer': ['ten individual lessons', '1111B S Governors Ave'],
+    '/school/contact': ['mailto:hi@wai.computer', '€2,000'],
+    '/legal/offer': ['8 live online lessons', '1111B S Governors Ave'],
     '/legal/privacy': ['School website privacy'],
 }
 assets = set()
@@ -32,6 +32,10 @@ for path, markers in pages.items():
     assert not re.search(r'wai(?:[ .]|<span[^>]*>\.</span>)school|hello@mail\.waiwai\.is', html, re.I), path
     for block in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S):
         json.loads(block)
+    if path in ['/', '/school/contact', '/legal/offer']:
+        assert '2 lessons per week' in html, path
+        assert 'https://waiwai.is/pay/ce11c765-ecdd-4421-8996-09d0a3fe448f' in html, path
+        assert not re.search(r'€700|€2,500|ten individual lessons|Introductory lesson|>free<', html), path
     assets.update(re.findall(r'/school-static/[a-zA-Z0-9_./-]+\.(?:webp|png|jpg|svg|woff2)', html))
     print('PASS', path)
 
