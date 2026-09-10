@@ -19,14 +19,15 @@ describe("public school content", () => {
     expect(html).not.toContain("hello@mail.waiwai.is");
     expect(html).not.toMatch(/Russia|Moscow|RUB\b|₽|Severstal|Severgroup|MIPT|Rosatom|IIDF|Netology|Alfa-Bank|Samolet|Pike Media|https?:\/\/[^\s"<>]*\.ru\b/i);
   });
-  it("uses the Delaware course offers and an English enquiry path", () => {
-    const html = read("index.html");
-    expect(html).toContain("€700");
-    expect(read("offer.html")).toContain("€2,500");
-    expect(read("offer.html")).toContain("ten individual lessons");
-    expect(html).not.toMatch(/buy\.stripe\.com|<form|checkout|subscribe/i);
-    expect(html).not.toContain("cal.com");
-    expect(html).toContain('href="/school/contact"');
+  it("offers eight lessons over four weeks for EUR 2,000 with direct card checkout", () => {
+    for (const name of ["index.html", "contact.html", "offer.html"]) {
+      const html = read(name);
+      expect(html).toContain("€2,000");
+      expect(html).toMatch(/8 (?:live online )?lessons/);
+      expect(html).toContain("2 lessons per week");
+      expect(html).toContain('href="https://waiwai.is/pay/ce11c765-ecdd-4421-8996-09d0a3fe448f"');
+      expect(html).not.toMatch(/€700|€2,500|ten individual lessons|Introductory lesson|30–45 minutes|>free</);
+    }
     expect(read("contact.html")).toContain("mailto:hi@wai.computer");
   });
   it("supports reduced motion without hiding content", () => {
